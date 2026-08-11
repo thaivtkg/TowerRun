@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://b15ncjs2tb1jx"]
+
+[ext_resource type="Script" uid="uid://cs70mwgm6viq0" path="res://scenes/entities/enemy_entity.gd" id="1_dh7s8"]
+[ext_resource type="Texture2D" uid="uid://djjokkphifbhw" path="res://icon.svg" id="2_2xo0q"]
+
+[node name="EnemyEntity" type="CharacterBody2D" unique_id=333119586]
+script = ExtResource("1_dh7s8")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=107386154]
+modulate = Color(1, 0, 0, 1)
+position = Vector2(-1, 5)
+texture = ExtResource("2_2xo0q")
+
+[node name="AttackTimer" type="Timer" parent="." unique_id=179532774]

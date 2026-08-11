@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://twio5nxgv5oo"]
+
+[ext_resource type="Script" uid="uid://bsfoigjqit7gk" path="res://scenes/entities/hero_entity.gd" id="1_e0qbr"]
+[ext_resource type="Texture2D" uid="uid://djjokkphifbhw" path="res://icon.svg" id="2_vbex4"]
+
+[node name="HeroEntity" type="CharacterBody2D" unique_id=314846663]
+script = ExtResource("1_e0qbr")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=899084027]
+texture = ExtResource("2_vbex4")
+
+[node name="AttackTimer" type="Timer" parent="." unique_id=395907578]

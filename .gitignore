@@ -1,0 +1,9 @@
+# Godot 4+ specific ignores
+.godot/
+*.translation
+
+# Ignored Mac OS folder
+.DS_Store
+
+# Tùy chọn: Bỏ qua file cấu hình export nếu chứa thông tin nhạy cảm (keystore, password)
+# export_presets.cfg
