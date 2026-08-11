@@ -1,12 +1,8 @@
 class_name HeroEntity
-extends CharacterBody2D
-
-signal died(entity: HeroEntity)
+extends CombatEntity
 
 @export var data: HeroData
-var current_hp: float = 0.0
-var target: Node2D = null # Tham chiếu tới Enemy
-var is_dead: bool = false
+var target: CombatEntity = null
 
 @onready var attack_timer: Timer = $AttackTimer
 
@@ -16,46 +12,28 @@ func initialize(initial_data: HeroData) -> void:
 		printerr("[HeroEntity] FATAL: HeroData is null.")
 		return
 		
+	# Gán tên Node bằng tên Data để log của CombatEntity in ra đúng tên nhân vật
+	name = data.name 
 	current_hp = data.base_hp
 	
-	# Validate attack speed to prevent division by zero or negative timers
 	var safe_attack_speed: float = max(0.1, data.attack_speed)
 	attack_timer.wait_time = 1.0 / safe_attack_speed
 	
-	# Prevent duplicate signal connections
 	if not attack_timer.timeout.is_connected(_on_attack_timer_timeout):
 		attack_timer.timeout.connect(_on_attack_timer_timeout)
 		
 	attack_timer.start()
-	
 	print("[HeroEntity] Initialized: ", data.name, " | HP: ", current_hp)
 
-func take_damage(amount: float) -> void:
-	if is_dead: return
-	
-	# Validate damage input to prevent healing from negative damage or crash from NaN/INF
-	if amount < 0 or is_nan(amount) or is_inf(amount):
-		printerr("[HeroEntity] WARNING: Invalid damage amount received: ", amount)
-		return
-	
-	current_hp -= amount
-	print("[Combat] ", data.name, " takes ", amount, " damage! (HP: ", current_hp, "/", data.base_hp, ")")
-	
-	if current_hp <= 0:
-		_die()
-
+# Override hàm _die() của base class để dọn dẹp các logic nội bộ
 func _die() -> void:
-	is_dead = true
 	attack_timer.stop()
-	print("[Combat] ☠️ ", data.name, " has died.")
-	died.emit(self)
-	queue_free()
+	super()
 
-# 🔮 Defensive Error Handling: Kiểm tra tính hợp lệ của target
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	
 	if is_instance_valid(target) and not target.is_dead:
 		target.take_damage(data.base_attack)
 	else:
-		attack_timer.stop() # Ngừng vung vũ khí nếu target đã chết
+		attack_timer.stop()

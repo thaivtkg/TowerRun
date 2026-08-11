@@ -56,10 +56,10 @@ func _start_battle() -> void:
 	active_enemy.initialize(mock_enemy)
 
 # 🔮 Luồng Combat kết thúc an toàn, chuẩn bị State Machine
-func _on_hero_died(_entity: HeroEntity) -> void:
+func _on_hero_died(_entity: CombatEntity) -> void:
 	print("[BattleManager] ❌ DEFEAT - All Heroes are dead.")
 	GameManager.change_state(GameManager.GameState.GAME_OVER)
 
-func _on_enemy_died(_entity: EnemyEntity) -> void:
+func _on_enemy_died(_entity: CombatEntity) -> void:
 	print("[BattleManager] 🏆 VICTORY - Floor Cleared!")
 	GameManager.change_state(GameManager.GameState.REWARD)
