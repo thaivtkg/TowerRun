@@ -28,10 +28,26 @@ func _die() -> void:
 	attack_timer.stop()
 	super()
 
+func get_crit_chance() -> float:
+	return data.crit_chance if data != null else 0.0
+	
+func get_crit_damage() -> float:
+	return data.crit_damage if data != null else 2.0
+
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	
 	if is_instance_valid(target) and not target.is_dead:
-		target.take_damage(data.base_attack)
-	else:
-		attack_timer.stop()
+		var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
+		
+		# Đổ xí ngầu (Roll) xem có chí mạng không
+		event.is_crit = (randf() <= get_crit_chance())
+		event.crit_multiplier = get_crit_damage()
+		
+		attack_requested.emit(event)
+
+# Override hàm của CombatEntity để lấy giáp từ EnemyData
+func get_defense() -> float:
+	if data != null:
+		return data.base_defense
+	return 0.0
