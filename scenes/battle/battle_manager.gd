@@ -66,6 +66,8 @@ func _spawn_mock_teams() -> void:
 	# Spawn 5 quái vật để có đủ lượng XP cho Heroes thăng cấp
 	for i in range(5):
 		_spawn_enemy("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, Vector2(0, -80 + (i * 40)))
+	for i in range(5):
+		_spawn_enemy("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, Vector2(0, -80 + (i * 40)))
 
 func _spawn_hero(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, offset: Vector2) -> void:
 	var data := HeroData.new()
