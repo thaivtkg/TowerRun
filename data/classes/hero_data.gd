@@ -14,8 +14,8 @@ enum HeroClass { TANK, FIGHTER, ASSASSIN, MAGE, MARKSMAN, SUPPORT }
 @export var attack_speed: float = 1.0
 @export var crit_chance: float = 0.0
 @export var crit_damage: float = 2.0
-@export var attack_range: float = 1.0 # [RESTORED] Chuẩn bị cho Sprint Targeting/Grid
+@export var attack_range: float = 1.0 
 
 @export_group("Skills")
-@export var basic_attack: Resource # [RESTORED] Sử dụng Resource (hoặc SkillData) cho tương lai
-@export var active_skill: Resource # [RESTORED]
+@export var basic_attack: SkillData # [FIXED] Trả lại Contract đúng chuẩn SkillData
+@export var active_skill: SkillData # [FIXED] Trả lại Contract đúng chuẩn SkillData
