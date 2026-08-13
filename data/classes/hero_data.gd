@@ -1,14 +1,7 @@
 class_name HeroData
 extends Resource
 
-enum HeroClass {
-	TANK,
-	FIGHTER,
-	ASSASSIN,
-	MAGE,
-	MARKSMAN,
-	SUPPORT
-}
+enum HeroClass { TANK, FIGHTER, ASSASSIN, MAGE, MARKSMAN, SUPPORT }
 
 @export var id: String = ""
 @export var name: String = "Unknown Hero"
@@ -21,3 +14,8 @@ enum HeroClass {
 @export var attack_speed: float = 1.0
 @export var crit_chance: float = 0.0
 @export var crit_damage: float = 2.0
+@export var attack_range: float = 1.0 # [RESTORED] Chuẩn bị cho Sprint Targeting/Grid
+
+@export_group("Skills")
+@export var basic_attack: Resource # [RESTORED] Sử dụng Resource (hoặc SkillData) cho tương lai
+@export var active_skill: Resource # [RESTORED]

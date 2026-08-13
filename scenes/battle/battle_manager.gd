@@ -112,6 +112,14 @@ func _check_battle_end() -> void:
 
 func _end_battle(state: GameManager.GameState, log_message: String) -> void:
 	print("[BattleManager] ", log_message)
+	
+	# Xác định thắng thua để truyền vào ProgressionSystem
+	var is_victory: bool = (state == GameManager.GameState.REWARD)
+	
+	# Chỉ huy ProgressionSystem tổng kết XP dựa trên cống hiến
+	if progression_system != null:
+		progression_system.finalize_battle_xp(is_victory)
+	
 	print("[BattleManager] Cleaning up ", corpses.size(), " corpses.")
 	
 	for corpse in corpses:

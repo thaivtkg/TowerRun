@@ -1,12 +1,12 @@
 class_name ProgressionSystem
 extends Node
 
+# Dictionary tích lũy điểm Cống hiến thuần túy trong suốt trận đấu
 var contributions: Dictionary = {}
 
 func initialize(combat_system: CombatSystem) -> void:
 	if combat_system != null:
 		combat_system.metric_recorded.connect(_on_metric_recorded)
-		print("[ProgressionSystem] Initialized and listening to Combat Metrics.")
 
 func _on_metric_recorded(metric: CombatMetric) -> void:
 	if metric == null: return
@@ -26,17 +26,21 @@ func _calculate_source_contribution(hero: HeroEntity, metric: CombatMetric) -> v
 	
 	match h_class:
 		HeroData.HeroClass.ASSASSIN:
-			if metric.type == CombatMetric.MetricType.KILL:
-				points += 50.0
-			elif metric.type == CombatMetric.MetricType.CRIT:
-				points += 15.0
+			# Prototype Balance: Có XP từ base damage để chống cướp mạng, bonus mạnh cho crit/kill
+			if metric.type == CombatMetric.MetricType.DAMAGE: points += metric.value * 0.4
+			elif metric.type == CombatMetric.MetricType.KILL: points += 30.0
+			elif metric.type == CombatMetric.MetricType.CRIT: points += 10.0
+			
 		HeroData.HeroClass.MAGE, HeroData.HeroClass.MARKSMAN:
-			if metric.type == CombatMetric.MetricType.DAMAGE:
-				points += metric.value * 1.0
+			if metric.type == CombatMetric.MetricType.DAMAGE: points += metric.value * 1.0
+			
 		HeroData.HeroClass.FIGHTER:
-			if metric.type == CombatMetric.MetricType.DAMAGE:
-				points += metric.value * 0.5
-				
+			if metric.type == CombatMetric.MetricType.DAMAGE: points += metric.value * 0.7
+			
+		HeroData.HeroClass.SUPPORT:
+			# Prototype Balance: Tạm thời cho Support nhận XP từ đòn đánh thường để không bị khóa progression
+			if metric.type == CombatMetric.MetricType.DAMAGE: points += metric.value * 1.0
+			
 	_add_contribution(hero, points)
 
 func _calculate_target_contribution(hero: HeroEntity, metric: CombatMetric) -> void:
@@ -45,27 +49,42 @@ func _calculate_target_contribution(hero: HeroEntity, metric: CombatMetric) -> v
 	
 	match h_class:
 		HeroData.HeroClass.TANK:
-			if metric.type == CombatMetric.MetricType.DAMAGE:
-				points += metric.value * 1.0
+			if metric.type == CombatMetric.MetricType.DAMAGE: points += metric.value * 1.0
 		HeroData.HeroClass.FIGHTER:
-			if metric.type == CombatMetric.MetricType.DAMAGE:
-				points += metric.value * 0.5
-				
+			if metric.type == CombatMetric.MetricType.DAMAGE: points += metric.value * 0.3
+			
 	_add_contribution(hero, points)
 
 func _add_contribution(hero: HeroEntity, points: float) -> void:
 	if points <= 0.0: return
-	
-	# Lưu điểm tổng
 	contributions[hero] = contributions.get(hero, 0.0) + points
+
+# ==========================================
+# GIAI ĐOẠN 3: BATTLE END CONVERSION
+# Được gọi bởi BattleManager khi kết thúc trận
+# ==========================================
+func finalize_battle_xp(is_victory: bool) -> void:
+	print("\n--- BATTLE XP CONVERSION ---")
 	
-	# Bơm XP trực tiếp vào thanh Progression của Tướng
-	if hero.progression != null:
-		hero.progression.add_xp(points)
+	# Hệ số chiến thắng (Thắng x1.2, Thua x0.5)
+	var win_multiplier: float = 1.2 if is_victory else 0.5
+	
+	for hero in contributions.keys():
+		if not is_instance_valid(hero) or hero.progression == null:
+			continue
+			
+		var raw_contribution: float = contributions[hero]
+		# TODO: Sau này chèn logic Normalize / XP Budget tại đây
+		var final_xp: float = raw_contribution * win_multiplier
 		
-		# Log chi tiết quá trình thăng tiến
+		hero.progression.add_xp(final_xp)
+		
 		var class_str: String = HeroData.HeroClass.keys()[hero.data.hero_class]
-		print("[Progression] %s (%s) earned %.1f XP. (Level: %d | XP: %.1f/%.1f)" % [
-			hero.name, class_str, points, 
+		print("> %s (%s) | Raw Contrib: %.1f | Final XP (+%.1f) | Current: Lv%d (%.1f/%.1f)" % [
+			hero.name, class_str, raw_contribution, final_xp, 
 			hero.progression.level, hero.progression.current_xp, hero.progression.required_xp
 		])
+		
+	# Xóa rác chuẩn bị cho màn tiếp theo
+	contributions.clear()
+	print("----------------------------\n")
