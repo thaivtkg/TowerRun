@@ -54,13 +54,13 @@ func _spawn_mock_teams() -> void:
 	
 	# 1. Tank: Máu trâu, giáp dày -> Sẽ nhận XP từ sát thương gánh chịu
 	_spawn_hero("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8, 0.0, 1.5, Vector2(0, -80))
-	# 2. Assassin: Dame to, tỷ lệ chí mạng 50% -> Sẽ nhận XP từ Crit và Kill
+	# 2. Assassin: Dame to, tỷ lệ chí mạng 50% -> Sẽ nhận XP từ Crit, Kill và một phần Damage
 	_spawn_hero("Kira", HeroData.HeroClass.ASSASSIN, 100.0, 20.0, 5.0, 1.2, 0.5, 2.0, Vector2(0, -40))
 	# 3. Mage: Sát thương gốc cao -> Sẽ nhận XP từ lượng sát thương gây ra
 	_spawn_hero("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7, 0.1, 1.5, Vector2(0, 0))
 	# 4. Marksman: Đánh rất nhanh (spd 1.5) -> Sẽ nhận XP từ lượng sát thương gây ra
 	_spawn_hero("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5, 0.2, 1.5, Vector2(0, 40))
-	# 5. Support: Chỉ số thấp, hiện tại Support chưa có Rule cộng XP -> Sẽ nhận 0 XP (Chuẩn framework)
+	# 5. Support: Tạm nhận XP từ Damage Dealt cho đến khi Support utility metrics được triển khai.
 	_spawn_hero("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6, 0.0, 1.0, Vector2(0, 80))
 	
 	# Spawn 5 quái vật để có đủ lượng XP cho Heroes thăng cấp
