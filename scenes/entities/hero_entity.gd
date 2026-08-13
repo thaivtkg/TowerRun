@@ -2,7 +2,6 @@ class_name HeroEntity
 extends CombatEntity
 
 @export var data: HeroData
-var target: CombatEntity = null
 
 @onready var attack_timer: Timer = $AttackTimer
 
@@ -12,7 +11,6 @@ func initialize(initial_data: HeroData) -> void:
 		printerr("[HeroEntity] FATAL: HeroData is null.")
 		return
 		
-	# Gán tên Node bằng tên Data để log của CombatEntity in ra đúng tên nhân vật
 	name = data.name 
 	current_hp = data.base_hp
 	
@@ -25,7 +23,6 @@ func initialize(initial_data: HeroData) -> void:
 	attack_timer.start()
 	print("[HeroEntity] Initialized: ", data.name, " | HP: ", current_hp)
 
-# Override hàm _die() của base class để dọn dẹp các logic nội bộ
 func _die() -> void:
 	attack_timer.stop()
 	super()
@@ -34,6 +31,21 @@ func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	
 	if is_instance_valid(target) and not target.is_dead:
-		target.take_damage(data.base_attack)
-	else:
-		attack_timer.stop()
+		var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
+		event.is_crit = (randf() <= get_crit_chance())
+		event.crit_multiplier = get_crit_damage()
+		attack_requested.emit(event)
+
+# ==========================================
+# STATS OVERRIDES
+# Trỏ trực tiếp các hợp đồng chỉ số về HeroData
+# ==========================================
+
+func get_defense() -> float:
+	return data.base_defense if data != null else 0.0
+
+func get_crit_chance() -> float:
+	return data.crit_chance if data != null else 0.0
+
+func get_crit_damage() -> float:
+	return data.crit_damage if data != null else 2.0

@@ -10,3 +10,5 @@ extends Resource
 @export var base_defense: float = 2.0
 @export var attack_speed: float = 1.0
 @export var attack_range: float = 1.0
+@export var crit_chance: float = 0.0
+@export var crit_damage: float = 2.0
