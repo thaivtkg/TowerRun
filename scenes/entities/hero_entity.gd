@@ -5,6 +5,9 @@ extends CombatEntity
 
 @onready var attack_timer: Timer = $AttackTimer
 
+# Trạng thái tiến trình của Hero trong Run hiện tại
+var progression: HeroProgression = null
+
 func initialize(initial_data: HeroData) -> void:
 	data = initial_data
 	if data == null:
@@ -13,6 +16,10 @@ func initialize(initial_data: HeroData) -> void:
 		
 	name = data.name 
 	current_hp = data.base_hp
+	
+	# Khởi tạo thanh XP cho Hero
+	progression = HeroProgression.new()
+	progression.leveled_up.connect(_on_level_up)
 	
 	var safe_attack_speed: float = max(0.1, data.attack_speed)
 	attack_timer.wait_time = 1.0 / safe_attack_speed
@@ -36,9 +43,12 @@ func _on_attack_timer_timeout() -> void:
 		event.crit_multiplier = get_crit_damage()
 		attack_requested.emit(event)
 
+func _on_level_up(new_level: int) -> void:
+	# TODO: Ở Sprint sau, chúng ta sẽ gọi _level_up_stats() tại đây
+	print("[HeroEntity] 🌟 %s LEVELED UP to Level %d!" % [name, new_level])
+
 # ==========================================
 # STATS OVERRIDES
-# Trỏ trực tiếp các hợp đồng chỉ số về HeroData
 # ==========================================
 
 func get_defense() -> float:
