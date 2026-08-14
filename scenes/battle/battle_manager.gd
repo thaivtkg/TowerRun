@@ -13,6 +13,8 @@ var corpses: Array[CombatEntity] = []
 var combat_system: CombatSystem
 var targeting_system: TargetingSystem
 var progression_system: ProgressionSystem
+var skill_ui: SkillChoiceUI
+var choice_queue: Array[Dictionary] = []
 
 func _ready() -> void:
 	GameManager.change_state(GameManager.GameState.BATTLE)
@@ -44,8 +46,12 @@ func _init_systems() -> void:
 	progression_system = ProgressionSystem.new()
 	progression_system.name = "ProgressionSystem"
 	add_child(progression_system)
-	
 	progression_system.initialize(combat_system)
+	
+	# Khởi tạo UI Chọn Kỹ năng
+	skill_ui = SkillChoiceUI.new()
+	add_child(skill_ui)
+	skill_ui.skill_chosen.connect(_on_skill_chosen)
 
 func _spawn_mock_teams() -> void:
 	# ==========================================
@@ -73,12 +79,22 @@ func _spawn_hero(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: fl
 	data.base_hp = hp; data.base_attack = atk; data.base_defense = def; data.attack_speed = spd; 
 	data.crit_chance = crit_c; data.crit_damage = crit_d
 	
+	# --- SPRINT 4 FIX: Tự động nhét 5 kỹ năng thử nghiệm vào Pool Lv5 ---
+	for i in range(5):
+		var mock_ability = AbilityData.new()
+		mock_ability.name = "Kỹ năng Bí truyền " + str(i + 1)
+		mock_ability.description = "Mô tả của kỹ năng số " + str(i + 1)
+		mock_ability.ability_type = AbilityData.AbilityType.PASSIVE
+		data.pool_lv5_passives.append(mock_ability)
+	# ---------------------------------------------------------------------
+	
 	var hero := hero_scene.instantiate() as HeroEntity
 	add_child(hero)
 	hero.global_position = hero_spawn.global_position + offset
 	
 	hero.died.connect(_on_entity_died.bind(true))
 	hero.attack_requested.connect(combat_system.process_attack)
+	hero.pending_skill_choice.connect(_on_pending_skill_choice)
 	hero.initialize(data)
 	heroes.append(hero)
 
@@ -128,3 +144,32 @@ func _end_battle(state: GameManager.GameState, log_message: String) -> void:
 	corpses.clear()
 	
 	GameManager.change_state(state)
+	
+func _on_pending_skill_choice(hero: HeroEntity, milestone: int, choices: Array[AbilityData]) -> void:
+	choice_queue.append({"hero": hero, "milestone": milestone, "choices": choices})
+	
+	# Nếu game không bị pause (chưa có UI nào đang bật), mở ngay UI đầu tiên
+	if not get_tree().paused:
+		_process_next_choice()
+
+func _process_next_choice() -> void:
+	if choice_queue.is_empty(): return
+	
+	var next = choice_queue[0]
+	skill_ui.show_choices(next.hero.name, next.milestone, next.choices)
+
+func _on_skill_chosen(chosen: AbilityData, all_choices: Array[AbilityData]) -> void:
+	var current = choice_queue.pop_front()
+	current.hero.apply_skill_choice(current.milestone, chosen, all_choices)
+	
+	# Nếu Hero nhảy liền 2 cấp (VD: ăn XP thẳng lên Lv10), mở tiếp UI Lv10 ngay lập tức
+	if choice_queue.size() > 0:
+		_process_next_choice()
+
+func _input(event: InputEvent) -> void:
+	# Bắt trực tiếp phím SPACE cứng, không thông qua ui_accept để tránh lỗi focus
+	if event is InputEventKey and event.pressed and event.keycode == KEY_SPACE:
+		print("\n[DEBUG] 🚀 BƠM 800 XP CHO TOÀN BỘ HEROES!")
+		for hero in heroes:
+			if is_instance_valid(hero) and hero.progression != null:
+				hero.progression.add_xp(800.0)

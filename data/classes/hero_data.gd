@@ -16,6 +16,14 @@ enum HeroClass { TANK, FIGHTER, ASSASSIN, MAGE, MARKSMAN, SUPPORT }
 @export var crit_damage: float = 2.0
 @export var attack_range: float = 1.0 
 
-@export_group("Skills")
-@export var basic_attack: SkillData # [FIXED] Trả lại Contract đúng chuẩn SkillData
-@export var active_skill: SkillData # [FIXED] Trả lại Contract đúng chuẩn SkillData
+@export_group("Core Abilities")
+@export var basic_attack: AbilityData 
+# Các kỹ năng đã được unlock trong run hiện tại sẽ được lưu vào runtime state (HeroEntity), 
+# không lưu cứng ở đây để bảo toàn Resource gốc.
+
+@export_group("Milestone Skill Pools")
+@export var pool_lv5_passives: Array[AbilityData] = []
+@export var pool_lv10_actives: Array[AbilityData] = []
+@export var pool_lv15_utilities: Array[AbilityData] = []
+@export var pool_lv20_upgrades: Array[AbilityData] = []
+@export var pool_lv25_signatures: Array[AbilityData] = []

@@ -1,7 +1,12 @@
 [gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://txrow4ujxjnr"]
 
 [ext_resource type="Script" uid="uid://dxwfyho2a08kn" path="res://data/classes/hero_data.gd" id="1_4vmw8"]
+[ext_resource type="Script" uid="uid://cekmi44787o2m" path="res://data/abilities/ability_data.gd" id="1_u7jna"]
+[ext_resource type="Resource" uid="uid://bb6l1guhi1cs4" path="res://data/A.tres" id="2_sid3i"]
+[ext_resource type="Resource" uid="uid://bxmrhywacgpm5" path="res://data/B.tres" id="3_vxhx6"]
+[ext_resource type="Resource" uid="uid://b6bd5vxt2owj5" path="res://data/C.tres" id="4_lq2qa"]
 
 [resource]
 script = ExtResource("1_4vmw8")
+pool_lv5_passives = Array[ExtResource("1_u7jna")]([ExtResource("2_sid3i"), ExtResource("3_vxhx6"), ExtResource("4_lq2qa")])
 metadata/_custom_type_script = "uid://dxwfyho2a08kn"
