@@ -56,31 +56,29 @@ func _process(delta: float) -> void:
     
     for ability in unlocked_abilities:
         ability.process_cooldown(delta)
-        # [FIX ISSUE #2] Truyền current_energy vào
         if ability.data.ability_type == AbilityData.AbilityType.ACTIVE and ability.is_ready(current_energy):
-            # [FIX ISSUE #4] Nếu AbilitySystem trả về false (do không có target), nó sẽ chờ frame tiếp theo
-            ability_requested.emit(ability)
+            # [FIX P2.1] Chỉ request nếu là buff bản thân, hoặc có mục tiêu hợp lệ
+            if ability.data.target_rule == AbilityData.TargetRule.SELF or (is_instance_valid(target) and not target.is_dead):
+                ability_requested.emit(ability)
 
 func _on_attack_timer_timeout() -> void:
     if is_dead or data == null: return
+    if not is_instance_valid(target) or target.is_dead: return # [FIX P1.1] Không đánh không khí
     
-    # [FIX ISSUE #5] KIỂM TRA ULTIMATE
     if current_energy >= max_energy:
         for ability in unlocked_abilities:
             if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE and ability.is_ready(current_energy):
                 ability_requested.emit(ability)
-                # BỎ dòng `current_energy = 0` ở đây. Việc xả Energy đã giao cho AbilitySystem.
                 return 
     
-    # ĐÁNH THƯỜNG VÀ TÍCH NĂNG LƯỢNG
+    # Chỉ đi tới đây khi có target hợp lệ -> Nhận Energy chuẩn xác
     if basic_attack_ability != null:
         ability_requested.emit(basic_attack_ability)
         _gain_energy(energy_per_attack)
     else:
-        if is_instance_valid(target) and not target.is_dead:
-            var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
-            attack_requested.emit(event)
-            _gain_energy(energy_per_attack)
+        var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
+        attack_requested.emit(event)
+        _gain_energy(energy_per_attack)
 
 # Hàm tăng Năng lượng công khai (để hệ thống khác có thể gọi)
 func _gain_energy(amount: float) -> void:

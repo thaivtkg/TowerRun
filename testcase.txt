@@ -1,0 +1,189 @@
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+OpenGL API 3.3.0 NVIDIA 610.88 - Compatibility - Using Device: NVIDIA - NVIDIA GeForce RTX 3050 Laptop GPU
+
+[GameManager] Initialized. Current State: MAIN_MENU
+[SaveManager] Ready. Save path: C:/Users/Kuroberus/AppData/Roaming/Godot/app_userdata/Tower_AutoBattler/
+[DataManager] Initializing data...
+[DataManager] Loaded 0 skills, 0 heroes, 0 enemies.
+[GameManager] State transition: MAIN_MENU -> BATTLE
+=====================================
+[BattleManager] ⚔️ BATTLE STARTED ⚔️
+=====================================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+
+==================== [TEST TC-03: ENERGY & ULTIMATE] ====================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+
+[AbilitySystem] 💥 Kira2 casts [ULTIMATE] New Ability!
+[CombatSystem] Kira2 -> Slime 6 [Normal] | Base: 150.0 | DEF: 5.0 | Final: 150.0
+[Combat] Slime 6 takes 150.0 damage! (HP: 350.0)
+[TC-03] HP Before: 500.0 | HP After: 350.0
+>>> 🟢 TC-03 PASSED!
+
+
+==================== [TEST TC-04: PASSIVE RECURSION] ====================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+[TC-04] Triggering 1 Crit Damage Event...
+[CombatSystem] Kira -> Slime 1 [💥 CRIT!] | Base: 50.0 | DEF: 5.0 | Final: 95.2
+[Combat] Slime 1 takes 95.2 damage! (HP: 904.8)
+[AbilitySystem] ⚙️ PASSIVE TRIGGERED: [Recursive Blade] by Kira
+[CombatSystem] Kira -> Slime 2 [💥 CRIT!] | Base: 20.0 | DEF: 5.0 | Final: 40.0
+[Combat] Slime 2 takes 40.0 damage! (HP: 40.0)
+[TC-04] Enemy HP from 1000.0 to 904.8 (Expected finite drop without crash)
+>>> 🟢 TC-04 PASSED: No infinite loop or stack overflow!
+
+
+==================== [TEST TC-02: TARGETING RULES] ====================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+[TC-02] SELF: [&"H1"] (Expected: ['H1'])
+[TC-02] LOWEST_HP_ENEMY: [&"E2"] (Expected: ['E2'])
+[TC-02] NEAREST_ENEMY: [&"E2"] (Expected: ['E2'])
+[TC-02] LOWEST_HP_ALLY: [&"H2"] (Expected: ['H2'])
+[TC-02] ALL_ENEMIES count: 3 (Expected: 3)
+[TC-02] ALL_ALLIES count: 3 (Expected: 3)
+[TC-02] NEAREST_ENEMY after E2 dead: [&"E1"] (Expected: ['E1'])
+>>> 🟢 TC-02 PASSED!
+
+
+==================== [TEST TC-01: ACTIVE ABILITY PIPELINE] ====================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+
+[AbilitySystem] 💥 Kira casts [ACTIVE] Fireball!
+[CombatSystem] Kira -> Slime 1 [💥 CRIT!] | Base: 250.0 | DEF: 5.0 | Final: 500.0
+[Combat] Slime 1 takes 500.0 damage! (HP: 0.0)
+[Combat] ☠️ Slime 1 has died (Became a Corpse).
+[BattleManager] 🏆 VICTORY - Floor Cleared!
+--- REWARD PHASE STARTED ---
+
+--- BATTLE XP CONVERSION ---
+----------------------------
+
+[BattleManager] Reward Phase Complete. Cleaning up 1 corpses.
+[TC-01] Execute Success: true
+[TC-01] Enemy HP: 500.0 -> 0.0
+>>> 🟢 TC-01 PASSED!
+
+
+==================== [TEST TC-05: INTEGRATION POST-BATTLE QUEUE] ====================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+[TC-05] Emitting milestone signals to simulate leveling up...
+[HeroEntity] Kira2 reached Milestone Lv5. Choice pending.
+[HeroEntity] Kira2 reached Milestone Lv10. Choice pending.
+[HeroEntity] Kira2 reached Milestone Lv15. Choice pending.
+[TC-05] Actual Pending Milestones: [5, 10, 15]
+[BattleManager] Victory Test
+--- REWARD PHASE STARTED ---
+
+--- BATTLE XP CONVERSION ---
+> Kira (ASSASSIN) | Raw Contrib: 240.0 | Final XP (+288.0) | Current: Lv3 (38.0/200.0)
+----------------------------
+
+>>> 🟢 TC-05 PASSED!
+
+
+=====================================
+[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG TIẾP THEO 🚀
+=====================================
+[EnemyEntity] Initialized: Slime Lv2 - 1 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 2 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 3 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 4 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 5 | HP: 120.0
+[HeroEntity] Kira2 unlocked ability: [ACTIVE] Skill_5_2
+[HeroEntity] Kira2 unlocked ability: [ACTIVE] Skill_10_3
+[HeroEntity] Kira2 unlocked ability: [ACTIVE] Skill_15_2
+[BattleManager] Reward Phase Complete. Cleaning up 0 corpses.
+
+[AbilitySystem] 💥 Kira2 casts [ACTIVE] Skill_5_2!
+
+[AbilitySystem] 💥 Kira2 casts [ACTIVE] Skill_10_3!
+
+[AbilitySystem] 💥 Kira2 casts [ACTIVE] Skill_15_2!
+
+==================== [TEST TC-06: XP REGRESSION (FULL PATH)] ====================
+[EnemyEntity] Initialized: Slime 1 | HP: 80.0
+[EnemyEntity] Initialized: Slime 2 | HP: 80.0
+[EnemyEntity] Initialized: Slime 3 | HP: 80.0
+[EnemyEntity] Initialized: Slime 4 | HP: 80.0
+[EnemyEntity] Initialized: Slime 5 | HP: 80.0
+[CombatSystem] Kira -> Slime 6 [Normal] | Base: 100.0 | DEF: 5.0 | Final: 95.2
+[Combat] Slime 6 takes 95.2 damage! (HP: 204.8)
+[CombatSystem] Kira -> Slime 6 [💥 CRIT!] | Base: 50.0 | DEF: 5.0 | Final: 95.2
+[Combat] Slime 6 takes 95.2 damage! (HP: 109.5)
+[CombatSystem] Kira -> Slime 6 [Normal] | Base: 200.0 | DEF: 5.0 | Final: 190.5
+[Combat] Slime 6 takes 190.5 damage! (HP: -81.0)
+[Combat] ☠️ Slime 6 has died (Became a Corpse).
+
+--- BATTLE XP CONVERSION ---
+> Kira (ASSASSIN) | Raw Contrib: 192.4 | Final XP (+230.9) | Current: Lv2 (130.9/150.0)
+----------------------------
+
+[TC-06] Final XP Gained: 130.9 (Expected: 216.0)
+>>> 🟢 TC-06 PASSED!
+
+
+=====================================
+[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG TIẾP THEO 🚀
+=====================================
+[EnemyEntity] Initialized: Slime Lv2 - 1 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 2 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 3 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 4 | HP: 120.0
+[EnemyEntity] Initialized: Slime Lv2 - 5 | HP: 120.0
+[CombatSystem] Robin -> Slime 9 [Normal] | Base: 15.0 | DEF: 5.0 | Final: 14.3
+[Combat] Slime 9 takes 14.3 damage! (HP: 65.7)
+
+[AbilitySystem] 💥 Kira casts [ACTIVE] New Ability!
+[CombatSystem] Kira -> Slime 7 [💥 CRIT!] | Base: 15.0 | DEF: 5.0 | Final: 28.6
+[Combat] Slime 7 takes 28.6 damage! (HP: 51.4)
+[CombatSystem] Slime 7 -> Kira [Normal] | Base: 8.0 | DEF: 0.0 | Final: 8.0
+[Combat] Kira takes 8.0 damage! (HP: 92.0)
+[CombatSystem] Slime 8 -> Jaina [Normal] | Base: 8.0 | DEF: 2.0 | Final: 7.8
+[Combat] Jaina takes 7.8 damage! (HP: 72.2)
+[CombatSystem] Slime 9 -> Robin [Normal] | Base: 8.0 | DEF: 5.0 | Final: 7.6
+[Combat] Robin takes 7.6 damage! (HP: 82.4)
+[CombatSystem] Slime 10 -> Soraka [Normal] | Base: 8.0 | DEF: 10.0 | Final: 7.3
+[Combat] Soraka takes 7.3 damage! (HP: 112.7)
+[CombatSystem] Arthur -> Slime 7 [Normal] | Base: 5.0 | DEF: 5.0 | Final: 4.8
+[Combat] Slime 7 takes 4.8 damage! (HP: 46.7)
+[CombatSystem] Robin -> Slime 9 [Normal] | Base: 15.0 | DEF: 5.0 | Final: 14.3
+[Combat] Slime 9 takes 14.3 damage! (HP: 51.4)
+[CombatSystem] Jaina -> Slime 8 [Normal] | Base: 25.0 | DEF: 5.0 | Final: 23.8
+[Combat] Slime 8 takes 23.8 damage! (HP: 56.2)
+[CombatSystem] Slime Lv2 - 1 -> Arthur [Normal] | Base: 10.0 | DEF: 30.0 | Final: 7.7
+[Combat] Arthur takes 7.7 damage! (HP: 242.3)
+[CombatSystem] Slime Lv2 - 2 -> Kira [Normal] | Base: 10.0 | DEF: 0.0 | Final: 10.0
+[Combat] Kira takes 10.0 damage! (HP: 82.0)
+[CombatSystem] Slime Lv2 - 3 -> Jaina [Normal] | Base: 10.0 | DEF: 2.0 | Final: 9.8
+[Combat] Jaina takes 9.8 damage! (HP: 62.4)
+[CombatSystem] Slime Lv2 - 4 -> Robin [Normal] | Base: 10.0 | DEF: 5.0 | Final: 9.5
+[Combat] Robin takes 9.5 damage! (HP: 72.9)
+[CombatSystem] Slime Lv2 - 5 -> Soraka [Normal] | Base: 10.0 | DEF: 10.0 | Final: 9.1
+[Combat] Soraka takes 9.1 damage! (HP: 103.6)
+[CombatSystem] Soraka -> Slime 10 [Normal] | Base: 3.0 | DEF: 5.0 | Final: 2.9
+[Combat] Slime 10 takes 2.9 damage! (HP: 77.1)
+--- Debugging process stopped ---

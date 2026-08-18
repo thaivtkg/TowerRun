@@ -41,8 +41,10 @@ func execute_ability(ability: Ability) -> bool:
             
     return true # Cast thành công
 
+# Theo dõi các Passive đang chạy để cho phép Chain nhưng chặn Cycle
+var _executing_passives: Array[Ability] = []
+
 func trigger_passives(source: CombatEntity, condition: AbilityData.TriggerCondition) -> void:
-    if _passive_execution_depth > 0: return # [FIX ISSUE #3] Guard chặn đệ quy vô hạn
     if not source is HeroEntity: return
     
     var hero = source as HeroEntity
@@ -50,21 +52,22 @@ func trigger_passives(source: CombatEntity, condition: AbilityData.TriggerCondit
         if ability.data.ability_type == AbilityData.AbilityType.PASSIVE:
             if ability.data.trigger_condition == condition and ability.is_ready(hero.current_energy):
                 
+                # [FIX P1.5] Chặn tự gọi đệ quy (Cycle), nhưng cho phép gọi chéo (Chain)
+                if ability in _executing_passives: continue 
+                
                 var targets = targeting_system.get_targets_for_rule(hero, ability.data.target_rule)
                 if targets.is_empty(): continue
                 
-                _passive_execution_depth += 1 # Khóa guard
+                _executing_passives.append(ability) # Khóa Ability này
                 
-                if ability.data.cooldown > 0:
-                    ability.start_cooldown()
-                    
+                if ability.data.cooldown > 0: ability.start_cooldown()
                 print("[AbilitySystem] ⚙️ PASSIVE TRIGGERED: [%s] by %s" % [ability.data.name, hero.name])
                 
                 for target in targets:
                     for effect in ability.data.effects:
                         _apply_effect(effect, hero, target)
                         
-                _passive_execution_depth -= 1 # Mở guard
+                _executing_passives.erase(ability) # Mở khóa
 
 func _on_damage_dealt(source: CombatEntity, target: CombatEntity, _amount: float, is_crit: bool) -> void:
     trigger_passives(source, AbilityData.TriggerCondition.ON_ATTACK)
