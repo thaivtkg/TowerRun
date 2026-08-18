@@ -3,6 +3,8 @@ extends Node
 
 # Tín hiệu này sẽ được ProgressionSystem lắng nghe ở các Task sau
 signal metric_recorded(metric: CombatMetric)
+signal damage_dealt(source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool)
+signal entity_killed(killer: CombatEntity, victim: CombatEntity)
 
 func process_attack(event: DamageEvent) -> void:
 	if event == null: return
@@ -31,6 +33,13 @@ func process_attack(event: DamageEvent) -> void:
 	
 	# Áp dụng sát thương
 	event.target.take_damage(event.final_damage)
+	
+	# --- SPRINT 4: KÍCH HOẠT EVENT CHO PASSIVE ---
+	# (Biến final_damage có thể khác tên tùy theo code hiện tại của bạn)
+	damage_dealt.emit(event.source, event.target, event.base_damage, event.is_crit)
+	
+	if event.target.is_dead:
+		entity_killed.emit(event.source, event.target)
 	
 	# ==========================================
 	# REPORTING METRICS (Phóng viên chiến trường)

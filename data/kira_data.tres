@@ -1,8 +1,17 @@
-[gd_resource type="Resource" script_class="AbilityData" format=3 uid="uid://bs58buxatlo31"]
+[gd_resource type="Resource" script_class="HeroData" format=3 uid="uid://txrow4ujxjnr"]
 
-[ext_resource type="Script" uid="uid://8uqu277fi25p" path="res://data/abilities/effect_data.gd" id="1_sgbd5"]
+[ext_resource type="Resource" uid="uid://bs58buxatlo31" path="res://data/kira_basic_attack.tres" id="1_23wr5"]
 [ext_resource type="Script" uid="uid://cekmi44787o2m" path="res://data/abilities/ability_data.gd" id="2_gvqu5"]
+[ext_resource type="Resource" uid="uid://c055r8mbenwfb" path="res://data/BloodThirst.tres" id="3_6pc8p"]
+[ext_resource type="Resource" uid="uid://dh7qjq8sg7wuj" path="res://data/Kira_Ultimate.tres" id="4_6pc8p"]
+[ext_resource type="Script" uid="uid://dxwfyho2a08kn" path="res://data/classes/hero_data.gd" id="4_u8mya"]
 
 [resource]
-script = ExtResource("2_gvqu5")
-metadata/_custom_type_script = "uid://cekmi44787o2m"
+script = ExtResource("4_u8mya")
+name = "Kira"
+hero_class = 2
+base_attack = 20.0
+crit_chance = 0.5
+basic_attack = ExtResource("1_23wr5")
+pool_lv5_passives = Array[ExtResource("2_gvqu5")]([ExtResource("3_6pc8p"), ExtResource("4_6pc8p")])
+metadata/_custom_type_script = "uid://dxwfyho2a08kn"

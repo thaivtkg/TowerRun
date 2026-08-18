@@ -13,4 +13,3 @@ enemy_scene = ExtResource("3_w6b63")
 position = Vector2(120, 317)
 
 [node name="EnemySpawn" type="Marker2D" parent="." unique_id=1126203650]
-position = Vector2(939, 298)

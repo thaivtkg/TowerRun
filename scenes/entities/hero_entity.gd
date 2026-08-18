@@ -2,16 +2,24 @@ class_name HeroEntity
 extends CombatEntity
 
 signal pending_skill_choice(hero: HeroEntity, milestone: int, choices: Array[AbilityData])
+signal ability_requested(ability: Ability) 
 
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
 var progression: HeroProgression = null
 
-# ==========================================
 # SPRINT 4: RUNTIME ABILITIES STATE
+var unlocked_abilities: Array[Ability] = [] 
+var basic_attack_ability: Ability           
+var runtime_pools: Dictionary = {} 
+var pending_milestones: Array[int] = []
+
 # ==========================================
-var unlocked_abilities: Array[AbilityData] = []
-var runtime_pools: Dictionary = {} # Quản lý Pool dùng một lần cho Run hiện tại
+# SPRINT 4: ENERGY SYSTEM (HỆ THỐNG NĂNG LƯỢNG)
+# ==========================================
+var current_energy: float = 0.0
+var max_energy: float = 100.0
+var energy_per_attack: float = 25.0 # Đánh 4 phát là xả Ultimate
 
 func initialize(initial_data: HeroData) -> void:
 	data = initial_data
@@ -24,7 +32,9 @@ func initialize(initial_data: HeroData) -> void:
 	progression.leveled_up.connect(_on_level_up)
 	progression.milestone_reached.connect(_on_milestone_reached)
 	
-	# Clone data vào Runtime để không làm hỏng Resource gốc
+	if data.basic_attack != null:
+		basic_attack_ability = Ability.new(self, data.basic_attack)
+	
 	runtime_pools[5] = data.pool_lv5_passives.duplicate()
 	runtime_pools[10] = data.pool_lv10_actives.duplicate()
 	runtime_pools[15] = data.pool_lv15_utilities.duplicate()
@@ -41,47 +51,75 @@ func _die() -> void:
 	attack_timer.stop()
 	super()
 
+func _process(delta: float) -> void:
+	if is_dead: return
+	
+	for ability in unlocked_abilities:
+		ability.process_cooldown(delta)
+		# Skill Active tự cast khi hồi xong (Cooldown-based)
+		if ability.data.ability_type == AbilityData.AbilityType.ACTIVE and ability.is_ready():
+			ability_requested.emit(ability)
+
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
-	if is_instance_valid(target) and not target.is_dead:
-		var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
-		event.is_crit = (randf() <= get_crit_chance())
-		event.crit_multiplier = get_crit_damage()
-		attack_requested.emit(event)
-
-func _on_level_up(new_level: int) -> void:
-	print("[HeroEntity] 🌟 %s is now Level %d!" % [name, new_level])
-
-# ==========================================
-# RANDOM REVEAL & CHOICE LOGIC
-# ==========================================
-func _on_milestone_reached(milestone: int) -> void:
-	var pool: Array = runtime_pools.get(milestone, [])
-	if pool.is_empty():
-		print("[HeroEntity] WARNING: No abilities found in pool for Lv", milestone)
-		return
-		
-	pool.shuffle() # Xào bài (Controlled Randomness)
-	var choices: Array[AbilityData] = []
-	var reveal_count: int = min(3, pool.size()) # Rút tối đa 3 thẻ
 	
-	for i in range(reveal_count):
-		choices.append(pool[i])
+	# 1. KIỂM TRA CHIÊU CUỐI KHI ĐẦY NĂNG LƯỢNG
+	if current_energy >= max_energy:
+		for ability in unlocked_abilities:
+			if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+				ability_requested.emit(ability)
+				current_energy = 0.0 # Xả sạch năng lượng
+				print("[HeroEntity] 🌟 %s USED ULTIMATE! Energy reset to 0." % name)
+				return # Đã xả Ultimate thì bỏ qua đòn đánh thường của lượt này
+	
+	# 2. ĐÁNH THƯỜNG VÀ TÍCH NĂNG LƯỢNG
+	if basic_attack_ability != null:
+		ability_requested.emit(basic_attack_ability)
+		_gain_energy(energy_per_attack)
+	else:
+		if is_instance_valid(target) and not target.is_dead:
+			var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
+			attack_requested.emit(event)
+			_gain_energy(energy_per_attack)
+
+# Hàm tăng Năng lượng công khai (để hệ thống khác có thể gọi)
+func _gain_energy(amount: float) -> void:
+	if current_energy < max_energy:
+		current_energy = min(current_energy + amount, max_energy)
+		# Tạm tắt log này để Console đỡ rác, bạn có thể bật lại nếu muốn xem Năng lượng nảy
+		# print("⚡ %s Energy: %d/%d" % [name, current_energy, max_energy])
+
+func _on_level_up(_new_level: int) -> void: pass
+
+func _on_milestone_reached(milestone: int) -> void:
+	pending_milestones.append(milestone)
+	print("[HeroEntity] %s reached Milestone Lv%d. Choice pending." % [name, milestone])
+
+func pull_milestone_choices(milestone: int) -> Array[AbilityData]:
+	var pool: Array = runtime_pools.get(milestone, [])
+	if pool.is_empty(): return []
 		
-	pending_skill_choice.emit(self, milestone, choices)
+	pool.shuffle() 
+	var choices: Array[AbilityData] = []
+	var reveal_count: int = min(3, pool.size())
+	
+	for i in range(reveal_count): 
+		choices.append(pool[i])
+	return choices
 
 func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[AbilityData]) -> void:
-	unlocked_abilities.append(chosen)
+	if not chosen in revealed:
+		printerr("[HeroEntity] Invalid skill choice. Rejected.")
+		return
+		
+	var runtime_ability = Ability.new(self, chosen)
+	unlocked_abilities.append(runtime_ability)
+	
 	print("[HeroEntity] %s unlocked ability: [%s] %s" % [name, AbilityData.AbilityType.keys()[chosen.ability_type], chosen.name])
 	
-	# Core mechanic: Xóa VĨNH VIỄN các kỹ năng đã reveal khỏi pool của mốc này
 	var pool: Array = runtime_pools.get(milestone, [])
-	for ability in revealed:
-		pool.erase(ability)
+	for ability in revealed: pool.erase(ability)
 
-# ==========================================
-# STATS OVERRIDES
-# ==========================================
 func get_defense() -> float: return data.base_defense if data != null else 0.0
 func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0

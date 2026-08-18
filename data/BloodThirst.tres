@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3 uid="uid://c055r8mbenwfb"]
+
+[ext_resource type="Script" uid="uid://8uqu277fi25p" path="res://data/abilities/effect_data.gd" id="1_37jba"]
+[ext_resource type="Script" uid="uid://fua8wtf0i8hk" path="res://data/abilities/heal_effect_data.gd" id="2_4mxdb"]
+[ext_resource type="Script" uid="uid://cekmi44787o2m" path="res://data/abilities/ability_data.gd" id="2_fftfc"]
+
+[sub_resource type="Resource" id="Resource_fv5p8"]
+script = ExtResource("2_4mxdb")
+metadata/_custom_type_script = "uid://fua8wtf0i8hk"
+
+[resource]
+script = ExtResource("2_fftfc")
+ability_type = 0
+target_rule = 0
+trigger_condition = 2
+cooldown = 0.0
+effects = Array[ExtResource("1_37jba")]([SubResource("Resource_fv5p8")])
+metadata/_custom_type_script = "uid://cekmi44787o2m"

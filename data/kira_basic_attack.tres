@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3 uid="uid://bs58buxatlo31"]
+
+[ext_resource type="Script" uid="uid://8uqu277fi25p" path="res://data/abilities/effect_data.gd" id="1_gskcq"]
+[ext_resource type="Script" uid="uid://ca1q8rjlmknkg" path="res://data/abilities/damage_effect_data.gd" id="2_cya1v"]
+[ext_resource type="Script" uid="uid://cekmi44787o2m" path="res://data/abilities/ability_data.gd" id="3_dl5bl"]
+
+[sub_resource type="Resource" id="Resource_43fw1"]
+script = ExtResource("2_cya1v")
+base_damage = 15.0
+damage_type = 0
+metadata/_custom_type_script = "uid://ca1q8rjlmknkg"
+
+[resource]
+script = ExtResource("3_dl5bl")
+cooldown = 1.0
+effects = Array[ExtResource("1_gskcq")]([SubResource("Resource_43fw1")])
+metadata/_custom_type_script = "uid://cekmi44787o2m"

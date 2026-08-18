@@ -8,12 +8,12 @@ extends Node
 
 const HERO_DATA_DIR: String = "res://data/heroes/"
 const ENEMY_DATA_DIR: String = "res://data/enemies/"
-const SKILL_DATA_DIR: String = "res://data/skills/"
+const ABILITY_DATA_DIR: String = "res://data/abilities/"
 
 # Dictionaries lưu trữ data sau khi load (Key: ID, Value: Resource)
 var heroes: Dictionary = {}
 var enemies: Dictionary = {}
-var skills: Dictionary = {}
+var abilities: Dictionary = {}
 
 func _ready() -> void:
 	if debug_mode:
@@ -26,12 +26,12 @@ func _ready() -> void:
 # Lỗi 2: Export game trên Godot sẽ tự đổi đuôi file .tres thành .tres.remap -> Lỗi load file.
 # Khắc phục: Chủ động cắt hậu tố .remap nếu có.
 func _load_all_data() -> void:
-	skills = _load_resources_from_dir(SKILL_DATA_DIR)
+	abilities = _load_resources_from_dir(ABILITY_DATA_DIR)
 	heroes = _load_resources_from_dir(HERO_DATA_DIR)
 	enemies = _load_resources_from_dir(ENEMY_DATA_DIR)
 	
 	if debug_mode:
-		print("[DataManager] Loaded %d skills, %d heroes, %d enemies." % [skills.size(), heroes.size(), enemies.size()])
+		print("[DataManager] Loaded %d skills, %d heroes, %d enemies." % [abilities.size(), heroes.size(), enemies.size()])
 
 func _load_resources_from_dir(path: String) -> Dictionary:
 	var result_dict: Dictionary = {}
@@ -79,5 +79,5 @@ func get_hero(id: String) -> HeroData:
 func get_enemy(id: String) -> EnemyData:
 	return enemies.get(id, null)
 	
-func get_skill(id: String) -> SkillData:
-	return skills.get(id, null)
+func get_ability(id: String) -> SkillData:
+	return abilities.get(id, null)
