@@ -8,6 +8,7 @@ const MAX_LEVEL: int = 25
 var level: int = 1
 var current_xp: float = 0.0
 var required_xp: float = 100.0
+var current_level: int = 1
 
 func add_xp(amount: float) -> void:
 	if amount <= 0.0 or level >= MAX_LEVEL:

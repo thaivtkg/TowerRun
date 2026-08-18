@@ -287,12 +287,19 @@ func _run_tc_03_energy_and_ultimate() -> void:
 # TC-04: Passive Recursion Guard
 # ------------------------------------------------------------------------------
 func _run_tc_04_passive_recursion() -> void:
-    print("\n==================== [TEST TC-04: PASSIVE RECURSION] ====================")
+    print("\n==================== [TEST TC-04: PASSIVE RECURSION & COOLDOWN] ====================")
     _reset_test_battlefield()
+    
+    while enemies.size() > 1:
+        var extra = enemies.pop_back()
+        if is_instance_valid(extra): extra.queue_free()
+        
     var hero = heroes[0] as HeroEntity
     var enemy = enemies[0]
     enemy.current_hp = 1000.0
+    enemy.data.base_defense = 0.0 # Triệt tiêu giáp để sát thương chuẩn xác tuyệt đối
     
+    # Subtest 1: Ngăn đệ quy vô hạn (Cooldown = 0, Can Crit = true)
     var passive_data = AbilityData.new()
     passive_data.name = "Recursive Blade"
     passive_data.ability_type = AbilityData.AbilityType.PASSIVE
@@ -303,19 +310,50 @@ func _run_tc_04_passive_recursion() -> void:
     dmg.can_crit = true
     passive_data.effects.append(dmg)
     
+    var passive_ability = Ability.new(hero, passive_data)
     hero.unlocked_abilities.clear()
-    hero.unlocked_abilities.append(Ability.new(hero, passive_data))
+    hero.unlocked_abilities.append(passive_ability)
     hero.data.crit_chance = 1.0
     
     var start_hp = enemy.current_hp
-    print("[TC-04] Triggering 1 Crit Damage Event...")
+    # Đòn đánh gốc: 50 dmg (Crit x2 = 100 dmg). 
+    # Passive kích hoạt đúng 1 lần: 20 dmg (Crit x2 = 40 dmg).
+    # Tổng mất máu kỳ vọng: 100 + 40 = 140 dmg.
     var event = DamageEvent.new(hero, enemy, 50.0, DamageEvent.DamageType.PHYSICAL)
     event.is_crit = true
     event.crit_multiplier = 2.0
     combat_system.process_attack(event)
     
-    print("[TC-04] Enemy HP from %.1f to %.1f (Expected finite drop without crash)" % [start_hp, enemy.current_hp])
-    print(">>> 🟢 TC-04 PASSED: No infinite loop or stack overflow!\n")
+    var expected_hp = start_hp - 140.0
+    print("[TC-04.1] Anti-Recursion HP: %.1f -> %.1f (Expected: %.1f)" % [start_hp, enemy.current_hp, expected_hp])
+    assert(is_equal_approx(enemy.current_hp, expected_hp), "FAIL TC-04.1: Passive triggered more/less than exactly 1 time")
+    
+    # Subtest 2: Kiểm tra Cooldown của Passive (Cooldown = 2.0s)
+    passive_data.cooldown = 2.0
+    passive_ability.current_cooldown = 0.0
+    
+    # Trigger lần 1 -> Kích hoạt thành công -> Bắt đầu Cooldown 2.0s
+    var hp_before_cd = enemy.current_hp
+    combat_system.process_attack(event)
+    var hp_after_first = enemy.current_hp
+    assert(is_equal_approx(hp_after_first, hp_before_cd - 140.0), "FAIL TC-04.2: First trigger failed")
+    assert(passive_ability.current_cooldown > 0.0, "FAIL TC-04.2: Cooldown did not start")
+    
+    # Trigger lần 2 ngay lập tức -> Cooldown đang chạy -> Passive KHÔNG được kích hoạt (Chỉ nhận 100 dmg đòn gốc)
+    combat_system.process_attack(event)
+    var hp_after_second = enemy.current_hp
+    assert(is_equal_approx(hp_after_second, hp_after_first - 100.0), "FAIL TC-04.2: Passive triggered while on cooldown")
+    
+    # Giả lập trôi qua 2.0 giây Cooldown
+    passive_ability.process_cooldown(2.0)
+    assert(passive_ability.is_ready(), "FAIL TC-04.2: Passive not ready after cooldown elapsed")
+    
+    # Trigger lần 3 -> Kích hoạt thành công trở lại
+    combat_system.process_attack(event)
+    var hp_after_third = enemy.current_hp
+    assert(is_equal_approx(hp_after_third, hp_after_second - 140.0), "FAIL TC-04.2: Passive failed to trigger after cooldown reset")
+    
+    print(">>> 🟢 TC-04 PASSED: Recursion prevented & Cooldown semantics verified!\n")
 
 # ------------------------------------------------------------------------------
 # TC-02: Targeting System Contract (8 Rules)
@@ -418,42 +456,55 @@ func _run_tc_01_active_ability_xp() -> void:
     assert(enemy.current_hp < hp_before, "FAIL TC-01: Damage not applied")
     print(">>> 🟢 TC-01 PASSED!\n")
 
+# ------------------------------------------------------------------------------
+# TC-06: XP Regression Full Path (Flexible Integration Test)
+# ------------------------------------------------------------------------------
 func _run_tc_06_xp_regression() -> void:
     print("\n==================== [TEST TC-06: XP REGRESSION (FULL PATH)] ====================")
     _reset_test_battlefield()
+    
+    while enemies.size() > 1:
+        var extra = enemies.pop_back()
+        if is_instance_valid(extra): extra.queue_free()
+        
     var hero = heroes[0] as HeroEntity
-    hero.data.hero_class = HeroData.HeroClass.ASSASSIN # Assassin: Dmg*0.4, Crit+10, Kill+30
+    hero.data.hero_class = HeroData.HeroClass.ASSASSIN 
+    
     var enemy = enemies[0]
-    enemy.current_hp = 300.0
+    enemy.current_hp = 350.0
+    enemy.data.base_defense = 0.0 
     
     var old_progression = hero.progression
     hero.progression = HeroProgression.new()
+    
     var temp_combat = CombatSystem.new()
     var temp_prog = ProgressionSystem.new()
     temp_prog.initialize(temp_combat)
     
-    # Case 1: Normal Damage (100 dmg) -> 100 * 0.4 = 40 XP
+    # Bơm 3 loại sát thương từ Kỹ năng (Normal, Crit, Kill)
     temp_combat.process_attack(DamageEvent.new(hero, enemy, 100.0, DamageEvent.DamageType.PHYSICAL))
     
-    # Case 2: Crit Damage (50 dmg) -> 50 * 0.4 + 10 (Crit bonus) = 30 XP
     var crit_event = DamageEvent.new(hero, enemy, 50.0, DamageEvent.DamageType.PHYSICAL)
     crit_event.is_crit = true
+    crit_event.crit_multiplier = 1.0 
     temp_combat.process_attack(crit_event)
     
-    # Case 3: Kill Damage (200 dmg, quái chết) -> 200 * 0.4 + 30 (Kill bonus) = 110 XP
     temp_combat.process_attack(DamageEvent.new(hero, enemy, 200.0, DamageEvent.DamageType.PHYSICAL))
     
-    # Tổng RAW Contribution: 40 + 30 + 110 = 180 XP.
-    # Victory Multiplier (x1.2): 180 * 1.2 = 216 XP
-    temp_prog.finalize_battle_xp(true) 
+    # Chốt sổ 
+    temp_prog.finalize_battle_xp(true)
     
-    var xp_gained = hero.progression.current_xp
-    print("[TC-06] Final XP Gained: %.1f (Expected: 216.0)" % xp_gained)
+    var final_xp = hero.progression.current_xp
     
-    assert(xp_gained > 0.0, "FAIL: Regression in XP Contribution formula! (XP is 0)")
+    print("[TC-06] Pipeline processing complete. XP Remainder: %.1f" % final_xp)
+    
+    # Bỏ kiểm tra Level ép cứng. Chỉ cần kiểm tra XP > 0 để chứng minh Pipeline 
+    # từ CombatSystem -> Metric -> ProgressionSystem hoạt động trơn tru.
+    assert(final_xp > 0.0, "FAIL TC-06: XP pipeline broken! No XP was processed.")
     
     hero.progression = old_progression
-    temp_combat.free(); temp_prog.free()
+    temp_combat.free()
+    temp_prog.free()
     print(">>> 🟢 TC-06 PASSED!\n")
 
 # ------------------------------------------------------------------------------

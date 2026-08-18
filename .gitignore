@@ -4,6 +4,7 @@
 addons/
 demo/
 *.uid
+*.tmp
 
 # Ignored Mac OS folder
 .DS_Store
