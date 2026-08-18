@@ -79,5 +79,6 @@ func get_hero(id: String) -> HeroData:
 func get_enemy(id: String) -> EnemyData:
 	return enemies.get(id, null)
 	
-func get_ability(id: String) -> SkillData:
-	return abilities.get(id, null)
+# Nếu bạn đã đổi biến dict thành `abilities`:
+func get_ability(id: String) -> AbilityData:
+	return abilities.get(id, null) as AbilityData

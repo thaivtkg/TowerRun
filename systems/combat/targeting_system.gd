@@ -9,8 +9,7 @@ func _process(_delta: float) -> void:
 	_assign_targets(enemies, heroes)
 
 func _assign_targets(attackers: Array[CombatEntity], potential_targets: Array[CombatEntity]) -> void:
-	# Lọc bỏ các mục tiêu đã chết
-	var alive_targets: Array[CombatEntity] = potential_targets.filter(func(e): return not e.is_dead)
+	var alive_targets: Array[CombatEntity] = potential_targets.filter(func(e): return is_instance_valid(e) and not e.is_dead)
 	if alive_targets.is_empty():
 		return
 		
@@ -18,7 +17,6 @@ func _assign_targets(attackers: Array[CombatEntity], potential_targets: Array[Co
 		if attacker.is_dead:
 			continue
 			
-		# Nếu chưa có mục tiêu, hoặc mục tiêu hiện tại đã chết/bị hủy -> Tìm mục tiêu mới gần nhất
 		if attacker.target == null or attacker.target.is_dead or not is_instance_valid(attacker.target):
 			attacker.target = _find_closest_target(attacker, alive_targets)
 
@@ -45,15 +43,14 @@ func get_targets_for_rule(source: CombatEntity, rule: AbilityData.TargetRule) ->
 	var opponents: Array[CombatEntity] = enemies if is_source_hero else heroes
 	
 	# Lọc bỏ xác chết
-	allies = allies.filter(func(e): return not e.is_dead)
-	opponents = opponents.filter(func(e): return not e.is_dead)
+	allies = allies.filter(func(e): return is_instance_valid(e) and not e.is_dead)
+	opponents = opponents.filter(func(e): return is_instance_valid(e) and not e.is_dead)
 	
 	match rule:
 		AbilityData.TargetRule.SELF:
 			valid_targets.append(source)
 			
-		AbilityData.TargetRule.SINGLE_ENEMY:
-			# [FIXED] Truyền trực tiếp 'source' thay vì 'source.global_position'
+		AbilityData.TargetRule.SINGLE_ENEMY, AbilityData.TargetRule.NEAREST_ENEMY:
 			var t = _find_closest_target(source, opponents)
 			if t: valid_targets.append(t)
 			
@@ -61,9 +58,11 @@ func get_targets_for_rule(source: CombatEntity, rule: AbilityData.TargetRule) ->
 			valid_targets = opponents
 			
 		AbilityData.TargetRule.SINGLE_ALLY:
-			# [FIXED] Truyền trực tiếp 'source' thay vì 'source.global_position'
 			var t = _find_closest_target(source, allies)
 			if t: valid_targets.append(t)
+			
+		AbilityData.TargetRule.ALL_ALLIES:
+			valid_targets = allies
 			
 		AbilityData.TargetRule.LOWEST_HP_ENEMY:
 			var t = _find_lowest_hp_target(opponents)

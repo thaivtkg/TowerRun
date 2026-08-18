@@ -11,40 +11,60 @@ func setup_hooks() -> void:
     if not combat_system.entity_killed.is_connected(_on_entity_killed):
         combat_system.entity_killed.connect(_on_entity_killed)
 
-func execute_ability(ability: Ability) -> void:
-    if ability == null or not ability.is_ready(): return
-    var source = ability.owner
+var _passive_execution_depth: int = 0 # [FIX ISSUE #3] Cờ chống đệ quy
+
+# Trả về bool để biết ability có thực sự thi triển không (có target không)
+func execute_ability(ability: Ability) -> bool:
+    if ability == null or not ability.owner is HeroEntity: return false
+    
+    var source = ability.owner as HeroEntity
+    # [FIX ISSUE #2] Kiểm tra năng lượng thực tế truyền từ Hero
+    if not ability.is_ready(source.current_energy): return false 
     
     var targets: Array[CombatEntity] = targeting_system.get_targets_for_rule(source, ability.data.target_rule)
-    if targets.is_empty(): return 
+    # [FIX ISSUE #4] Ngăn Start Cooldown và trừ Energy nếu không có mục tiêu
+    if targets.is_empty(): return false 
     
     print("\n[AbilitySystem] 💥 %s casts [%s] %s!" % [source.name, AbilityData.AbilityType.keys()[ability.data.ability_type], ability.data.name])
+    
+    # [FIX ISSUE #5] AbilitySystem thực thi Energy Contract
+    if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+        source.current_energy = 0.0 # Ultimate luôn xả cạn năng lượng
+    else:
+        source.current_energy = max(0.0, source.current_energy - ability.data.energy_cost)
+        
     ability.start_cooldown()
     
     for target in targets:
         for effect in ability.data.effects:
             _apply_effect(effect, source, target)
+            
+    return true # Cast thành công
 
-# ==========================================
-# PASSIVE EVENT HOOKS
-# ==========================================
 func trigger_passives(source: CombatEntity, condition: AbilityData.TriggerCondition) -> void:
+    if _passive_execution_depth > 0: return # [FIX ISSUE #3] Guard chặn đệ quy vô hạn
     if not source is HeroEntity: return
-    var hero = source as HeroEntity
     
+    var hero = source as HeroEntity
     for ability in hero.unlocked_abilities:
         if ability.data.ability_type == AbilityData.AbilityType.PASSIVE:
-            if ability.data.trigger_condition == condition and ability.is_ready():
-                print("[AbilitySystem] ⚙️ PASSIVE TRIGGERED: [%s] by %s" % [ability.data.name, hero.name])
-                
-                # Passive cũng có cooldown (VD: Hồi sinh mỗi 60s, Miễn nhiễm khống chế mỗi 10s)
-                if ability.data.cooldown > 0:
-                    ability.start_cooldown() 
+            if ability.data.trigger_condition == condition and ability.is_ready(hero.current_energy):
                 
                 var targets = targeting_system.get_targets_for_rule(hero, ability.data.target_rule)
+                if targets.is_empty(): continue
+                
+                _passive_execution_depth += 1 # Khóa guard
+                
+                if ability.data.cooldown > 0:
+                    ability.start_cooldown()
+                    
+                print("[AbilitySystem] ⚙️ PASSIVE TRIGGERED: [%s] by %s" % [ability.data.name, hero.name])
+                
                 for target in targets:
                     for effect in ability.data.effects:
                         _apply_effect(effect, hero, target)
+                        
+                _passive_execution_depth -= 1 # Mở guard
 
 func _on_damage_dealt(source: CombatEntity, target: CombatEntity, _amount: float, is_crit: bool) -> void:
     trigger_passives(source, AbilityData.TriggerCondition.ON_ATTACK)
