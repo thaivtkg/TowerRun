@@ -6,6 +6,7 @@ extends Node2D
 
 var _is_hero: bool = false
 var _hp_tween: Tween = null
+var _energy_tween: Tween = null
 var _energy_flash_tween: Tween = null
 
 func _ready() -> void:
@@ -52,18 +53,27 @@ func on_hp_changed(current: float, max_val: float) -> void:
 	_hp_tween.tween_property(health_bar, "value", target_val, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func on_energy_changed(current: float, max_val: float) -> void:
-	if not _is_hero or not is_node_ready():
+	if not _is_hero or energy_bar == null or not is_node_ready():
 		return
 		
 	if max_val > 0.0:
 		energy_bar.max_value = max_val
 		
-	energy_bar.value = clampf(current, 0.0, energy_bar.max_value)
+	var target_val: float = clampf(current, 0.0, energy_bar.max_value)
+	
+	if _energy_tween != null and _energy_tween.is_valid():
+		_energy_tween.kill()
+		
+	_energy_tween = create_tween()
+	_energy_tween.tween_property(energy_bar, "value", target_val, 0.1).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	
 	if current >= energy_bar.max_value and energy_bar.max_value > 0.0:
 		_start_energy_flash()
 	else:
 		_stop_energy_flash()
+
+func update_energy(current: float, max_val: float) -> void:
+	on_energy_changed(current, max_val)
 
 func _apply_bar_style(bar: ProgressBar, fill_color: Color) -> void:
 	var bg_style := StyleBoxFlat.new()

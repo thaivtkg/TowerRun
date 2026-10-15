@@ -109,6 +109,25 @@ func _spawn_hero(data: HeroData, offset: Vector2) -> void:
 	hero.ability_requested.connect(ability_system.execute_ability)
 	
 	hero.initialize(data)
+	
+	# Đảm bảo mọi Hero đều có ít nhất 1 kỹ năng ULTIMATE để xả Energy khi đầy 100/100
+	var has_ult: bool = false
+	for ab in hero.unlocked_abilities:
+		if ab.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+			has_ult = true
+			break
+			
+	if not has_ult:
+		var default_ult := AbilityData.new()
+		default_ult.name = data.name + " Ultimate"
+		default_ult.ability_type = AbilityData.AbilityType.ULTIMATE
+		default_ult.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
+		default_ult.cooldown = 1.0
+		var ult_dmg := DamageEffectData.new()
+		ult_dmg.base_damage = data.base_attack * 2.5
+		default_ult.effects.append(ult_dmg)
+		hero.unlocked_abilities.append(Ability.new(hero, default_ult))
+
 	hero.healed.connect(_on_entity_healed)
 	if hero.progression != null:
 		hero.progression.xp_gained.connect(func(amt: float): _on_hero_xp_gained(hero, amt))

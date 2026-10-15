@@ -36,8 +36,9 @@ func initialize(initial_data: HeroData) -> void:
 	name = data.name 
 	max_hp = data.base_hp
 	current_hp = data.base_hp
-	current_energy = 0.0
 	setup_status_bar(true)
+	hp_changed.emit(current_hp, max_hp)
+	energy_changed.emit(current_energy, max_energy)
 	
 	progression = HeroProgression.new()
 	progression.leveled_up.connect(_on_level_up)
@@ -93,10 +94,9 @@ func _on_attack_timer_timeout() -> void:
 
 # Hàm tăng Năng lượng công khai (để hệ thống khác có thể gọi)
 func _gain_energy(amount: float) -> void:
-	if current_energy < max_energy:
-		current_energy = min(current_energy + amount, max_energy)
-		# Tạm tắt log này để Console đỡ rác, bạn có thể bật lại nếu muốn xem Năng lượng nảy
-		# print("⚡ %s Energy: %d/%d" % [name, current_energy, max_energy])
+	if is_dead:
+		return
+	self.current_energy += amount
 
 func _on_level_up(_new_level: int) -> void: pass
 
