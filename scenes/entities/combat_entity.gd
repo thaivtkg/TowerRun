@@ -80,9 +80,10 @@ func play_hit_vfx() -> void:
 	
 	if _sprite_move_tween == null or not _sprite_move_tween.is_running():
 		var shake_offset := Vector2(randf_range(-2.5, 2.5), randf_range(-1.5, 1.5))
-		var shake_tween := create_tween()
-		shake_tween.tween_property(sprite, "position", _base_sprite_pos + shake_offset, 0.04)
-		shake_tween.tween_property(sprite, "position", _base_sprite_pos, 0.04)
+		_sprite_move_tween = create_tween()
+		_sprite_move_tween.tween_property(sprite, "position", _base_sprite_pos + shake_offset, 0.04)
+		_sprite_move_tween.tween_property(sprite, "position", _base_sprite_pos, 0.04)
+		_sprite_move_tween.tween_callback(func(): sprite.position = _base_sprite_pos)
 
 func play_cast_vfx() -> void:
 	if sprite == null:

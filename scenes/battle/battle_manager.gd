@@ -293,6 +293,13 @@ func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount
 func _on_ability_executed(source: CombatEntity, ability: Ability) -> void:
 	if not is_instance_valid(source) or ability == null or ability.data == null:
 		return
+		
+	# Đánh thường bằng Resource (Kira basic attack) chỉ kích hoạt Lunge VFX, không gọi Cast VFX và không bắn Banner
+	if source is HeroEntity and (source as HeroEntity).basic_attack_ability == ability:
+		if is_instance_valid(source.target):
+			source.play_lunge_vfx(source.target.global_position)
+		return
+
 	source.play_cast_vfx()
 	
 	if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE:

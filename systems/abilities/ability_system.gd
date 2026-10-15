@@ -13,7 +13,6 @@ func setup_hooks() -> void:
 	if not combat_system.entity_killed.is_connected(_on_entity_killed):
 		combat_system.entity_killed.connect(_on_entity_killed)
 
-var _passive_execution_depth: int = 0 # [FIX ISSUE #3] Cờ chống đệ quy
 
 # Trả về bool để biết ability có thực sự thi triển không (có target không)
 func execute_ability(ability: Ability) -> bool:
