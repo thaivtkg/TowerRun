@@ -58,6 +58,9 @@ func show_choices(hero_name: String, milestone: int, choices: Array[AbilityData]
 	get_tree().paused = true # Khóa chặt Combat Progression
 
 func _on_button_pressed(chosen: AbilityData) -> void:
+	for child in container.get_children():
+		if child is Button:
+			child.disabled = true
 	hide()
 	get_tree().paused = false # Tiếp tục combat
 	skill_chosen.emit(chosen, current_choices)

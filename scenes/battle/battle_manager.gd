@@ -205,7 +205,11 @@ func _process_next_choice() -> void:
 	skill_ui.show_choices(next.hero.name, next.milestone, next.choices)
 
 func _on_skill_chosen(chosen: AbilityData, all_choices: Array[AbilityData]) -> void:
+	if choice_queue.is_empty():
+		return
 	var current = choice_queue.pop_front()
+	if current == null or not current.has("hero") or not is_instance_valid(current.hero):
+		return
 	current.hero.apply_skill_choice(current.milestone, chosen, all_choices)
 	
 	if choice_queue.size() > 0:
@@ -599,6 +603,11 @@ func _run_tc_05_post_battle_choice_queue() -> void:
 	
 	_end_battle(GameManager.GameState.REWARD, "Victory Test")
 	assert(choice_queue.size() == 3, "FAIL: Queue construction failed")
+	if is_instance_valid(skill_ui):
+		skill_ui.hide()
+	if get_tree() != null:
+		get_tree().paused = false
+	choice_queue.clear()
 	_log_test(">>> 🟢 TC-05 PASSED!\n")
 
 # ------------------------------------------------------------------------------
@@ -608,5 +617,9 @@ func _reset_test_battlefield() -> void:
 	for h in heroes: if is_instance_valid(h): h.queue_free()
 	for e in enemies: if is_instance_valid(e): e.queue_free()
 	heroes.clear(); enemies.clear(); choice_queue.clear()
+	if is_instance_valid(skill_ui):
+		skill_ui.hide()
+	if get_tree() != null:
+		get_tree().paused = false
 	battle_ended = false
 	_spawn_mock_teams()
