@@ -243,8 +243,8 @@ func _spawn_floating_text(pos: Vector2, text_str: String, type: FloatingText.Typ
 		return
 	var ft: FloatingText = FLOATING_TEXT_SCENE.instantiate() as FloatingText
 	add_child(ft)
-	# Nhích nhẹ lên trên đầu thực thể 25px để không đè vào sprite gốc
-	ft.global_position = pos + Vector2(0, -25)
+	# Nhích nhẹ lên trên đầu thực thể và lệch ngẫu nhiên nhỏ để chống đè lấp chữ
+	ft.global_position = pos + Vector2(randf_range(-12.0, 12.0), randf_range(-30.0, -20.0))
 	ft.setup(text_str, type)
 
 func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool) -> void:

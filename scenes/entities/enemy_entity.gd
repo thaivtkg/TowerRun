@@ -14,6 +14,7 @@ func initialize(initial_data: EnemyData) -> void:
 	name = data.name
 	max_hp = data.base_hp
 	current_hp = data.base_hp
+	setup_status_bar(false)
 	
 	var safe_attack_speed: float = max(0.1, data.attack_speed)
 	attack_timer.wait_time = 1.0 / safe_attack_speed
