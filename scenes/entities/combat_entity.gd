@@ -5,6 +5,7 @@ signal died(entity: CombatEntity)
 signal attack_requested(event: DamageEvent)
 signal healed(entity: CombatEntity, amount: float)
 signal hp_changed(current: float, max_val: float)
+signal energy_changed(current: float, max_val: float)
 
 const STATUS_BAR_SCENE: PackedScene = preload("res://scenes/ui/status_bar/EntityStatusBar.tscn")
 
@@ -38,7 +39,7 @@ func setup_status_bar(is_hero: bool) -> void:
 			
 		var init_energy: float = 0.0
 		var init_max_energy: float = 100.0
-		if is_hero and has_signal("energy_changed"):
+		if is_hero:
 			if not energy_changed.is_connected(status_bar.on_energy_changed):
 				energy_changed.connect(status_bar.on_energy_changed)
 			init_energy = get("current_energy") if get("current_energy") != null else 0.0

@@ -3,7 +3,6 @@ extends CombatEntity
 
 signal pending_skill_choice(hero: HeroEntity, milestone: int, choices: Array[AbilityData])
 signal ability_requested(ability: Ability) 
-signal energy_changed(current: float, max_val: float)
 
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
