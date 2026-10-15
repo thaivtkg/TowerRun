@@ -1,5 +1,7 @@
 extends Node2D
 
+const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/FloatingText.tscn")
+
 @export var hero_scene: PackedScene
 @export var enemy_scene: PackedScene
 
@@ -41,6 +43,7 @@ func _init_systems() -> void:
 	combat_system = CombatSystem.new()
 	combat_system.name = "CombatSystem"
 	add_child(combat_system)
+	combat_system.damage_dealt.connect(_on_combat_damage_dealt)
 	
 	targeting_system = TargetingSystem.new()
 	targeting_system.name = "TargetingSystem"
@@ -106,6 +109,10 @@ func _spawn_hero(data: HeroData, offset: Vector2) -> void:
 	hero.ability_requested.connect(ability_system.execute_ability)
 	
 	hero.initialize(data)
+	hero.healed.connect(_on_entity_healed)
+	if hero.progression != null:
+		hero.progression.xp_gained.connect(func(amt: float): _on_hero_xp_gained(hero, amt))
+		hero.progression.milestone_reached.connect(func(ms: int): _on_hero_milestone(hero, ms))
 	heroes.append(hero)
 
 func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, offset: Vector2) -> void:
@@ -129,6 +136,7 @@ func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float,
 	enemy.died.connect(_on_entity_died.bind(false))
 	enemy.attack_requested.connect(combat_system.process_attack)
 	enemy.initialize(data)
+	enemy.healed.connect(_on_entity_healed)
 	enemies.append(enemy)
 
 func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
@@ -222,6 +230,46 @@ func _start_next_floor() -> void:
 	
 	for i in range(5):
 		_spawn_enemy("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, Vector2(0, -80 + (i * 40)))
+
+# ==========================================
+# FLOATING TEXT SPAWNER (SPRINT 5 VFX)
+# ==========================================
+func _spawn_floating_text(pos: Vector2, text_str: String, type: FloatingText.Type) -> void:
+	if FLOATING_TEXT_SCENE == null:
+		return
+	var ft: FloatingText = FLOATING_TEXT_SCENE.instantiate() as FloatingText
+	add_child(ft)
+	# Nhích nhẹ lên trên đầu thực thể 25px để không đè vào sprite gốc
+	ft.global_position = pos + Vector2(0, -25)
+	ft.setup(text_str, type)
+
+func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool) -> void:
+	if not is_instance_valid(target):
+		return
+	var dmg_val: int = maxi(1, roundi(amount))
+	if is_crit:
+		_spawn_floating_text(target.global_position, "%d!" % dmg_val, FloatingText.Type.CRIT)
+	else:
+		_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE)
+
+func _on_entity_healed(entity: CombatEntity, amount: float) -> void:
+	if not is_instance_valid(entity):
+		return
+	var heal_val: int = maxi(1, roundi(amount))
+	_spawn_floating_text(entity.global_position, "+%d" % heal_val, FloatingText.Type.HEAL)
+
+func _on_hero_xp_gained(hero: HeroEntity, amount: float) -> void:
+	if not is_instance_valid(hero):
+		return
+	var xp_val: int = roundi(amount)
+	if xp_val > 0:
+		_spawn_floating_text(hero.global_position + Vector2(0, -15), "+%d XP" % xp_val, FloatingText.Type.XP)
+
+func _on_hero_milestone(hero: HeroEntity, milestone: int) -> void:
+	if not is_instance_valid(hero):
+		return
+	_spawn_floating_text(hero.global_position + Vector2(0, -35), "LV.%d MILESTONE!" % milestone, FloatingText.Type.SYSTEM)
+
 
 # ==============================================================================
 # SPRINT 4 AUTOMATED TEST RUNNER (BẢN XUẤT RA FILE REPORT)

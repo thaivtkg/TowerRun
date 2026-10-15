@@ -26,6 +26,7 @@ func initialize(initial_data: HeroData) -> void:
     if data == null: return
         
     name = data.name 
+    max_hp = data.base_hp
     current_hp = data.base_hp
     
     progression = HeroProgression.new()

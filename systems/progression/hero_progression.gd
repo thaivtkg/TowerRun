@@ -2,6 +2,8 @@ class_name HeroProgression
 extends RefCounted
 
 signal leveled_up(new_level: int)
+signal level_up(new_level: int)
+signal xp_gained(amount: float)
 signal milestone_reached(level: int) # [ADDED] Tín hiệu chuyên dụng cho Milestone
 
 const MAX_LEVEL: int = 25
@@ -15,6 +17,7 @@ func add_xp(amount: float) -> void:
 		return
 		
 	current_xp += amount
+	xp_gained.emit(amount)
 	var leveled: bool = false
 	
 	while current_xp >= required_xp and level < MAX_LEVEL:
@@ -29,6 +32,7 @@ func add_xp(amount: float) -> void:
 		
 	if leveled:
 		leveled_up.emit(level)
+		level_up.emit(level)
 		
 	if level >= MAX_LEVEL:
 		current_xp = required_xp

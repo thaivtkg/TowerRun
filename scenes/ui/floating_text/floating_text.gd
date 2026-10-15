@@ -41,7 +41,7 @@ func setup(value_str: String, type: Type) -> void:
 	tween.tween_property(self, "scale", target_scale, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	
 	# 2. Bay lên trên (Float effect)
-	tween.tween_property(self, "position", position + float_offset, 0.8).set_trans(Tween.TRANS_OUT).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "position", position + float_offset, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	
 	# 3. Mờ dần (Fade-out effect) sau một khoảng delay nhỏ
 	tween.tween_property(self, "modulate:a", 0.0, 0.4).set_trans(Tween.TRANS_LINEAR).set_delay(0.4)

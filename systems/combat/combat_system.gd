@@ -34,9 +34,8 @@ func process_attack(event: DamageEvent) -> void:
 	# Áp dụng sát thương
 	event.target.take_damage(event.final_damage)
 	
-	# --- SPRINT 4: KÍCH HOẠT EVENT CHO PASSIVE ---
-	# (Biến final_damage có thể khác tên tùy theo code hiện tại của bạn)
-	damage_dealt.emit(event.source, event.target, event.base_damage, event.is_crit)
+	# --- SPRINT 4: KÍCH HOẠT EVENT CHO PASSIVE & UI ---
+	damage_dealt.emit(event.source, event.target, event.final_damage, event.is_crit)
 	
 	if event.target.is_dead:
 		entity_killed.emit(event.source, event.target)

@@ -12,6 +12,7 @@ func initialize(initial_data: EnemyData) -> void:
 		return
 		
 	name = data.name
+	max_hp = data.base_hp
 	current_hp = data.base_hp
 	
 	var safe_attack_speed: float = max(0.1, data.attack_speed)
