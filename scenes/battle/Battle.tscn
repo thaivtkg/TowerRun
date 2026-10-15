@@ -14,3 +14,6 @@ position = Vector2(120, 317)
 
 [node name="EnemySpawn" type="Marker2D" parent="." unique_id=1126203650]
 position = Vector2(939, 298)
+
+[node name="BattleCamera" type="Camera2D" parent="."]
+position = Vector2(576, 324)

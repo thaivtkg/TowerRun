@@ -7,6 +7,10 @@ const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/
 
 @onready var hero_spawn: Marker2D = $HeroSpawn
 @onready var enemy_spawn: Marker2D = $EnemySpawn
+@onready var camera: Camera2D = get_node_or_null("BattleCamera")
+
+var _shake_tween: Tween = null
+var _current_shake_strength: float = 0.0
 
 var heroes: Array[CombatEntity] = []
 var enemies: Array[CombatEntity] = []
@@ -26,6 +30,9 @@ var next_game_state: GameManager.GameState
 func _ready() -> void:
 	GameManager.change_state(GameManager.GameState.BATTLE)
 	_start_battle()
+	if "--run-tests" in OS.get_cmdline_user_args():
+		_run_all_tests()
+		get_tree().quit()
 
 func _start_battle() -> void:
 	print("=====================================")
@@ -63,6 +70,7 @@ func _init_systems() -> void:
 	add_child(ability_system)
 	
 	ability_system.setup_hooks()
+	ability_system.ability_executed.connect(_on_ability_executed)
 	
 	skill_ui = SkillChoiceUI.new()
 	add_child(skill_ui)
@@ -105,7 +113,7 @@ func _spawn_hero(data: HeroData, offset: Vector2) -> void:
 		hero.global_position = offset
 	
 	hero.died.connect(_on_entity_died.bind(true))
-	hero.attack_requested.connect(combat_system.process_attack)
+	hero.attack_requested.connect(_on_entity_attack_requested)
 	hero.ability_requested.connect(ability_system.execute_ability)
 	
 	hero.initialize(data)
@@ -153,7 +161,7 @@ func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float,
 		enemy.global_position = offset
 	
 	enemy.died.connect(_on_entity_died.bind(false))
-	enemy.attack_requested.connect(combat_system.process_attack)
+	enemy.attack_requested.connect(_on_entity_attack_requested)
 	enemy.initialize(data)
 	enemy.healed.connect(_on_entity_healed)
 	enemies.append(enemy)
@@ -266,14 +274,58 @@ func _spawn_floating_text(pos: Vector2, text_str: String, type: FloatingText.Typ
 	ft.global_position = pos + Vector2(randf_range(-12.0, 12.0), randf_range(-30.0, -20.0))
 	ft.setup(text_str, type)
 
+func _on_entity_attack_requested(event: DamageEvent) -> void:
+	if is_instance_valid(event.source) and is_instance_valid(event.target):
+		event.source.play_lunge_vfx(event.target.global_position)
+	combat_system.process_attack(event)
+
 func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool) -> void:
 	if not is_instance_valid(target):
 		return
+	target.play_hit_vfx()
 	var dmg_val: int = maxi(1, roundi(amount))
 	if is_crit:
+		_shake_camera(4.0, 0.18)
 		_spawn_floating_text(target.global_position, "%d!" % dmg_val, FloatingText.Type.CRIT)
 	else:
 		_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE)
+
+func _on_ability_executed(source: CombatEntity, ability: Ability) -> void:
+	if not is_instance_valid(source) or ability == null or ability.data == null:
+		return
+	source.play_cast_vfx()
+	
+	if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+		_shake_camera(6.0, 0.25)
+		_spawn_floating_text(source.global_position + Vector2(0, -35), "[ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
+	elif ability.data.ability_type == AbilityData.AbilityType.ACTIVE:
+		_spawn_floating_text(source.global_position + Vector2(0, -35), "[ACTIVE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
+
+func _shake_camera(intensity: float, duration: float = 0.2) -> void:
+	if camera == null:
+		return
+	# Anti-stacking: chỉ override nếu rung động mới mạnh hơn rung động hiện tại
+	if _shake_tween != null and _shake_tween.is_running():
+		if intensity <= _current_shake_strength:
+			return
+		_shake_tween.kill()
+		
+	_current_shake_strength = intensity
+	_shake_tween = create_tween()
+	
+	var steps: int = maxi(2, int(duration / 0.04))
+	var step_time: float = duration / steps
+	
+	for i in range(steps):
+		var damping: float = 1.0 - (float(i) / float(steps))
+		var offset := Vector2(
+			randf_range(-intensity, intensity) * damping,
+			randf_range(-intensity, intensity) * damping
+		)
+		_shake_tween.tween_property(camera, "offset", offset, step_time)
+		
+	_shake_tween.tween_property(camera, "offset", Vector2.ZERO, 0.04)
+	_shake_tween.tween_callback(func(): _current_shake_strength = 0.0)
 
 func _on_entity_healed(entity: CombatEntity, amount: float) -> void:
 	if not is_instance_valid(entity):
@@ -327,26 +379,8 @@ func _input(event: InputEvent) -> void:
 					hero.progression.add_xp(800.0)
 					
 		# PHÍM 0: CHẠY TOÀN BỘ 6 TEST CASE VÀ GHI REPORT
-		KEY_0: 
-			# Mở file với quyền WRITE để xóa dữ liệu cũ, ghi đè báo cáo mới
-			var file = FileAccess.open(test_report_path, FileAccess.WRITE)
-			if file:
-				file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 4 ===")
-				file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
-				file.store_line("==================================\n")
-				file.close()
-			
-			_log_test("Đang chạy toàn bộ Test Suite...")
-			_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
-			
-			_run_tc_01_active_ability_xp()
-			_run_tc_02_targeting_rules()
-			_run_tc_03_energy_and_ultimate()
-			_run_tc_04_passive_recursion()
-			_run_tc_05_post_battle_choice_queue()
-			_run_tc_06_xp_regression()
-			
-			_log_test("\n🎉 TẤT CẢ TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+		KEY_0:
+			_run_all_tests()
 			
 		# Chạy lẻ từng test như cũ
 		KEY_1: _run_tc_03_energy_and_ultimate()
@@ -355,6 +389,26 @@ func _input(event: InputEvent) -> void:
 		KEY_4: _run_tc_01_active_ability_xp()
 		KEY_5: _run_tc_05_post_battle_choice_queue()
 		KEY_6: _run_tc_06_xp_regression()
+
+func _run_all_tests() -> void:
+	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
+	if file:
+		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 4 ===")
+		file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
+		file.store_line("==================================\n")
+		file.close()
+	
+	_log_test("Đang chạy toàn bộ Test Suite...")
+	_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
+	
+	_run_tc_01_active_ability_xp()
+	_run_tc_02_targeting_rules()
+	_run_tc_03_energy_and_ultimate()
+	_run_tc_04_passive_recursion()
+	_run_tc_05_post_battle_choice_queue()
+	_run_tc_06_xp_regression()
+	
+	_log_test("\n🎉 TẤT CẢ TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
