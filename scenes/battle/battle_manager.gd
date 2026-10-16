@@ -387,7 +387,7 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 7 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 8 TEST CASE VÀ GHI REPORT
 		KEY_0:
 			_run_all_tests()
 			
@@ -399,16 +399,17 @@ func _input(event: InputEvent) -> void:
 		KEY_5: _run_tc_05_post_battle_choice_queue()
 		KEY_6: _run_tc_06_xp_regression()
 		KEY_7: _run_tc_07_sprint5_ui_vfx()
+		KEY_8: _run_tc_08_board_grid_model()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
 	if file:
-		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 4 & SPRINT 5 ===")
+		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 4 & 5 ===")
 		file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
-		file.store_line("============================================\n")
+		file.store_line("========================================\n")
 		file.close()
 	
-	_log_test("Đang chạy toàn bộ Test Suite (Sprint 4 & Sprint 5)...")
+	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 4 & 5)...")
 	_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
 	
 	_run_tc_01_active_ability_xp()
@@ -418,8 +419,9 @@ func _run_all_tests() -> void:
 	_run_tc_05_post_battle_choice_queue()
 	_run_tc_06_xp_regression()
 	_run_tc_07_sprint5_ui_vfx()
+	_run_tc_08_board_grid_model()
 	
-	_log_test("\n🎉 TẤT CẢ 7 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 8 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -809,6 +811,87 @@ func _run_tc_07_sprint5_ui_vfx() -> void:
 		_current_shake_strength = 0.0
 		
 	_log_test(">>> 🟢 TC-07 PASSED: All Sprint 5 UI & VFX systems fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-08: Board Grid Pure Data Model (Sprint 1)
+# ------------------------------------------------------------------------------
+func _run_tc_08_board_grid_model() -> void:
+	_log_test("\n==================== [TEST TC-08: BOARD GRID MODEL] ====================")
+	var config = BoardConfig.new()
+	assert(config.columns == 8 and config.rows == 5, "FAIL TC-08: Default dimensions mismatch")
+	
+	var grid = BoardGrid.new(config)
+	
+	# [BG-01]: Bounds validation
+	_log_test("[TC-08.1] [BG-01] Testing bounds validation...")
+	assert(grid.is_in_bounds(Vector2i(0, 0)) == true, "FAIL BG-01: (0,0) must be in bounds")
+	assert(grid.is_in_bounds(Vector2i(7, 4)) == true, "FAIL BG-01: (7,4) must be in bounds")
+	assert(grid.is_in_bounds(Vector2i(-1, 0)) == false, "FAIL BG-01: (-1,0) must be out of bounds")
+	assert(grid.is_in_bounds(Vector2i(8, 5)) == false, "FAIL BG-01: (8,5) must be out of bounds")
+	assert(grid.is_in_bounds(Vector2i(8, 2)) == false, "FAIL BG-01: (8,2) must be out of bounds")
+	assert(config.is_hero_zone(Vector2i(2, 2)) == true, "FAIL BG-01: (2,2) should be hero zone")
+	assert(config.is_hero_zone(Vector2i(3, 2)) == false, "FAIL BG-01: (3,2) should not be hero zone")
+	assert(config.is_enemy_zone(Vector2i(5, 2)) == true, "FAIL BG-01: (5,2) should be enemy zone")
+	assert(config.is_enemy_zone(Vector2i(4, 2)) == false, "FAIL BG-01: (4,2) should not be enemy zone")
+	
+	# [BG-02]: Place hero entity
+	_log_test("[TC-08.2] [BG-02] Testing entity placement and reverse lookup...")
+	var hero = HeroEntity.new()
+	hero.name = "TestHero"
+	var place_ok = grid.place_entity(hero, Vector2i(2, 2))
+	assert(place_ok == true, "FAIL BG-02: place_entity should succeed at (2,2)")
+	assert(grid.is_cell_empty(Vector2i(2, 2)) == false, "FAIL BG-02: (2,2) must not be empty")
+	assert(grid.get_occupant(Vector2i(2, 2)) == hero, "FAIL BG-02: occupant at (2,2) must be hero")
+	assert(grid.get_cell_for_entity(hero) == Vector2i(2, 2), "FAIL BG-02: reverse lookup must return (2,2)")
+	
+	# [BG-03]: Conflict resolution
+	_log_test("[TC-08.3] [BG-03] Testing placement collision rejection...")
+	var enemy = EnemyEntity.new()
+	enemy.name = "TestEnemy"
+	var conflict_ok = grid.place_entity(enemy, Vector2i(2, 2))
+	assert(conflict_ok == false, "FAIL BG-03: placing on occupied cell must fail")
+	assert(grid.get_occupant(Vector2i(2, 2)) == hero, "FAIL BG-03: (2,2) must still belong to hero")
+	assert(grid.get_cell_for_entity(enemy) == Vector2i(-1, -1), "FAIL BG-03: unplaced enemy must return (-1,-1)")
+	
+	# [BG-04]: Move entity with rollback guarantee
+	_log_test("[TC-08.4] [BG-04] Testing entity movement and collision rollback...")
+	grid.place_entity(enemy, Vector2i(3, 3))
+	var invalid_move_blocked = grid.move_entity(Vector2i(2, 2), Vector2i(3, 3))
+	assert(invalid_move_blocked == false, "FAIL BG-04: moving into occupied cell must return false")
+	assert(grid.get_occupant(Vector2i(2, 2)) == hero, "FAIL BG-04: hero must remain at (2,2) on failed move")
+	
+	var valid_move = grid.move_entity(Vector2i(2, 2), Vector2i(2, 3))
+	assert(valid_move == true, "FAIL BG-04: moving to empty cell (2,3) must succeed")
+	assert(grid.is_cell_empty(Vector2i(2, 2)) == true, "FAIL BG-04: (2,2) must now be empty")
+	assert(grid.get_occupant(Vector2i(2, 3)) == hero, "FAIL BG-04: (2,3) must contain hero")
+	assert(grid.get_cell_for_entity(hero) == Vector2i(2, 3), "FAIL BG-04: hero reverse lookup must be (2,3)")
+	
+	# [BG-05]: 8-Direction Adjacency
+	_log_test("[TC-08.5] [BG-05] Testing 8-direction adjacency neighbors...")
+	var corner_neighbors = grid.get_neighbors_8(Vector2i(0, 0))
+	assert(corner_neighbors.size() == 3, "FAIL BG-05: Corner (0,0) must have 3 neighbors")
+	assert(corner_neighbors.has(Vector2i(1, 0)) and corner_neighbors.has(Vector2i(0, 1)) and corner_neighbors.has(Vector2i(1, 1)))
+	
+	var edge_neighbors = grid.get_neighbors_8(Vector2i(0, 2))
+	assert(edge_neighbors.size() == 5, "FAIL BG-05: Edge (0,2) must have 5 neighbors")
+	
+	var center_neighbors = grid.get_neighbors_8(Vector2i(2, 2))
+	assert(center_neighbors.size() == 8, "FAIL BG-05: Center (2,2) must have 8 neighbors")
+	
+	# [BG-06]: Remove entity & clean dictionaries
+	_log_test("[TC-08.6] [BG-06] Testing entity removal and dictionary cleanup...")
+	var removed_hero = grid.remove_entity(Vector2i(2, 3))
+	assert(removed_hero == hero, "FAIL BG-06: remove_entity must return the removed hero")
+	assert(grid.is_cell_empty(Vector2i(2, 3)) == true, "FAIL BG-06: (2,3) must now be empty")
+	assert(grid.get_cell_for_entity(hero) == Vector2i(-1, -1), "FAIL BG-06: hero lookup must be (-1,-1)")
+	
+	grid.remove_entity(Vector2i(3, 3))
+	assert(grid._cell_occupants.is_empty() == true, "FAIL BG-06: _cell_occupants must be completely empty")
+	assert(grid._entity_cells.is_empty() == true, "FAIL BG-06: _entity_cells must be completely empty")
+	
+	hero.free()
+	enemy.free()
+	_log_test(">>> 🟢 TC-08 PASSED: BoardGrid Pure Data Model verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
