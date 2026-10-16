@@ -66,6 +66,15 @@ func _draw() -> void:
 			# Vẽ viền từng ô
 			draw_rect(cell_rect, grid_line_color, false, 1.0)
 			
+	# Đường phân chia ranh giới giữa 2 phần sân (Giữa hàng 2 và hàng 3)
+	var divider_y: float = config.enemy_zone_rows * cell_h
+	draw_line(
+		Vector2(0, divider_y),
+		Vector2(config.columns * cell_w, divider_y),
+		Color(0.8, 0.85, 1.0, 0.5),
+		2.0
+	)
+			
 	# Viền ngoài cùng của toàn bộ bàn cờ
 	var board_rect := Rect2(Vector2.ZERO, Vector2(config.columns * cell_w, config.rows * cell_h))
 	draw_rect(board_rect, Color(0.6, 0.65, 0.75, 0.6), false, 2.0)

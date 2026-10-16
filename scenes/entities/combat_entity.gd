@@ -160,6 +160,11 @@ func _die() -> void:
 	print("[Combat] ☠️ ", name, " has died (Became a Corpse).")
 	died.emit(self)
 
+func set_combat_active(active: bool) -> void:
+	if not active:
+		target = null
+	set_process(active)
+
 # ==========================================
 # VIRTUAL METHODS (STATS CONTRACT)
 # Các hệ thống như CombatSystem sẽ gọi các hàm này.

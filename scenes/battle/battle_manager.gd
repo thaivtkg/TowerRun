@@ -28,6 +28,10 @@ var choice_queue: Array[Dictionary] = []
 var board_config: BoardConfig
 var board_grid: BoardGrid
 
+enum EncounterPhase { PREPARATION, COMBAT, POST_COMBAT, REWARD, GAME_OVER }
+var current_phase: EncounterPhase = EncounterPhase.PREPARATION
+var start_combat_button: Button = null
+
 # Trạng thái điều phối cuối trận
 var battle_ended: bool = false
 var next_game_state: GameManager.GameState
@@ -50,6 +54,7 @@ func _start_battle() -> void:
 		
 	_init_systems()
 	_spawn_mock_teams()
+	enter_preparation_phase()
 
 func _init_systems() -> void:
 	board_config = BoardConfig.new()
@@ -92,25 +97,100 @@ func _init_systems() -> void:
 	skill_ui = SkillChoiceUI.new()
 	add_child(skill_ui)
 	skill_ui.skill_chosen.connect(_on_skill_chosen)
+	
+	_create_start_combat_ui()
+
+func _create_start_combat_ui() -> void:
+	if start_combat_button != null:
+		return
+	var canvas_layer := CanvasLayer.new()
+	canvas_layer.name = "BattleUILayer"
+	add_child(canvas_layer)
+	
+	start_combat_button = Button.new()
+	start_combat_button.name = "StartCombatButton"
+	start_combat_button.text = "⚔️ BẮT ĐẦU CHIẾN ĐẤU"
+	start_combat_button.custom_minimum_size = Vector2(260, 52)
+	start_combat_button.position = Vector2(576 - 130, 560)
+	start_combat_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	start_combat_button.pressed.connect(start_combat_phase)
+	
+	var style_normal := StyleBoxFlat.new()
+	style_normal.bg_color = Color("c0392b")
+	style_normal.set_corner_radius_all(8)
+	style_normal.border_width_bottom = 4
+	style_normal.border_color = Color("962d22")
+	start_combat_button.add_theme_stylebox_override("normal", style_normal)
+	
+	var style_hover := StyleBoxFlat.new()
+	style_hover.bg_color = Color("e74c3c")
+	style_hover.set_corner_radius_all(8)
+	style_hover.border_width_bottom = 4
+	style_hover.border_color = Color("c0392b")
+	start_combat_button.add_theme_stylebox_override("hover", style_hover)
+	
+	start_combat_button.add_theme_font_size_override("font_size", 18)
+	canvas_layer.add_child(start_combat_button)
+
+func enter_preparation_phase() -> void:
+	current_phase = EncounterPhase.PREPARATION
+	if board_grid != null:
+		board_grid.is_locked = false
+	if placement_controller != null:
+		placement_controller.set_locked(false)
+	if targeting_system != null:
+		targeting_system.set_process(false)
+		
+	for hero in heroes:
+		if is_instance_valid(hero):
+			hero.set_combat_active(false)
+	for enemy in enemies:
+		if is_instance_valid(enemy):
+			enemy.set_combat_active(false)
+			
+	if start_combat_button != null:
+		start_combat_button.show()
+	print("[BattleManager] 🛡️ PHASE: PREPARATION (Kéo thả bố trí đội hình)")
+
+func start_combat_phase() -> void:
+	current_phase = EncounterPhase.COMBAT
+	if board_grid != null:
+		board_grid.is_locked = true
+	if placement_controller != null:
+		placement_controller.set_locked(true)
+	if start_combat_button != null:
+		start_combat_button.hide()
+		
+	if targeting_system != null:
+		targeting_system.set_process(true)
+		
+	for hero in heroes:
+		if is_instance_valid(hero):
+			hero.set_combat_active(true)
+	for enemy in enemies:
+		if is_instance_valid(enemy):
+			enemy.set_combat_active(true)
+	print("[BattleManager] ⚔️ PHASE: COMBAT (Chiến đấu bắt đầu!)")
 
 func _spawn_mock_teams() -> void:
 	if board_grid != null:
 		board_grid.clear()
 		
-	# 1. Tướng THẬT (Kira) nạp từ file Resource
+	# 1. Tướng THẬT (Kira - Assassin): Hàng đầu Hero Zone (y = 3)
 	var kira_data = load("res://data/kira_data.tres") as HeroData
 	if kira_data:
-		_spawn_hero_at_grid(kira_data, Vector2i(1, 2))
+		_spawn_hero_at_grid(kira_data, Vector2i(4, 3))
 		
-	# 2. Sinh nhanh 4 Tướng ẢO (để Kira không bị hội đồng)
-	_spawn_hero_at_grid(_create_mock_hero_data("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8), Vector2i(2, 2))
-	_spawn_hero_at_grid(_create_mock_hero_data("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7), Vector2i(0, 1))
-	_spawn_hero_at_grid(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5), Vector2i(0, 3))
-	_spawn_hero_at_grid(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6), Vector2i(0, 2))
+	# 2. Sinh nhanh 4 Tướng ẢO (Trên–Dưới Layout)
+	_spawn_hero_at_grid(_create_mock_hero_data("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8), Vector2i(3, 3))
+	_spawn_hero_at_grid(_create_mock_hero_data("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7), Vector2i(2, 4))
+	_spawn_hero_at_grid(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5), Vector2i(3, 4))
+	_spawn_hero_at_grid(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6), Vector2i(4, 4))
 	
-	# 3. Quái vật
-	for i in range(5):
-		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, Vector2i(6, i))
+	# 3. Quái vật (Nửa trên bàn cờ: Hàng 1 & 2)
+	var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
+	for i in range(slime_coords.size()):
+		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, slime_coords[i])
 
 # Hàm hỗ trợ sinh Data nhanh bằng code
 func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float) -> HeroData:
@@ -211,6 +291,9 @@ func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
 	else:
 		enemies.erase(entity)
 		
+	if board_grid != null:
+		board_grid.remove_dead_entity(entity)
+		
 	corpses.append(entity)
 	_check_battle_end()
 
@@ -298,8 +381,10 @@ func _start_next_floor() -> void:
 	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG TIẾP THEO 🚀")
 	print("=====================================")
 	
-	for i in range(5):
-		_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, Vector2i(6, i))
+	var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
+	for i in range(slime_coords.size()):
+		_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, slime_coords[i])
+	enter_preparation_phase()
 
 # ==========================================
 # FLOATING TEXT SPAWNER (SPRINT 5 VFX)
@@ -859,53 +944,54 @@ func _run_tc_07_sprint5_ui_vfx() -> void:
 func _run_tc_08_board_grid_model() -> void:
 	_log_test("\n==================== [TEST TC-08: BOARD GRID MODEL] ====================")
 	var config = BoardConfig.new()
-	assert(config.columns == 8 and config.rows == 5, "FAIL TC-08: Default dimensions mismatch")
+	assert(config.columns == 8 and config.rows == 6, "FAIL TC-08: Default dimensions mismatch (expected 8x6)")
+	assert(config.cell_size == Vector2(72.0, 72.0), "FAIL TC-08: Default cell size mismatch (expected 72x72)")
 	
 	var grid = BoardGrid.new(config)
 	
-	# [BG-01]: Bounds validation
-	_log_test("[TC-08.1] [BG-01] Testing bounds validation...")
+	# [BG-01]: Bounds validation (Top-Down Layout)
+	_log_test("[TC-08.1] [BG-01] Testing bounds validation (Top-Down)...")
 	assert(grid.is_in_bounds(Vector2i(0, 0)) == true, "FAIL BG-01: (0,0) must be in bounds")
-	assert(grid.is_in_bounds(Vector2i(7, 4)) == true, "FAIL BG-01: (7,4) must be in bounds")
+	assert(grid.is_in_bounds(Vector2i(7, 5)) == true, "FAIL BG-01: (7,5) must be in bounds")
 	assert(grid.is_in_bounds(Vector2i(-1, 0)) == false, "FAIL BG-01: (-1,0) must be out of bounds")
-	assert(grid.is_in_bounds(Vector2i(8, 5)) == false, "FAIL BG-01: (8,5) must be out of bounds")
+	assert(grid.is_in_bounds(Vector2i(8, 6)) == false, "FAIL BG-01: (8,6) must be out of bounds")
 	assert(grid.is_in_bounds(Vector2i(8, 2)) == false, "FAIL BG-01: (8,2) must be out of bounds")
-	assert(config.is_hero_zone(Vector2i(2, 2)) == true, "FAIL BG-01: (2,2) should be hero zone")
+	assert(config.is_enemy_zone(Vector2i(3, 2)) == true, "FAIL BG-01: (3,2) should be enemy zone (rows 0, 1, 2)")
+	assert(config.is_enemy_zone(Vector2i(3, 3)) == false, "FAIL BG-01: (3,3) should not be enemy zone")
+	assert(config.is_hero_zone(Vector2i(3, 3)) == true, "FAIL BG-01: (3,3) should be hero zone (rows 3, 4, 5)")
 	assert(config.is_hero_zone(Vector2i(3, 2)) == false, "FAIL BG-01: (3,2) should not be hero zone")
-	assert(config.is_enemy_zone(Vector2i(5, 2)) == true, "FAIL BG-01: (5,2) should be enemy zone")
-	assert(config.is_enemy_zone(Vector2i(4, 2)) == false, "FAIL BG-01: (4,2) should not be enemy zone")
 	
 	# [BG-02]: Place hero entity
 	_log_test("[TC-08.2] [BG-02] Testing entity placement and reverse lookup...")
 	var hero = HeroEntity.new()
 	hero.name = "TestHero"
-	var place_ok = grid.place_entity(hero, Vector2i(2, 2))
-	assert(place_ok == true, "FAIL BG-02: place_entity should succeed at (2,2)")
-	assert(grid.is_cell_empty(Vector2i(2, 2)) == false, "FAIL BG-02: (2,2) must not be empty")
-	assert(grid.get_occupant(Vector2i(2, 2)) == hero, "FAIL BG-02: occupant at (2,2) must be hero")
-	assert(grid.get_cell_for_entity(hero) == Vector2i(2, 2), "FAIL BG-02: reverse lookup must return (2,2)")
+	var place_ok = grid.place_entity(hero, Vector2i(3, 3))
+	assert(place_ok == true, "FAIL BG-02: place_entity should succeed at (3,3)")
+	assert(grid.is_cell_empty(Vector2i(3, 3)) == false, "FAIL BG-02: (3,3) must not be empty")
+	assert(grid.get_occupant(Vector2i(3, 3)) == hero, "FAIL BG-02: occupant at (3,3) must be hero")
+	assert(grid.get_cell_for_entity(hero) == Vector2i(3, 3), "FAIL BG-02: reverse lookup must return (3,3)")
 	
 	# [BG-03]: Conflict resolution
 	_log_test("[TC-08.3] [BG-03] Testing placement collision rejection...")
 	var enemy = EnemyEntity.new()
 	enemy.name = "TestEnemy"
-	var conflict_ok = grid.place_entity(enemy, Vector2i(2, 2))
+	var conflict_ok = grid.place_entity(enemy, Vector2i(3, 3))
 	assert(conflict_ok == false, "FAIL BG-03: placing on occupied cell must fail")
-	assert(grid.get_occupant(Vector2i(2, 2)) == hero, "FAIL BG-03: (2,2) must still belong to hero")
+	assert(grid.get_occupant(Vector2i(3, 3)) == hero, "FAIL BG-03: (3,3) must still belong to hero")
 	assert(grid.get_cell_for_entity(enemy) == Vector2i(-1, -1), "FAIL BG-03: unplaced enemy must return (-1,-1)")
 	
 	# [BG-04]: Move entity with rollback guarantee
 	_log_test("[TC-08.4] [BG-04] Testing entity movement and collision rollback...")
-	grid.place_entity(enemy, Vector2i(3, 3))
-	var invalid_move_blocked = grid.move_entity(Vector2i(2, 2), Vector2i(3, 3))
+	grid.place_entity(enemy, Vector2i(2, 2))
+	var invalid_move_blocked = grid.move_entity(Vector2i(3, 3), Vector2i(2, 2))
 	assert(invalid_move_blocked == false, "FAIL BG-04: moving into occupied cell must return false")
-	assert(grid.get_occupant(Vector2i(2, 2)) == hero, "FAIL BG-04: hero must remain at (2,2) on failed move")
+	assert(grid.get_occupant(Vector2i(3, 3)) == hero, "FAIL BG-04: hero must remain at (3,3) on failed move")
 	
-	var valid_move = grid.move_entity(Vector2i(2, 2), Vector2i(2, 3))
-	assert(valid_move == true, "FAIL BG-04: moving to empty cell (2,3) must succeed")
-	assert(grid.is_cell_empty(Vector2i(2, 2)) == true, "FAIL BG-04: (2,2) must now be empty")
-	assert(grid.get_occupant(Vector2i(2, 3)) == hero, "FAIL BG-04: (2,3) must contain hero")
-	assert(grid.get_cell_for_entity(hero) == Vector2i(2, 3), "FAIL BG-04: hero reverse lookup must be (2,3)")
+	var valid_move = grid.move_entity(Vector2i(3, 3), Vector2i(3, 4))
+	assert(valid_move == true, "FAIL BG-04: moving to empty cell (3,4) must succeed")
+	assert(grid.is_cell_empty(Vector2i(3, 3)) == true, "FAIL BG-04: (3,3) must now be empty")
+	assert(grid.get_occupant(Vector2i(3, 4)) == hero, "FAIL BG-04: (3,4) must contain hero")
+	assert(grid.get_cell_for_entity(hero) == Vector2i(3, 4), "FAIL BG-04: hero reverse lookup must be (3,4)")
 	
 	# [BG-05]: 8-Direction Adjacency
 	_log_test("[TC-08.5] [BG-05] Testing 8-direction adjacency neighbors...")
@@ -921,18 +1007,37 @@ func _run_tc_08_board_grid_model() -> void:
 	
 	# [BG-06]: Remove entity & clean dictionaries
 	_log_test("[TC-08.6] [BG-06] Testing entity removal and dictionary cleanup...")
-	var removed_hero = grid.remove_entity(Vector2i(2, 3))
+	var removed_hero = grid.remove_entity(Vector2i(3, 4))
 	assert(removed_hero == hero, "FAIL BG-06: remove_entity must return the removed hero")
-	assert(grid.is_cell_empty(Vector2i(2, 3)) == true, "FAIL BG-06: (2,3) must now be empty")
+	assert(grid.is_cell_empty(Vector2i(3, 4)) == true, "FAIL BG-06: (3,4) must now be empty")
 	assert(grid.get_cell_for_entity(hero) == Vector2i(-1, -1), "FAIL BG-06: hero lookup must be (-1,-1)")
 	
-	grid.remove_entity(Vector2i(3, 3))
+	grid.remove_entity(Vector2i(2, 2))
 	assert(grid._cell_occupants.is_empty() == true, "FAIL BG-06: _cell_occupants must be completely empty")
 	assert(grid._entity_cells.is_empty() == true, "FAIL BG-06: _entity_cells must be completely empty")
 	
+	# [BG-08]: Zone Enforcement via can_place
+	_log_test("[TC-08.7] [BG-08] Testing zone restriction enforcement via can_place...")
+	assert(grid.can_place(hero, Vector2i(3, 1), true) == false, "FAIL BG-08: Hero cannot be placed in Enemy zone (y=1)")
+	assert(grid.can_place(hero, Vector2i(3, 4), true) == true, "FAIL BG-08: Hero can be placed in Hero zone (y=4)")
+	assert(grid.can_place(enemy, Vector2i(3, 4), true) == false, "FAIL BG-08: Enemy cannot be placed in Hero zone (y=4)")
+	assert(grid.can_place(enemy, Vector2i(3, 1), true) == true, "FAIL BG-08: Enemy can be placed in Enemy zone (y=1)")
+	
+	# [BG-10]: BoardGrid Locking enforcement
+	_log_test("[TC-08.8] [BG-10] Testing BoardGrid lock enforcement in COMBAT phase...")
+	grid.place_entity(hero, Vector2i(3, 4))
+	grid.is_locked = true
+	assert(grid.place_entity(enemy, Vector2i(3, 1)) == false, "FAIL BG-10: Placing when locked must return false")
+	assert(grid.move_entity(Vector2i(3, 4), Vector2i(4, 4)) == false, "FAIL BG-10: Moving when locked must return false")
+	assert(grid.remove_entity(Vector2i(3, 4)) == null, "FAIL BG-10: Removing when locked must return null")
+	assert(grid.get_occupant(Vector2i(3, 4)) == hero, "FAIL BG-10: Hero must remain safely untouched during lock")
+	
+	grid.is_locked = false
+	grid.remove_entity(Vector2i(3, 4))
+	
 	hero.free()
 	enemy.free()
-	_log_test(">>> 🟢 TC-08 PASSED: BoardGrid Pure Data Model verified!\n")
+	_log_test(">>> 🟢 TC-08 PASSED: BoardGrid Pure Data Model & BG-08..10 verified!\n")
 
 # ------------------------------------------------------------------------------
 # TC-09: BoardView & PlacementController (Sprint 1 Tasks S1.3 & S1.4)
@@ -940,15 +1045,17 @@ func _run_tc_08_board_grid_model() -> void:
 func _run_tc_09_board_view_and_placement() -> void:
 	_log_test("\n==================== [TEST TC-09: BOARD VIEW & PLACEMENT] ====================")
 	_reset_test_battlefield()
+	# Chuyển sang PREPARATION để test kéo thả bố trí đội hình
+	enter_preparation_phase()
 	
-	# 1. BoardView Math & Mapping Verification
-	_log_test("[TC-09.1] Checking BoardView world <-> grid coordinate conversions...")
+	# 1. BoardView Math & Mapping Verification [BG-09]
+	_log_test("[TC-09.1] [BG-09] Checking BoardView world <-> grid coordinate conversions...")
 	assert(board_view != null, "FAIL TC-09.1: BoardView node not found")
 	assert(board_config != null and board_grid != null, "FAIL TC-09.1: Config/Grid not initialized")
 	
-	var test_cell := Vector2i(2, 3)
+	var test_cell := Vector2i(3, 4)
 	var world_pos := board_view.grid_to_world(test_cell)
-	var expected_local := Vector2(test_cell * 80) + Vector2(40.0, 40.0)
+	var expected_local := Vector2(test_cell * 72) + Vector2(36.0, 36.0)
 	var expected_global := board_view.to_global(expected_local)
 	assert(world_pos.is_equal_approx(expected_global), "FAIL TC-09.1: grid_to_world mismatch")
 	
@@ -957,8 +1064,8 @@ func _run_tc_09_board_view_and_placement() -> void:
 	
 	# 2. Hover highlights reactivity
 	_log_test("[TC-09.2] Checking BoardView hover highlight...")
-	board_view.hovered_cell = Vector2i(1, 1)
-	assert(board_view.hovered_cell == Vector2i(1, 1), "FAIL TC-09.2: Hovered cell not set")
+	board_view.hovered_cell = Vector2i(3, 4)
+	assert(board_view.hovered_cell == Vector2i(3, 4), "FAIL TC-09.2: Hovered cell not set")
 	board_view.hovered_cell = Vector2i(-1, -1)
 	
 	# 3. PlacementController State & Validation
@@ -966,39 +1073,39 @@ func _run_tc_09_board_view_and_placement() -> void:
 	assert(placement_controller != null, "FAIL TC-09.3: PlacementController not found")
 	
 	# Placement lock test
-	placement_controller.is_placement_locked = true
-	assert(placement_controller.is_placement_locked == true, "FAIL TC-09.3: Lock state mismatch")
-	placement_controller.is_placement_locked = false
+	placement_controller.set_locked(true)
+	assert(placement_controller.is_locked == true, "FAIL TC-09.3: Lock state mismatch")
+	placement_controller.set_locked(false)
 	
 	# Hero Drag & Drop Movement Test
-	# Arthur is at (2, 2). Move to (2, 1) which is an empty hero zone cell
-	var arthur = board_grid.get_occupant(Vector2i(2, 2))
-	assert(arthur != null, "FAIL TC-09.3: Arthur not found at (2, 2)")
+	# Arthur is at (3, 3). Move to (2, 3) which is an empty hero zone cell
+	var arthur = board_grid.get_occupant(Vector2i(3, 3))
+	assert(arthur != null, "FAIL TC-09.3: Arthur not found at (3, 3)")
 	
-	# Move to valid empty hero zone cell (2, 1)
-	var move_ok = board_grid.move_entity(Vector2i(2, 2), Vector2i(2, 1))
-	assert(move_ok == true, "FAIL TC-09.3: Move Arthur to (2, 1) should succeed")
-	assert(board_grid.get_occupant(Vector2i(2, 1)) == arthur, "FAIL TC-09.3: Arthur not at (2, 1)")
-	assert(board_grid.is_cell_empty(Vector2i(2, 2)) == true, "FAIL TC-09.3: Old cell (2, 2) not empty")
+	# Move to valid empty hero zone cell (2, 3)
+	var move_ok = board_grid.move_entity(Vector2i(3, 3), Vector2i(2, 3))
+	assert(move_ok == true, "FAIL TC-09.3: Move Arthur to (2, 3) should succeed")
+	assert(board_grid.get_occupant(Vector2i(2, 3)) == arthur, "FAIL TC-09.3: Arthur not at (2, 3)")
+	assert(board_grid.is_cell_empty(Vector2i(3, 3)) == true, "FAIL TC-09.3: Old cell (3, 3) not empty")
 	
-	# Move into enemy zone (6, 1) - should be forbidden by hero_zone rule
-	assert(board_config.is_hero_zone(Vector2i(6, 1)) == false, "FAIL TC-09.3: (6, 1) is not hero zone")
+	# Move into enemy zone (3, 1) - should be forbidden by hero_zone rule
+	assert(board_config.is_hero_zone(Vector2i(3, 1)) == false, "FAIL TC-09.3: (3, 1) is not hero zone")
 	
-	# Move back to (2, 2)
-	board_grid.move_entity(Vector2i(2, 1), Vector2i(2, 2))
+	# Move back to (3, 3)
+	board_grid.move_entity(Vector2i(2, 3), Vector2i(3, 3))
 	
 	# 4. Dangling Reference Auto-Cleanup on Entity Tree Exit
 	_log_test("[TC-09.4] Checking automatic BoardGrid cleanup on entity tree_exiting...")
 	var dummy: HeroEntity = hero_scene.instantiate() as HeroEntity
 	add_child(dummy)
-	board_grid.place_entity(dummy, Vector2i(1, 0))
-	assert(board_grid.get_occupant(Vector2i(1, 0)) == dummy, "FAIL TC-09.4: Dummy not placed")
-	assert(board_grid.get_cell_for_entity(dummy) == Vector2i(1, 0), "FAIL TC-09.4: Dummy lookup mismatch")
+	board_grid.place_entity(dummy, Vector2i(1, 5))
+	assert(board_grid.get_occupant(Vector2i(1, 5)) == dummy, "FAIL TC-09.4: Dummy not placed")
+	assert(board_grid.get_cell_for_entity(dummy) == Vector2i(1, 5), "FAIL TC-09.4: Dummy lookup mismatch")
 	
 	# Free entity from scene tree
 	dummy.queue_free()
 	dummy.tree_exiting.emit()
-	assert(board_grid.is_cell_empty(Vector2i(1, 0)) == true, "FAIL TC-09.4: Cell (1, 0) should be empty after tree_exiting")
+	assert(board_grid.is_cell_empty(Vector2i(1, 5)) == true, "FAIL TC-09.4: Cell (1, 5) should be empty after tree_exiting")
 	assert(board_grid.get_cell_for_entity(dummy) == Vector2i(-1, -1), "FAIL TC-09.4: Dummy lookup should be cleared")
 	
 	_log_test(">>> 🟢 TC-09 PASSED: BoardView & PlacementController fully verified!\n")
@@ -1011,7 +1118,10 @@ func _reset_test_battlefield() -> void:
 	for e in enemies: if is_instance_valid(e): e.queue_free()
 	heroes.clear(); enemies.clear(); choice_queue.clear()
 	if board_grid != null:
+		board_grid.is_locked = false
 		board_grid.clear()
+	if placement_controller != null:
+		placement_controller.set_locked(false)
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
 	if get_tree() != null:
@@ -1023,3 +1133,4 @@ func _reset_test_battlefield() -> void:
 		camera.offset = Vector2.ZERO
 	battle_ended = false
 	_spawn_mock_teams()
+	start_combat_phase()

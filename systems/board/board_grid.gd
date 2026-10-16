@@ -7,6 +7,7 @@ extends RefCounted
 # ==========================================
 
 var config: BoardConfig
+var is_locked: bool = false
 var _cell_occupants: Dictionary = {} # Vector2i -> CombatEntity
 var _entity_cells: Dictionary = {}    # CombatEntity -> Vector2i
 var _entity_cleanup_callables: Dictionary = {} # CombatEntity -> Callable
@@ -39,16 +40,25 @@ func get_cell_for_entity(entity: CombatEntity) -> Vector2i:
 		return Vector2i(-1, -1)
 	return _entity_cells[entity]
 
+# Kiểm tra hợp lệ vùng đặt quân (BG-08) và trạng thái khóa (BG-10)
+func can_place(entity: CombatEntity, cell: Vector2i, enforce_zone: bool = false) -> bool:
+	if is_locked or entity == null:
+		return false
+	if not is_in_bounds(cell) or not is_cell_empty(cell):
+		return false
+	if enforce_zone and config != null:
+		if entity is HeroEntity and not config.is_hero_zone(cell):
+			return false
+		if entity is EnemyEntity and not config.is_enemy_zone(cell):
+			return false
+	return true
+
 # ==========================================
 # MUTATION (OCCUPANCY)
 # ==========================================
 
-func place_entity(entity: CombatEntity, cell: Vector2i) -> bool:
-	if entity == null:
-		return false
-	if not is_in_bounds(cell):
-		return false
-	if not is_cell_empty(cell):
+func place_entity(entity: CombatEntity, cell: Vector2i, enforce_zone: bool = false) -> bool:
+	if not can_place(entity, cell, enforce_zone):
 		return false
 		
 	# Nếu entity đang ở ô khác, giải phóng ô cũ
@@ -62,14 +72,24 @@ func place_entity(entity: CombatEntity, cell: Vector2i) -> bool:
 	# Tự động dọn dẹp khi Entity bị hủy hoặc rời khỏi Scene Tree (tránh dangling reference)
 	if not _entity_cleanup_callables.has(entity):
 		var cleanup := func():
-			if _entity_cells.has(entity):
-				remove_entity(_entity_cells[entity])
+			remove_dead_entity(entity)
 		_entity_cleanup_callables[entity] = cleanup
 		entity.tree_exiting.connect(cleanup)
 
 	return true
 
 func remove_entity(cell: Vector2i) -> CombatEntity:
+	if is_locked:
+		return null
+	return _do_remove_entity(cell)
+
+func remove_dead_entity(entity: CombatEntity) -> CombatEntity:
+	if entity == null or not _entity_cells.has(entity):
+		return null
+	var cell: Vector2i = _entity_cells[entity]
+	return _do_remove_entity(cell)
+
+func _do_remove_entity(cell: Vector2i) -> CombatEntity:
 	if not _cell_occupants.has(cell):
 		return null
 		
@@ -85,6 +105,8 @@ func remove_entity(cell: Vector2i) -> CombatEntity:
 	return entity
 
 func move_entity(from_cell: Vector2i, to_cell: Vector2i) -> bool:
+	if is_locked:
+		return false
 	if from_cell == to_cell:
 		return true
 	if not is_in_bounds(from_cell) or not is_in_bounds(to_cell):

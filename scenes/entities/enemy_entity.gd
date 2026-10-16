@@ -29,6 +29,15 @@ func _die() -> void:
 	attack_timer.stop()
 	super()
 
+func set_combat_active(active: bool) -> void:
+	super(active)
+	if attack_timer != null:
+		if active:
+			if not is_dead:
+				attack_timer.start()
+		else:
+			attack_timer.stop()
+
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	

@@ -12,7 +12,7 @@ hero_scene = ExtResource("2_jnwmo")
 enemy_scene = ExtResource("3_w6b63")
 
 [node name="BoardView" parent="." instance=ExtResource("4_boardview")]
-position = Vector2(256, 124)
+position = Vector2(288, 108)
 
 [node name="PlacementController" type="Node" parent="."]
 script = ExtResource("5_placement")

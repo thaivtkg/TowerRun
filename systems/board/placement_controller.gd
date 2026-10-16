@@ -12,9 +12,37 @@ var board_view: BoardView
 var dragged_entity: CombatEntity = null
 var original_cell: Vector2i = Vector2i(-1, -1)
 var original_z_index: int = 0
-var is_placement_locked: bool = false
+
+var is_locked: bool = false:
+	get:
+		return _is_locked
+	set(val):
+		set_locked(val)
+var _is_locked: bool = false
+
+# Biến alias tương thích ngược
+var is_placement_locked: bool:
+	get:
+		return _is_locked
+	set(val):
+		set_locked(val)
+
+func set_locked(locked: bool) -> void:
+	_is_locked = locked
+	if _is_locked and dragged_entity != null:
+		# Ngắt kéo dở tức thì: trả Tướng về tâm ô xuất phát an toàn
+		if is_instance_valid(dragged_entity):
+			if board_view != null and original_cell != Vector2i(-1, -1):
+				dragged_entity.global_position = board_view.grid_to_world(original_cell)
+			dragged_entity.z_index = original_z_index
+		dragged_entity = null
+		original_cell = Vector2i(-1, -1)
+		if board_view != null:
+			board_view.hovered_cell = Vector2i(-1, -1)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _is_locked or (board_grid != null and board_grid.is_locked):
+		return
 	if board_grid == null or board_view == null:
 		return
 		
@@ -27,7 +55,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_mouse_moved()
 
 func _on_mouse_pressed() -> void:
-	if is_placement_locked:
+	if _is_locked or (board_grid != null and board_grid.is_locked):
 		return
 		
 	var mouse_pos: Vector2 = board_view.get_global_mouse_position()
@@ -49,6 +77,11 @@ func _on_mouse_pressed() -> void:
 		get_viewport().set_input_as_handled()
 
 func _on_mouse_moved() -> void:
+	if _is_locked or (board_grid != null and board_grid.is_locked):
+		if board_view != null and board_view.hovered_cell != Vector2i(-1, -1):
+			board_view.hovered_cell = Vector2i(-1, -1)
+		return
+		
 	var mouse_pos: Vector2 = board_view.get_global_mouse_position()
 	var current_cell: Vector2i = board_view.world_to_grid(mouse_pos)
 	
@@ -62,7 +95,7 @@ func _on_mouse_moved() -> void:
 			original_cell = Vector2i(-1, -1)
 			board_view.hovered_cell = Vector2i(-1, -1)
 	else:
-		if not is_placement_locked and board_grid.is_in_bounds(current_cell):
+		if board_grid.is_in_bounds(current_cell):
 			board_view.hovered_cell = current_cell
 		else:
 			board_view.hovered_cell = Vector2i(-1, -1)
@@ -74,7 +107,8 @@ func _on_mouse_released() -> void:
 	if not is_instance_valid(dragged_entity):
 		dragged_entity = null
 		original_cell = Vector2i(-1, -1)
-		board_view.hovered_cell = Vector2i(-1, -1)
+		if board_view != null:
+			board_view.hovered_cell = Vector2i(-1, -1)
 		return
 		
 	var mouse_pos: Vector2 = board_view.get_global_mouse_position()
