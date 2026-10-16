@@ -316,6 +316,8 @@ func _shake_camera(intensity: float, duration: float = 0.2) -> void:
 		if intensity <= _current_shake_strength:
 			return
 		_shake_tween.kill()
+	else:
+		_current_shake_strength = 0.0
 		
 	_current_shake_strength = intensity
 	_shake_tween = create_tween()
@@ -385,7 +387,7 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 6 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 7 TEST CASE VÀ GHI REPORT
 		KEY_0:
 			_run_all_tests()
 			
@@ -396,16 +398,17 @@ func _input(event: InputEvent) -> void:
 		KEY_4: _run_tc_01_active_ability_xp()
 		KEY_5: _run_tc_05_post_battle_choice_queue()
 		KEY_6: _run_tc_06_xp_regression()
+		KEY_7: _run_tc_07_sprint5_ui_vfx()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
 	if file:
-		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 4 ===")
+		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 4 & SPRINT 5 ===")
 		file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
-		file.store_line("==================================\n")
+		file.store_line("============================================\n")
 		file.close()
 	
-	_log_test("Đang chạy toàn bộ Test Suite...")
+	_log_test("Đang chạy toàn bộ Test Suite (Sprint 4 & Sprint 5)...")
 	_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
 	
 	_run_tc_01_active_ability_xp()
@@ -414,8 +417,9 @@ func _run_all_tests() -> void:
 	_run_tc_04_passive_recursion()
 	_run_tc_05_post_battle_choice_queue()
 	_run_tc_06_xp_regression()
+	_run_tc_07_sprint5_ui_vfx()
 	
-	_log_test("\n🎉 TẤT CẢ TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 7 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -691,6 +695,122 @@ func _run_tc_05_post_battle_choice_queue() -> void:
 	_log_test(">>> 🟢 TC-05 PASSED!\n")
 
 # ------------------------------------------------------------------------------
+# TC-07: Sprint 5 UI & VFX Verification
+# ------------------------------------------------------------------------------
+func _run_tc_07_sprint5_ui_vfx() -> void:
+	_log_test("\n==================== [TEST TC-07: SPRINT 5 UI & VFX VERIFICATION] ====================")
+	_reset_test_battlefield()
+	
+	var hero = heroes[0] as HeroEntity
+	var enemy = enemies[0] as EnemyEntity
+	
+	# 1. EntityStatusBar Attachment & Rules
+	_log_test("[TC-07.1] Checking EntityStatusBar attachment & role differentiation...")
+	assert(hero.status_bar != null and is_instance_valid(hero.status_bar), "FAIL TC-07.1: Hero missing status_bar")
+	assert(enemy.status_bar != null and is_instance_valid(enemy.status_bar), "FAIL TC-07.1: Enemy missing status_bar")
+	assert(hero.status_bar.energy_bar.visible == true, "FAIL TC-07.1: Hero energy bar should be visible")
+	assert(enemy.status_bar.energy_bar.visible == false, "FAIL TC-07.1: Enemy energy bar should be hidden")
+	assert(is_equal_approx(hero.status_bar.health_bar.max_value, hero.max_hp), "FAIL TC-07.1: Hero max health bar mismatch")
+	assert(is_equal_approx(enemy.status_bar.health_bar.max_value, enemy.max_hp), "FAIL TC-07.1: Enemy max health bar mismatch")
+	
+	# 2. Dynamic HP & Energy Bar Updates
+	_log_test("[TC-07.2] Checking HP & Energy bar reactivity...")
+	hero.current_hp = hero.max_hp * 0.5
+	if hero.status_bar._hp_tween != null and hero.status_bar._hp_tween.is_valid():
+		hero.status_bar._hp_tween.custom_step(0.2)
+	assert(is_equal_approx(hero.status_bar.health_bar.value, hero.max_hp * 0.5), "FAIL TC-07.2: Health bar value not synchronized")
+	
+	hero.current_energy = 80.0
+	if hero.status_bar._energy_tween != null and hero.status_bar._energy_tween.is_valid():
+		hero.status_bar._energy_tween.custom_step(0.2)
+	assert(is_equal_approx(hero.status_bar.energy_bar.value, 80.0), "FAIL TC-07.2: Energy bar value not synchronized")
+	
+	hero.current_energy = 100.0
+	if hero.status_bar._energy_tween != null and hero.status_bar._energy_tween.is_valid():
+		hero.status_bar._energy_tween.custom_step(0.2)
+	assert(is_equal_approx(hero.status_bar.energy_bar.value, 100.0), "FAIL TC-07.2: Full energy value not synchronized")
+	assert(hero.status_bar._energy_flash_tween != null and hero.status_bar._energy_flash_tween.is_valid(), "FAIL TC-07.2: Energy flash not triggered at 100% energy")
+	
+	# 3. Roguelike Skill Cards UI Rendering
+	_log_test("[TC-07.3] Checking Roguelike Skill Cards UI rendering & styling...")
+	var p_skill = AbilityData.new()
+	p_skill.name = "Blade Dance"
+	p_skill.ability_type = AbilityData.AbilityType.PASSIVE
+	p_skill.trigger_condition = AbilityData.TriggerCondition.ON_CRIT
+	
+	var a_skill = AbilityData.new()
+	a_skill.name = "Shadow Strike"
+	a_skill.ability_type = AbilityData.AbilityType.ACTIVE
+	a_skill.cooldown = 4.5
+	a_skill.energy_cost = 30.0
+	
+	var u_skill = AbilityData.new()
+	u_skill.name = "Death Mark"
+	u_skill.ability_type = AbilityData.AbilityType.ULTIMATE
+	
+	skill_ui.show_choices(hero.name, 5, [p_skill, a_skill, u_skill])
+	assert(skill_ui.visible == true, "FAIL TC-07.3: SkillChoiceUI should be visible")
+	assert(skill_ui.cards_container.get_child_count() == 3, "FAIL TC-07.3: Exactly 3 skill cards expected")
+	
+	for i in range(3):
+		var card = skill_ui.cards_container.get_child(i) as PanelContainer
+		assert(card != null, "FAIL TC-07.3: Card is not a PanelContainer")
+		assert(card.pivot_offset.x > 0.0, "FAIL TC-07.3: Card pivot_offset not centered")
+		var style = card.get_theme_stylebox("panel") as StyleBoxFlat
+		assert(style != null, "FAIL TC-07.3: Card missing StyleBoxFlat")
+		if i == 0:
+			assert(style.border_color == Color("2ecc71"), "FAIL TC-07.3: Passive border color mismatch")
+		elif i == 1:
+			assert(style.border_color == Color("3498db"), "FAIL TC-07.3: Active border color mismatch")
+		elif i == 2:
+			assert(style.border_color == Color("f39c12"), "FAIL TC-07.3: Ultimate border color mismatch")
+			
+	# 4. Multi-Milestone Queue Seamless Transition (Blind spot 1 check)
+	_log_test("[TC-07.4] Checking multi-milestone synchronous queue transition...")
+	choice_queue.clear()
+	choice_queue.append({
+		"hero": hero,
+		"milestone": 5,
+		"choices": [p_skill, a_skill, u_skill]
+	})
+	choice_queue.append({
+		"hero": hero,
+		"milestone": 10,
+		"choices": [p_skill, a_skill, u_skill]
+	})
+	
+	_process_next_choice()
+	assert(skill_ui.visible == true, "FAIL TC-07.4: Skill UI not shown for first milestone")
+	
+	# Simulate choosing skill 1: should synchronously advance to milestone 10 without leaving UI hidden
+	_on_skill_chosen(p_skill, [p_skill, a_skill, u_skill])
+	assert(choice_queue.size() == 1, "FAIL TC-07.4: Queue should have 1 milestone remaining")
+	assert(skill_ui.visible == true, "FAIL TC-07.4: Skill UI should remain visible for milestone 10")
+	
+	# Simulate choosing skill 2: finishes reward phase
+	_on_skill_chosen(u_skill, [p_skill, a_skill, u_skill])
+	assert(choice_queue.size() == 0, "FAIL TC-07.4: Queue should now be empty")
+	skill_ui.hide()
+	if get_tree() != null:
+		get_tree().paused = false
+		
+	# 5. Combat Juice Anti-Stacking Camera Shake
+	_log_test("[TC-07.5] Checking camera shake anti-stacking trauma logic...")
+	if camera != null:
+		_shake_camera(4.0, 0.18)
+		assert(is_equal_approx(_current_shake_strength, 4.0), "FAIL TC-07.5: Shake intensity 4.0 not registered")
+		_shake_camera(2.0, 0.18) # Weaker shake should NOT override
+		assert(is_equal_approx(_current_shake_strength, 4.0), "FAIL TC-07.5: Weaker shake overrode stronger shake")
+		_shake_camera(6.0, 0.25) # Stronger shake SHOULD override
+		assert(is_equal_approx(_current_shake_strength, 6.0), "FAIL TC-07.5: Stronger shake failed to override")
+		if _shake_tween != null and _shake_tween.is_running():
+			_shake_tween.kill()
+		camera.offset = Vector2.ZERO
+		_current_shake_strength = 0.0
+		
+	_log_test(">>> 🟢 TC-07 PASSED: All Sprint 5 UI & VFX systems fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -701,5 +821,10 @@ func _reset_test_battlefield() -> void:
 		skill_ui.hide()
 	if get_tree() != null:
 		get_tree().paused = false
+	if _shake_tween != null and _shake_tween.is_running():
+		_shake_tween.kill()
+	_current_shake_strength = 0.0
+	if camera != null:
+		camera.offset = Vector2.ZERO
 	battle_ended = false
 	_spawn_mock_teams()

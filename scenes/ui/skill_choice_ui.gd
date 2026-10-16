@@ -49,19 +49,23 @@ func _init() -> void:
 	
 	hide()
 
-func show_choices(hero_name: String, milestone: int, choices: Array[AbilityData]) -> void:
+func show_choices(hero_name: String, milestone: int, choices: Array) -> void:
 	# Bẫy 4: Mở khóa chọn cho lần mở UI mới
 	_selection_locked = false
-	current_choices = choices
+	current_choices.clear()
+	for c in choices:
+		if c is AbilityData:
+			current_choices.append(c as AbilityData)
 	
 	for child in cards_container.get_children():
+		cards_container.remove_child(child)
 		child.queue_free()
 		
 	title_label.text = "=== %s REACHED LEVEL %d ===\nCHOOSE 1 ABILITY" % [hero_name.to_upper(), milestone]
 	
-	for i in range(choices.size()):
-		var ability = choices[i]
-		var card = _create_card(ability, i)
+	for i in range(current_choices.size()):
+		var ability: AbilityData = current_choices[i]
+		var card: Control = _create_card(ability, i)
 		cards_container.add_child(card)
 		
 	show()
@@ -165,7 +169,7 @@ func _create_card(ability: AbilityData, index: int) -> Control:
 	# Pop-in Staggered Animation
 	card.scale = Vector2(0.85, 0.85)
 	card.modulate.a = 0.0
-	var in_tween := card.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	var in_tween := _start_card_tween(card)
 	in_tween.tween_interval(index * 0.06)
 	in_tween.tween_property(card, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	in_tween.parallel().tween_property(card, "modulate:a", 1.0, 0.15)
@@ -177,10 +181,23 @@ func _create_card(ability: AbilityData, index: int) -> Control:
 	
 	return card
 
+func _kill_card_tween(card: Control) -> void:
+	if card.has_meta("card_tween"):
+		var t = card.get_meta("card_tween") as Tween
+		if t != null and t.is_running():
+			t.kill()
+		card.remove_meta("card_tween")
+
+func _start_card_tween(card: Control) -> Tween:
+	_kill_card_tween(card)
+	var t := card.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	card.set_meta("card_tween", t)
+	return t
+
 func _on_card_hover_enter(card: PanelContainer, _type_color: Color) -> void:
 	if _selection_locked: return
 	card.pivot_offset = card.size * 0.5
-	var tween := card.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	var tween := _start_card_tween(card)
 	tween.tween_property(card, "scale", Vector2(1.06, 1.06), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	var style: StyleBoxFlat = card.get_theme_stylebox("panel") as StyleBoxFlat
 	if style != null:
@@ -192,7 +209,7 @@ func _on_card_hover_enter(card: PanelContainer, _type_color: Color) -> void:
 func _on_card_hover_exit(card: PanelContainer, _type_color: Color) -> void:
 	if _selection_locked: return
 	card.pivot_offset = card.size * 0.5
-	var tween := card.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	var tween := _start_card_tween(card)
 	tween.tween_property(card, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	var style: StyleBoxFlat = card.get_theme_stylebox("panel") as StyleBoxFlat
 	if style != null:
@@ -207,7 +224,7 @@ func _on_card_gui_input(event: InputEvent, ability: AbilityData, card: PanelCont
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		_selection_locked = true # Khóa ngay lập tức chống double click
 		card.pivot_offset = card.size * 0.5
-		var select_tween := card.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+		var select_tween := _start_card_tween(card)
 		select_tween.tween_property(card, "scale", Vector2(1.12, 1.12), 0.08).set_trans(Tween.TRANS_QUAD)
 		select_tween.tween_property(card, "scale", Vector2(0.95, 0.95), 0.08).set_trans(Tween.TRANS_QUAD)
 		select_tween.tween_callback(func():
