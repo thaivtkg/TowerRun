@@ -3,17 +3,19 @@
 [ext_resource type="Script" uid="uid://c6hyx0mk1q5or" path="res://scenes/battle/battle_manager.gd" id="1_omw3i"]
 [ext_resource type="PackedScene" uid="uid://twio5nxgv5oo" path="res://scenes/entities/Hero.tscn" id="2_jnwmo"]
 [ext_resource type="PackedScene" uid="uid://b15ncjs2tb1jx" path="res://scenes/entities/Enemy.tscn" id="3_w6b63"]
+[ext_resource type="PackedScene" path="res://scenes/board/BoardView.tscn" id="4_boardview"]
+[ext_resource type="Script" path="res://systems/board/placement_controller.gd" id="5_placement"]
 
 [node name="BattleManager" type="Node2D" unique_id=917900440]
 script = ExtResource("1_omw3i")
 hero_scene = ExtResource("2_jnwmo")
 enemy_scene = ExtResource("3_w6b63")
 
-[node name="HeroSpawn" type="Marker2D" parent="." unique_id=1474984842]
-position = Vector2(120, 317)
+[node name="BoardView" parent="." instance=ExtResource("4_boardview")]
+position = Vector2(256, 124)
 
-[node name="EnemySpawn" type="Marker2D" parent="." unique_id=1126203650]
-position = Vector2(939, 298)
+[node name="PlacementController" type="Node" parent="."]
+script = ExtResource("5_placement")
 
 [node name="BattleCamera" type="Camera2D" parent="."]
 position = Vector2(576, 324)

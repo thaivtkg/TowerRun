@@ -9,6 +9,7 @@ extends RefCounted
 var config: BoardConfig
 var _cell_occupants: Dictionary = {} # Vector2i -> CombatEntity
 var _entity_cells: Dictionary = {}    # CombatEntity -> Vector2i
+var _entity_cleanup_callables: Dictionary = {} # CombatEntity -> Callable
 
 func _init(_config: BoardConfig = null) -> void:
 	if _config != null:
@@ -57,6 +58,15 @@ func place_entity(entity: CombatEntity, cell: Vector2i) -> bool:
 		
 	_cell_occupants[cell] = entity
 	_entity_cells[entity] = cell
+
+	# Tự động dọn dẹp khi Entity bị hủy hoặc rời khỏi Scene Tree (tránh dangling reference)
+	if not _entity_cleanup_callables.has(entity):
+		var cleanup := func():
+			if _entity_cells.has(entity):
+				remove_entity(_entity_cells[entity])
+		_entity_cleanup_callables[entity] = cleanup
+		entity.tree_exiting.connect(cleanup)
+
 	return true
 
 func remove_entity(cell: Vector2i) -> CombatEntity:
@@ -67,6 +77,11 @@ func remove_entity(cell: Vector2i) -> CombatEntity:
 	_cell_occupants.erase(cell)
 	if entity != null:
 		_entity_cells.erase(entity)
+		if _entity_cleanup_callables.has(entity):
+			var cleanup: Callable = _entity_cleanup_callables[entity]
+			if entity.tree_exiting.is_connected(cleanup):
+				entity.tree_exiting.disconnect(cleanup)
+			_entity_cleanup_callables.erase(entity)
 	return entity
 
 func move_entity(from_cell: Vector2i, to_cell: Vector2i) -> bool:
@@ -101,5 +116,11 @@ func get_neighbors_8(cell: Vector2i) -> Array[Vector2i]:
 	return neighbors
 
 func clear() -> void:
+	for entity in _entity_cleanup_callables.keys():
+		if is_instance_valid(entity):
+			var cleanup: Callable = _entity_cleanup_callables[entity]
+			if entity.tree_exiting.is_connected(cleanup):
+				entity.tree_exiting.disconnect(cleanup)
 	_cell_occupants.clear()
 	_entity_cells.clear()
+	_entity_cleanup_callables.clear()

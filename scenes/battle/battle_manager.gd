@@ -5,9 +5,11 @@ const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/
 @export var hero_scene: PackedScene
 @export var enemy_scene: PackedScene
 
-@onready var hero_spawn: Marker2D = $HeroSpawn
-@onready var enemy_spawn: Marker2D = $EnemySpawn
+@onready var hero_spawn: Marker2D = get_node_or_null("HeroSpawn")
+@onready var enemy_spawn: Marker2D = get_node_or_null("EnemySpawn")
 @onready var camera: Camera2D = get_node_or_null("BattleCamera")
+@onready var board_view: BoardView = get_node_or_null("BoardView")
+@onready var placement_controller: PlacementController = get_node_or_null("PlacementController")
 
 var _shake_tween: Tween = null
 var _current_shake_strength: float = 0.0
@@ -22,6 +24,9 @@ var progression_system: ProgressionSystem
 var ability_system: AbilitySystem
 var skill_ui: SkillChoiceUI
 var choice_queue: Array[Dictionary] = []
+
+var board_config: BoardConfig
+var board_grid: BoardGrid
 
 # Trạng thái điều phối cuối trận
 var battle_ended: bool = false
@@ -47,6 +52,18 @@ func _start_battle() -> void:
 	_spawn_mock_teams()
 
 func _init_systems() -> void:
+	board_config = BoardConfig.new()
+	board_grid = BoardGrid.new(board_config)
+	
+	if board_view != null:
+		board_view.config = board_config
+		board_view.grid = board_grid
+		board_view.queue_redraw()
+		
+	if placement_controller != null:
+		placement_controller.board_grid = board_grid
+		placement_controller.board_view = board_view
+
 	combat_system = CombatSystem.new()
 	combat_system.name = "CombatSystem"
 	add_child(combat_system)
@@ -77,20 +94,23 @@ func _init_systems() -> void:
 	skill_ui.skill_chosen.connect(_on_skill_chosen)
 
 func _spawn_mock_teams() -> void:
+	if board_grid != null:
+		board_grid.clear()
+		
 	# 1. Tướng THẬT (Kira) nạp từ file Resource
 	var kira_data = load("res://data/kira_data.tres") as HeroData
 	if kira_data:
-		_spawn_hero(kira_data, Vector2(0, -40))
+		_spawn_hero_at_grid(kira_data, Vector2i(1, 2))
 		
 	# 2. Sinh nhanh 4 Tướng ẢO (để Kira không bị hội đồng)
-	_spawn_hero(_create_mock_hero_data("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8), Vector2(0, -80))
-	_spawn_hero(_create_mock_hero_data("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7), Vector2(0, 0))
-	_spawn_hero(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5), Vector2(0, 40))
-	_spawn_hero(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6), Vector2(0, 80))
+	_spawn_hero_at_grid(_create_mock_hero_data("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8), Vector2i(2, 2))
+	_spawn_hero_at_grid(_create_mock_hero_data("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7), Vector2i(0, 1))
+	_spawn_hero_at_grid(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5), Vector2i(0, 3))
+	_spawn_hero_at_grid(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6), Vector2i(0, 2))
 	
 	# 3. Quái vật
 	for i in range(5):
-		_spawn_enemy("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, Vector2(0, -80 + (i * 40)))
+		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, Vector2i(6, i))
 
 # Hàm hỗ trợ sinh Data nhanh bằng code
 func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float) -> HeroData:
@@ -103,14 +123,16 @@ func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: flo
 	data.attack_speed = spd
 	return data
 
-func _spawn_hero(data: HeroData, offset: Vector2) -> void:
+func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	var hero: HeroEntity = hero_scene.instantiate() as HeroEntity
 	add_child(hero)
 	
-	if hero_spawn != null:
-		hero.global_position = hero_spawn.global_position + offset
+	if board_grid != null:
+		board_grid.place_entity(hero, cell)
+	if board_view != null:
+		hero.global_position = board_view.grid_to_world(cell)
 	else:
-		hero.global_position = offset
+		hero.global_position = Vector2(cell * 80)
 	
 	hero.died.connect(_on_entity_died.bind(true))
 	hero.attack_requested.connect(_on_entity_attack_requested)
@@ -141,8 +163,9 @@ func _spawn_hero(data: HeroData, offset: Vector2) -> void:
 		hero.progression.xp_gained.connect(func(amt: float): _on_hero_xp_gained(hero, amt))
 		hero.progression.milestone_reached.connect(func(ms: int): _on_hero_milestone(hero, ms))
 	heroes.append(hero)
+	return hero
 
-func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, offset: Vector2) -> void:
+func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, cell: Vector2i) -> EnemyEntity:
 	var data: EnemyData = EnemyData.new()
 	data.name = e_name
 	data.base_hp = hp
@@ -155,16 +178,32 @@ func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float,
 	var enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
 	add_child(enemy)
 	
-	if enemy_spawn != null:
-		enemy.global_position = enemy_spawn.global_position + offset
+	if board_grid != null:
+		board_grid.place_entity(enemy, cell)
+	if board_view != null:
+		enemy.global_position = board_view.grid_to_world(cell)
 	else:
-		enemy.global_position = offset
+		enemy.global_position = Vector2(cell * 80)
 	
 	enemy.died.connect(_on_entity_died.bind(false))
 	enemy.attack_requested.connect(_on_entity_attack_requested)
 	enemy.initialize(data)
 	enemy.healed.connect(_on_entity_healed)
 	enemies.append(enemy)
+	return enemy
+
+# Giữ lại các hàm spawn bằng offset cũ cho tính tương thích ngược nếu cần
+func _spawn_hero(data: HeroData, offset: Vector2) -> void:
+	var cell := Vector2i(1, 2)
+	if board_view != null:
+		cell = board_view.world_to_grid(offset)
+	_spawn_hero_at_grid(data, cell)
+
+func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, offset: Vector2) -> void:
+	var cell := Vector2i(6, 2)
+	if board_view != null:
+		cell = board_view.world_to_grid(offset)
+	_spawn_enemy_at_grid(e_name, hp, atk, def, spd, crit_c, crit_d, cell)
 
 func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
 	if is_hero:
@@ -260,7 +299,7 @@ func _start_next_floor() -> void:
 	print("=====================================")
 	
 	for i in range(5):
-		_spawn_enemy("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, Vector2(0, -80 + (i * 40)))
+		_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, Vector2i(6, i))
 
 # ==========================================
 # FLOATING TEXT SPAWNER (SPRINT 5 VFX)
@@ -387,7 +426,7 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 8 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 9 TEST CASE VÀ GHI REPORT
 		KEY_0:
 			_run_all_tests()
 			
@@ -400,6 +439,7 @@ func _input(event: InputEvent) -> void:
 		KEY_6: _run_tc_06_xp_regression()
 		KEY_7: _run_tc_07_sprint5_ui_vfx()
 		KEY_8: _run_tc_08_board_grid_model()
+		KEY_9: _run_tc_09_board_view_and_placement()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -420,8 +460,9 @@ func _run_all_tests() -> void:
 	_run_tc_06_xp_regression()
 	_run_tc_07_sprint5_ui_vfx()
 	_run_tc_08_board_grid_model()
+	_run_tc_09_board_view_and_placement()
 	
-	_log_test("\n🎉 TẤT CẢ 8 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 9 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -894,12 +935,83 @@ func _run_tc_08_board_grid_model() -> void:
 	_log_test(">>> 🟢 TC-08 PASSED: BoardGrid Pure Data Model verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-09: BoardView & PlacementController (Sprint 1 Tasks S1.3 & S1.4)
+# ------------------------------------------------------------------------------
+func _run_tc_09_board_view_and_placement() -> void:
+	_log_test("\n==================== [TEST TC-09: BOARD VIEW & PLACEMENT] ====================")
+	_reset_test_battlefield()
+	
+	# 1. BoardView Math & Mapping Verification
+	_log_test("[TC-09.1] Checking BoardView world <-> grid coordinate conversions...")
+	assert(board_view != null, "FAIL TC-09.1: BoardView node not found")
+	assert(board_config != null and board_grid != null, "FAIL TC-09.1: Config/Grid not initialized")
+	
+	var test_cell := Vector2i(2, 3)
+	var world_pos := board_view.grid_to_world(test_cell)
+	var expected_local := Vector2(test_cell * 80) + Vector2(40.0, 40.0)
+	var expected_global := board_view.to_global(expected_local)
+	assert(world_pos.is_equal_approx(expected_global), "FAIL TC-09.1: grid_to_world mismatch")
+	
+	var mapped_cell := board_view.world_to_grid(world_pos)
+	assert(mapped_cell == test_cell, "FAIL TC-09.1: world_to_grid roundtrip failed")
+	
+	# 2. Hover highlights reactivity
+	_log_test("[TC-09.2] Checking BoardView hover highlight...")
+	board_view.hovered_cell = Vector2i(1, 1)
+	assert(board_view.hovered_cell == Vector2i(1, 1), "FAIL TC-09.2: Hovered cell not set")
+	board_view.hovered_cell = Vector2i(-1, -1)
+	
+	# 3. PlacementController State & Validation
+	_log_test("[TC-09.3] Checking PlacementController drag validation & locking...")
+	assert(placement_controller != null, "FAIL TC-09.3: PlacementController not found")
+	
+	# Placement lock test
+	placement_controller.is_placement_locked = true
+	assert(placement_controller.is_placement_locked == true, "FAIL TC-09.3: Lock state mismatch")
+	placement_controller.is_placement_locked = false
+	
+	# Hero Drag & Drop Movement Test
+	# Arthur is at (2, 2). Move to (2, 1) which is an empty hero zone cell
+	var arthur = board_grid.get_occupant(Vector2i(2, 2))
+	assert(arthur != null, "FAIL TC-09.3: Arthur not found at (2, 2)")
+	
+	# Move to valid empty hero zone cell (2, 1)
+	var move_ok = board_grid.move_entity(Vector2i(2, 2), Vector2i(2, 1))
+	assert(move_ok == true, "FAIL TC-09.3: Move Arthur to (2, 1) should succeed")
+	assert(board_grid.get_occupant(Vector2i(2, 1)) == arthur, "FAIL TC-09.3: Arthur not at (2, 1)")
+	assert(board_grid.is_cell_empty(Vector2i(2, 2)) == true, "FAIL TC-09.3: Old cell (2, 2) not empty")
+	
+	# Move into enemy zone (6, 1) - should be forbidden by hero_zone rule
+	assert(board_config.is_hero_zone(Vector2i(6, 1)) == false, "FAIL TC-09.3: (6, 1) is not hero zone")
+	
+	# Move back to (2, 2)
+	board_grid.move_entity(Vector2i(2, 1), Vector2i(2, 2))
+	
+	# 4. Dangling Reference Auto-Cleanup on Entity Tree Exit
+	_log_test("[TC-09.4] Checking automatic BoardGrid cleanup on entity tree_exiting...")
+	var dummy: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(dummy)
+	board_grid.place_entity(dummy, Vector2i(1, 0))
+	assert(board_grid.get_occupant(Vector2i(1, 0)) == dummy, "FAIL TC-09.4: Dummy not placed")
+	assert(board_grid.get_cell_for_entity(dummy) == Vector2i(1, 0), "FAIL TC-09.4: Dummy lookup mismatch")
+	
+	# Free entity from scene tree
+	dummy.queue_free()
+	dummy.tree_exiting.emit()
+	assert(board_grid.is_cell_empty(Vector2i(1, 0)) == true, "FAIL TC-09.4: Cell (1, 0) should be empty after tree_exiting")
+	assert(board_grid.get_cell_for_entity(dummy) == Vector2i(-1, -1), "FAIL TC-09.4: Dummy lookup should be cleared")
+	
+	_log_test(">>> 🟢 TC-09 PASSED: BoardView & PlacementController fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
 	for h in heroes: if is_instance_valid(h): h.queue_free()
 	for e in enemies: if is_instance_valid(e): e.queue_free()
 	heroes.clear(); enemies.clear(); choice_queue.clear()
+	if board_grid != null:
+		board_grid.clear()
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
 	if get_tree() != null:
