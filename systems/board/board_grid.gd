@@ -123,19 +123,55 @@ func move_entity(from_cell: Vector2i, to_cell: Vector2i) -> bool:
 	return true
 
 # ==========================================
-# TACTICAL & ADJACENCY
+# TACTICAL & ADJACENCY (HEX ODD-R)
 # ==========================================
 
+const EVEN_ROW_OFFSETS: Array[Vector2i] = [
+	Vector2i(-1, -1), Vector2i(0, -1),
+	Vector2i(-1, 0),  Vector2i(1, 0),
+	Vector2i(-1, 1),  Vector2i(0, 1)
+]
+const ODD_ROW_OFFSETS: Array[Vector2i] = [
+	Vector2i(0, -1),  Vector2i(1, -1),
+	Vector2i(-1, 0),  Vector2i(1, 0),
+	Vector2i(0, 1),   Vector2i(1, 1)
+]
+
+func get_hex_neighbors(cell: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if not is_in_bounds(cell):
+		return result
+	var offsets := ODD_ROW_OFFSETS if (cell.y & 1) == 1 else EVEN_ROW_OFFSETS
+	for d in offsets:
+		var n := cell + d
+		if is_in_bounds(n):
+			result.append(n)
+	return result
+
 func get_neighbors_8(cell: Vector2i) -> Array[Vector2i]:
-	var neighbors: Array[Vector2i] = []
-	for dx in [-1, 0, 1]:
-		for dy in [-1, 0, 1]:
-			if dx == 0 and dy == 0:
-				continue
-			var candidate := Vector2i(cell.x + dx, cell.y + dy)
-			if is_in_bounds(candidate):
-				neighbors.append(candidate)
-	return neighbors
+	return get_hex_neighbors(cell)
+
+func get_empty_enemy_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	if config == null:
+		return cells
+	for r in range(config.rows):
+		for c in range(config.columns):
+			var cell := Vector2i(c, r)
+			if config.is_enemy_zone(cell) and is_cell_empty(cell):
+				cells.append(cell)
+	return cells
+
+func get_empty_hero_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	if config == null:
+		return cells
+	for r in range(config.rows):
+		for c in range(config.columns):
+			var cell := Vector2i(c, r)
+			if config.is_hero_zone(cell) and is_cell_empty(cell):
+				cells.append(cell)
+	return cells
 
 func clear() -> void:
 	for entity in _entity_cleanup_callables.keys():

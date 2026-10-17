@@ -153,6 +153,13 @@ func enter_preparation_phase() -> void:
 	print("[BattleManager] 🛡️ PHASE: PREPARATION (Kéo thả bố trí đội hình)")
 
 func start_combat_phase() -> void:
+	# Lưu lại tọa độ ô cờ hiện tại của từng Hero trước khi khóa bàn cờ
+	for hero in heroes:
+		if is_instance_valid(hero) and board_grid != null:
+			var c: Vector2i = board_grid.get_cell_for_entity(hero)
+			if board_grid.is_in_bounds(c):
+				hero.deployed_cell = c
+
 	current_phase = EncounterPhase.COMBAT
 	if board_grid != null:
 		board_grid.is_locked = true
@@ -206,6 +213,7 @@ func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: flo
 func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	var hero: HeroEntity = hero_scene.instantiate() as HeroEntity
 	add_child(hero)
+	hero.deployed_cell = cell
 	
 	if board_grid != null:
 		board_grid.place_entity(hero, cell)
@@ -367,12 +375,21 @@ func _on_skill_chosen(chosen: AbilityData, all_choices: Array[AbilityData]) -> v
 		_finish_battle_cleanup()
 
 func _finish_battle_cleanup() -> void:
-	print("[BattleManager] Reward Phase Complete. Cleaning up ", corpses.size(), " corpses.")
+	var surviving_hero_corpses: Array[CombatEntity] = []
 	for corpse in corpses:
 		if is_instance_valid(corpse):
-			corpse.queue_free()
-	corpses.clear()
-	
+			if corpse is HeroEntity:
+				surviving_hero_corpses.append(corpse)
+			else:
+				corpse.queue_free()
+	corpses = surviving_hero_corpses
+
+	# Nếu GAME_OVER thì dừng lại, không tự qua tầng mới
+	if next_game_state == GameManager.GameState.GAME_OVER:
+		GameManager.change_state(GameManager.GameState.GAME_OVER)
+		print("[BattleManager] 🛑 GAME OVER - Stopping floor progression.")
+		return
+
 	get_tree().create_timer(1.0).timeout.connect(_start_next_floor)
 
 func _start_next_floor() -> void:
@@ -381,9 +398,48 @@ func _start_next_floor() -> void:
 	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG TIẾP THEO 🚀")
 	print("=====================================")
 	
-	var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
-	for i in range(slime_coords.size()):
-		_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, slime_coords[i])
+	if board_grid != null:
+		board_grid.is_locked = false
+		board_grid.clear()
+		
+	# Hồi sinh và tái hợp nhất toàn bộ Hero từ corpses về heroes
+	for dead_hero in corpses:
+		if is_instance_valid(dead_hero) and not heroes.has(dead_hero):
+			heroes.append(dead_hero)
+	corpses.clear()
+	
+	# Reset trạng thái và tái chiếm ô cho toàn bộ Heroes
+	for hero in heroes:
+		if is_instance_valid(hero):
+			hero.reset_for_new_battle()
+			var target_cell := hero.deployed_cell
+			var placed := false
+			if board_grid != null and board_config != null:
+				if board_grid.is_in_bounds(target_cell) and board_config.is_hero_zone(target_cell) and board_grid.is_cell_empty(target_cell):
+					placed = board_grid.place_entity(hero, target_cell)
+				if not placed:
+					var empty_hero_cells := board_grid.get_empty_hero_cells()
+					if not empty_hero_cells.is_empty():
+						target_cell = empty_hero_cells[0]
+						hero.deployed_cell = target_cell
+						placed = board_grid.place_entity(hero, target_cell)
+			if board_view != null and placed:
+				hero.global_position = board_view.grid_to_world(target_cell)
+				
+	# Dọn dẹp quái vật cũ còn sót lại (nếu có)
+	for enemy in enemies:
+		if is_instance_valid(enemy):
+			enemy.queue_free()
+	enemies.clear()
+	
+	# Sinh quái vật ngẫu nhiên trên các ô trống trong Enemy Zone
+	if board_grid != null:
+		var empty_enemy_cells := board_grid.get_empty_enemy_cells()
+		empty_enemy_cells.shuffle()
+		var spawn_count: int = mini(5, empty_enemy_cells.size())
+		for i in range(spawn_count):
+			_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, empty_enemy_cells[i])
+			
 	enter_preparation_phase()
 
 # ==========================================
@@ -944,18 +1000,20 @@ func _run_tc_07_sprint5_ui_vfx() -> void:
 func _run_tc_08_board_grid_model() -> void:
 	_log_test("\n==================== [TEST TC-08: BOARD GRID MODEL] ====================")
 	var config = BoardConfig.new()
-	assert(config.columns == 8 and config.rows == 6, "FAIL TC-08: Default dimensions mismatch (expected 8x6)")
-	assert(config.cell_size == Vector2(72.0, 72.0), "FAIL TC-08: Default cell size mismatch (expected 72x72)")
+	assert(config.columns == 7 and config.rows == 6, "FAIL TC-08: Default dimensions mismatch (expected 7x6)")
+	assert(config.hex_radius == 44.0, "FAIL TC-08: Default hex radius mismatch (expected 44.0)")
+	assert(is_equal_approx(config.cell_size.x, sqrt(3.0) * 44.0) and is_equal_approx(config.cell_size.y, 88.0), "FAIL TC-08: Default cell size mismatch")
 	
 	var grid = BoardGrid.new(config)
 	
-	# [BG-01]: Bounds validation (Top-Down Layout)
-	_log_test("[TC-08.1] [BG-01] Testing bounds validation (Top-Down)...")
+	# [BG-01]: Bounds validation (Top-Down Hex Layout 7x6)
+	_log_test("[TC-08.1] [BG-01] Testing bounds validation (Top-Down Hex 7x6)...")
 	assert(grid.is_in_bounds(Vector2i(0, 0)) == true, "FAIL BG-01: (0,0) must be in bounds")
-	assert(grid.is_in_bounds(Vector2i(7, 5)) == true, "FAIL BG-01: (7,5) must be in bounds")
+	assert(grid.is_in_bounds(Vector2i(6, 5)) == true, "FAIL BG-01: (6,5) must be in bounds")
 	assert(grid.is_in_bounds(Vector2i(-1, 0)) == false, "FAIL BG-01: (-1,0) must be out of bounds")
-	assert(grid.is_in_bounds(Vector2i(8, 6)) == false, "FAIL BG-01: (8,6) must be out of bounds")
-	assert(grid.is_in_bounds(Vector2i(8, 2)) == false, "FAIL BG-01: (8,2) must be out of bounds")
+	assert(grid.is_in_bounds(Vector2i(7, 5)) == false, "FAIL BG-01: (7,5) must be out of bounds")
+	assert(grid.is_in_bounds(Vector2i(6, 6)) == false, "FAIL BG-01: (6,6) must be out of bounds")
+	assert(grid.is_in_bounds(Vector2i(7, 6)) == false, "FAIL BG-01: (7,6) must be out of bounds")
 	assert(config.is_enemy_zone(Vector2i(3, 2)) == true, "FAIL BG-01: (3,2) should be enemy zone (rows 0, 1, 2)")
 	assert(config.is_enemy_zone(Vector2i(3, 3)) == false, "FAIL BG-01: (3,3) should not be enemy zone")
 	assert(config.is_hero_zone(Vector2i(3, 3)) == true, "FAIL BG-01: (3,3) should be hero zone (rows 3, 4, 5)")
@@ -993,17 +1051,19 @@ func _run_tc_08_board_grid_model() -> void:
 	assert(grid.get_occupant(Vector2i(3, 4)) == hero, "FAIL BG-04: (3,4) must contain hero")
 	assert(grid.get_cell_for_entity(hero) == Vector2i(3, 4), "FAIL BG-04: hero reverse lookup must be (3,4)")
 	
-	# [BG-05]: 8-Direction Adjacency
-	_log_test("[TC-08.5] [BG-05] Testing 8-direction adjacency neighbors...")
-	var corner_neighbors = grid.get_neighbors_8(Vector2i(0, 0))
-	assert(corner_neighbors.size() == 3, "FAIL BG-05: Corner (0,0) must have 3 neighbors")
-	assert(corner_neighbors.has(Vector2i(1, 0)) and corner_neighbors.has(Vector2i(0, 1)) and corner_neighbors.has(Vector2i(1, 1)))
+	# [BG-05]: Hex Adjacency (Odd-R 6-direction)
+	_log_test("[TC-08.5] [BG-05] Testing Hex Adjacency (Odd-R 6-direction)...")
+	var corner_neighbors = grid.get_hex_neighbors(Vector2i(0, 0))
+	assert(corner_neighbors.size() == 2, "FAIL BG-05: Corner (0,0) in Odd-R hex grid has 2 neighbors")
+	assert(corner_neighbors.has(Vector2i(1, 0)) and corner_neighbors.has(Vector2i(0, 1)))
 	
-	var edge_neighbors = grid.get_neighbors_8(Vector2i(0, 2))
-	assert(edge_neighbors.size() == 5, "FAIL BG-05: Edge (0,2) must have 5 neighbors")
+	var center_even = grid.get_hex_neighbors(Vector2i(2, 2))
+	assert(center_even.size() == 6, "FAIL BG-05: Center even row (2,2) must have 6 neighbors")
+	assert(center_even.has(Vector2i(1, 1)) and center_even.has(Vector2i(2, 1)) and center_even.has(Vector2i(1, 2)) and center_even.has(Vector2i(3, 2)) and center_even.has(Vector2i(1, 3)) and center_even.has(Vector2i(2, 3)))
 	
-	var center_neighbors = grid.get_neighbors_8(Vector2i(2, 2))
-	assert(center_neighbors.size() == 8, "FAIL BG-05: Center (2,2) must have 8 neighbors")
+	var center_odd = grid.get_hex_neighbors(Vector2i(2, 1))
+	assert(center_odd.size() == 6, "FAIL BG-05: Center odd row (2,1) must have 6 neighbors")
+	assert(center_odd.has(Vector2i(2, 0)) and center_odd.has(Vector2i(3, 0)) and center_odd.has(Vector2i(1, 1)) and center_odd.has(Vector2i(3, 1)) and center_odd.has(Vector2i(2, 2)) and center_odd.has(Vector2i(3, 2)))
 	
 	# [BG-06]: Remove entity & clean dictionaries
 	_log_test("[TC-08.6] [BG-06] Testing entity removal and dictionary cleanup...")
@@ -1055,7 +1115,7 @@ func _run_tc_09_board_view_and_placement() -> void:
 	
 	var test_cell := Vector2i(3, 4)
 	var world_pos := board_view.grid_to_world(test_cell)
-	var expected_local := Vector2(test_cell * 72) + Vector2(36.0, 36.0)
+	var expected_local := board_view.grid_to_local(test_cell)
 	var expected_global := board_view.to_global(expected_local)
 	assert(world_pos.is_equal_approx(expected_global), "FAIL TC-09.1: grid_to_world mismatch")
 	

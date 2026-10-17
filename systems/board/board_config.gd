@@ -2,15 +2,26 @@ class_name BoardConfig
 extends Resource
 
 # ==========================================
-# BOARD CONFIG - TOP-DOWN AUTO CHESS DEFINITION
-# Bố cục Trên–Dưới (8 cột x 6 hàng, ô 72x72)
+# BOARD CONFIG - POINTY-TOP HEX GRID (ODD-R)
+# Bố cục Lục Giác Đỉnh Nhọn chuẩn Auto Chess / TFT (7 cột x 6 hàng)
 # ==========================================
 
-@export var columns: int = 8
-@export var rows: int = 6
-@export var cell_size: Vector2 = Vector2(72.0, 72.0)
+@export var columns: int = 7 # Chuẩn TFT: 7 cột lục giác
+@export var rows: int = 6    # 3 hàng trên (Enemy) + 3 hàng dưới (Hero)
+@export var hex_radius: float = 44.0 # Bán kính tâm -> đỉnh lục giác
 @export var enemy_zone_rows: int = 3
 @export var hero_zone_rows: int = 3
+
+# Kích thước bao (Bounding Box) của 1 ô lục giác Pointy-Top
+var cell_size: Vector2:
+	get:
+		return Vector2(sqrt(3.0) * hex_radius, 2.0 * hex_radius)
+
+func get_hex_width() -> float:
+	return sqrt(3.0) * hex_radius
+
+func get_row_vertical_spacing() -> float:
+	return 1.5 * hex_radius
 
 func is_in_bounds(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.x < columns and cell.y >= 0 and cell.y < rows

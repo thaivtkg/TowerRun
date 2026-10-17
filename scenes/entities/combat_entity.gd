@@ -24,6 +24,7 @@ var max_hp: float = 0.0:
 
 var is_dead: bool = false
 var target: CombatEntity = null # [FIX] Gom biến target về Base Class để TargetingSystem truy xuất an toàn
+var deployed_cell: Vector2i = Vector2i(-1, -1)
 
 @onready var sprite: Sprite2D = $Sprite2D
 var _base_sprite_pos: Vector2 = Vector2.ZERO
@@ -164,6 +165,31 @@ func set_combat_active(active: bool) -> void:
 	if not active:
 		target = null
 	set_process(active)
+
+func reset_for_new_battle() -> void:
+	if is_dead:
+		is_dead = false
+		visible = true
+		set_deferred("process_mode", Node.PROCESS_MODE_INHERIT)
+		
+	if sprite != null:
+		if _sprite_move_tween != null and _sprite_move_tween.is_running():
+			_sprite_move_tween.kill()
+		if _sprite_flash_tween != null and _sprite_flash_tween.is_running():
+			_sprite_flash_tween.kill()
+		sprite.position = _base_sprite_pos
+		sprite.scale = _base_sprite_scale
+		sprite.modulate = _base_sprite_modulate
+		sprite.self_modulate = Color.WHITE
+		
+	target = null
+	current_hp = max_hp
+	
+	if self is HeroEntity:
+		var hero := self as HeroEntity
+		hero.current_energy = 0.0
+		for ab in hero.unlocked_abilities:
+			ab.current_cooldown = 0.0
 
 # ==========================================
 # VIRTUAL METHODS (STATS CONTRACT)
