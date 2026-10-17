@@ -15,17 +15,44 @@ signal panel_closed
 class HexSkillIcon extends Control:
 	var ability_name: String = ""
 	var ability_type_str: String = ""
+	var description_bbcode: String = ""
 	var border_color: Color = Color(0.5, 0.6, 0.7)
 	var border_width: float = 2.0
 	
-	func _init(p_name: String, p_type: String, p_border: Color) -> void:
+	func _init(p_name: String, p_type: String, p_border: Color, p_desc: String = "") -> void:
 		ability_name = p_name
 		ability_type_str = p_type
 		border_color = p_border
+		description_bbcode = p_desc
 		custom_minimum_size = Vector2(46, 52)
 		size = Vector2(46, 52)
 		mouse_filter = Control.MOUSE_FILTER_PASS
-		tooltip_text = "%s\n[%s]" % [ability_name, ability_type_str]
+		if description_bbcode != "":
+			tooltip_text = "[b]%s[/b] [%s]\n%s" % [ability_name, ability_type_str, description_bbcode]
+		else:
+			tooltip_text = "[b]%s[/b] [%s]" % [ability_name, ability_type_str]
+
+	func _make_custom_tooltip(for_text: String) -> Object:
+		var panel := PanelContainer.new()
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.10, 0.12, 0.16, 0.98)
+		style.border_color = border_color
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(6)
+		style.content_margin_left = 8
+		style.content_margin_right = 8
+		style.content_margin_top = 6
+		style.content_margin_bottom = 6
+		panel.add_theme_stylebox_override("panel", style)
+		
+		var rtl := RichTextLabel.new()
+		rtl.bbcode_enabled = true
+		rtl.text = for_text
+		rtl.fit_content = true
+		rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		rtl.custom_minimum_size = Vector2(220, 0)
+		panel.add_child(rtl)
+		return panel
 
 	func _draw() -> void:
 		var center := size * 0.5
@@ -458,7 +485,8 @@ func update_stats() -> void:
 		
 	var skills_found: int = 0
 	if inspected_hero.basic_attack_ability != null and inspected_hero.basic_attack_ability.data != null:
-		var basic_icon := HexSkillIcon.new(inspected_hero.basic_attack_ability.data.name, "Đánh thường", Color(0.65, 0.70, 0.80))
+		var basic_desc: String = inspected_hero.basic_attack_ability.data.get_formatted_tooltip(inspected_hero)
+		var basic_icon := HexSkillIcon.new(inspected_hero.basic_attack_ability.data.name, "Đánh thường", Color(0.65, 0.70, 0.80), basic_desc)
 		skills_container.add_child(basic_icon)
 		skills_found += 1
 		
@@ -470,7 +498,8 @@ func update_stats() -> void:
 				border_col = Color(1.0, 0.85, 0.2)
 			elif runtime_ab.data.ability_type == AbilityData.AbilityType.PASSIVE:
 				border_col = Color(0.4, 0.9, 0.4)
-			var skill_icon := HexSkillIcon.new(runtime_ab.data.name, type_name, border_col)
+			var skill_desc: String = runtime_ab.data.get_formatted_tooltip(inspected_hero)
+			var skill_icon := HexSkillIcon.new(runtime_ab.data.name, type_name, border_col, skill_desc)
 			skills_container.add_child(skill_icon)
 			skills_found += 1
 			

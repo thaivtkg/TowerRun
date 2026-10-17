@@ -92,17 +92,18 @@ func _on_entity_killed(killer: CombatEntity, _victim: CombatEntity) -> void:
 func _apply_effect(effect: EffectData, source: CombatEntity, target: CombatEntity) -> void:
 	if effect is DamageEffectData:
 		var dmg_effect = effect as DamageEffectData
-		var event = DamageEvent.new(source, target, dmg_effect.base_damage, dmg_effect.damage_type)
+		var actual_dmg: float = dmg_effect.calculate_total_value(source)
+		var event = DamageEvent.new(source, target, actual_dmg, dmg_effect.damage_type)
 		event.is_crit = dmg_effect.can_crit and (randf() <= source.get_crit_chance())
 		event.crit_multiplier = source.get_crit_damage()
 		combat_system.process_attack(event)
 		
 	elif effect is HealEffectData:
 		var heal_effect = effect as HealEffectData
+		var actual_heal: float = heal_effect.calculate_total_value(source)
 		var old_hp: float = target.current_hp
-		target.heal(heal_effect.heal_amount)
+		target.heal(actual_heal)
 		var actual_healed: float = target.current_hp - old_hp
 		if combat_system != null and actual_healed > 0.0:
 			combat_system.entity_healed.emit(source, target, actual_healed)
 		print("[AbilitySystem] 💚 %s heals %s for %.1f HP. (New HP: %.1f)" % [source.name, target.name, actual_healed, target.current_hp])
-

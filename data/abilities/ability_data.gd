@@ -46,3 +46,16 @@ enum AbilityTag {
 
 @export_group("Effects")
 @export var effects: Array[EffectData] = []
+
+func get_formatted_tooltip(source: CombatEntity = null) -> String:
+	if effects.is_empty():
+		return description if description != "" else "Kỹ năng đặc biệt."
+		
+	var lines: Array[String] = []
+	for effect in effects:
+		if effect != null:
+			lines.append(effect.get_formatted_description(source))
+			
+	if lines.is_empty():
+		return description if description != "" else "Kỹ năng đặc biệt."
+	return "\n".join(lines)

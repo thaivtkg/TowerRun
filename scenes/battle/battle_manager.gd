@@ -694,6 +694,7 @@ func _input(event: InputEvent) -> void:
 		KEY_BACKSLASH: _run_tc_14_roguelike_run_lifecycle()
 		KEY_SLASH: _run_tc_15_combat_retargeting()
 		KEY_PERIOD: _run_tc_16_character_stats_ui()
+		KEY_COMMA: _run_tc_17_skill_scaling_and_tooltip()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -722,8 +723,9 @@ func _run_all_tests() -> void:
 	_run_tc_14_roguelike_run_lifecycle()
 	_run_tc_15_combat_retargeting()
 	_run_tc_16_character_stats_ui()
+	_run_tc_17_skill_scaling_and_tooltip()
 	
-	_log_test("\n🎉 TẤT CẢ 16 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 17 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1998,6 +2000,116 @@ func _run_tc_16_character_stats_ui() -> void:
 	_log_test(">>> 🟢 TC-16.6 PlacementController Integration PASSED!")
 	
 	_log_test(">>> 🟢 TC-16 PASSED: Character Stats Panel & Inspection UI fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-17: Skill Scaling & Dynamic BBCode Tooltip Framework
+# ------------------------------------------------------------------------------
+func _run_tc_17_skill_scaling_and_tooltip() -> void:
+	_log_test("\n==================== [TEST TC-17: SKILL SCALING & BBCODE TOOLTIP] ====================")
+	_reset_test_battlefield()
+	
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.name == "Arthur":
+				arthur = h
+				break
+	assert(arthur != null, "FAIL TC-17: Arthur must exist")
+	
+	# Chuẩn bị chỉ số Arthur rõ ràng:
+	# base_attack = 5.0, base_spell_power = 10.0, base_defense = 30.0, max_hp = 250.0
+	var atk: float = arthur.get_attack()
+	var ap: float = arthur.get_spell_power()
+	var hp: float = arthur.max_hp
+	var arm: float = arthur.get_defense()
+	
+	# 1. FALLBACK KHI SOURCE == NULL (Xem tooltip khi chưa có Tướng)
+	var dmg_null := DamageEffectData.new()
+	dmg_null.base_damage = 100.0
+	dmg_null.scalings = { EffectData.STAT_AD: 0.8, EffectData.STAT_AP: 0.5 }
+	
+	assert(dmg_null.calculate_total_value(null) == 100.0, "FAIL TC-17.1: calculate_total_value(null) must equal base_amount")
+	var desc_null := dmg_null.get_formatted_description(null)
+	_log_test("[TC-17.1] Source=null Description: %s" % desc_null)
+	assert(desc_null.contains("100"), "FAIL TC-17.1: Tooltip must show base 100 when source is null")
+	assert(desc_null.contains("+80% SMCK") and desc_null.contains(EffectData.COLOR_AD), "FAIL TC-17.1: AD scaling with color required")
+	assert(desc_null.contains("+50% SMPT") and desc_null.contains(EffectData.COLOR_AP), "FAIL TC-17.1: AP scaling with color required")
+	_log_test(">>> 🟢 TC-17.1 Fallback calculation & unassigned Tooltip PASSED!")
+	
+	# 2. TÍNH TOÁN SCALING VỚI TƯỚNG (AD, AP, HP, ARM)
+	# 2a. Pure AD Scale
+	var dmg_ad := DamageEffectData.new()
+	dmg_ad.base_damage = 40.0
+	dmg_ad.scalings = { EffectData.STAT_AD: 2.0 }
+	var expected_ad := 40.0 + (atk * 2.0) # 40 + 10 = 50.0
+	assert(dmg_ad.calculate_total_value(arthur) == expected_ad, "FAIL TC-17.2: AD scaling mismatch")
+	
+	# 2b. Pure AP Scale
+	var dmg_ap := DamageEffectData.new()
+	dmg_ap.base_damage = 60.0
+	dmg_ap.scalings = { EffectData.STAT_AP: 1.5 }
+	var expected_ap := 60.0 + (ap * 1.5) # 60 + 15 = 75.0
+	assert(dmg_ap.calculate_total_value(arthur) == expected_ap, "FAIL TC-17.2: AP scaling mismatch")
+	
+	# 2c. Tank Armor & Max HP Scale
+	var dmg_tank := DamageEffectData.new()
+	dmg_tank.base_damage = 50.0
+	dmg_tank.scalings = { EffectData.STAT_HP: 0.1, EffectData.STAT_ARM: 0.5 }
+	var expected_tank := 50.0 + (hp * 0.1) + (arm * 0.5) # 50 + 25 + 15 = 90.0
+	assert(dmg_tank.calculate_total_value(arthur) == expected_tank, "FAIL TC-17.2: Tank HP+Armor scaling mismatch")
+	_log_test(">>> 🟢 TC-17.2 AD, AP, HP, ARM Scaling calculations PASSED!")
+	
+	# 3. BBCODE DYNAMIC TOOLTIP PARSING (CẶP NGOẶC ĐƠN & KHÔNG RÁC HIỂN THỊ)
+	# 3a. Không có scale -> Không hiện cặp ngoặc đơn ()
+	var dmg_flat := DamageEffectData.new()
+	dmg_flat.base_damage = 75.0
+	dmg_flat.scalings = {}
+	var desc_flat := dmg_flat.get_formatted_description(arthur)
+	_log_test("[TC-17.3] Flat Description: %s" % desc_flat)
+	assert(not desc_flat.contains("("), "FAIL TC-17.3: Flat ability must not contain parentheses ()")
+	assert(desc_flat.contains("75"), "FAIL TC-17.3: Flat ability must contain base damage")
+	
+	# 3b. Có 1 scale -> Hiện 1 tỷ lệ trong ngoặc
+	var desc_single := dmg_ad.get_formatted_description(arthur)
+	_log_test("[TC-17.3] Single Scale Description: %s" % desc_single)
+	assert(desc_single.contains("(%s+200%% SMCK[/color])" % ("[color=" + EffectData.COLOR_AD + "]")), "FAIL TC-17.3: Single scale bracket syntax")
+	
+	# 3c. Có nhiều scale -> Nối bằng dấu ' + '
+	var desc_tank := dmg_tank.get_formatted_description(arthur)
+	_log_test("[TC-17.3] Multi Scale Description: %s" % desc_tank)
+	assert(desc_tank.contains(" + "), "FAIL TC-17.3: Multi scales must be joined by ' + '")
+	assert(desc_tank.contains("+10% Máu tối đa") and desc_tank.contains("+50% Giáp"), "FAIL TC-17.3: Multi scale tags")
+	_log_test(">>> 🟢 TC-17.3 BBCode formatting & No-parentheses flat clean text PASSED!")
+	
+	# 4. HEALEFFECTDATA SCALING & TOOLTIP
+	var heal_eff := HealEffectData.new()
+	heal_eff.heal_amount = 30.0
+	heal_eff.scalings = { EffectData.STAT_AP: 0.8 }
+	var expected_heal := 30.0 + (ap * 0.8) # 30 + 8 = 38.0
+	assert(heal_eff.calculate_total_value(arthur) == expected_heal, "FAIL TC-17.4: Heal scaling mismatch")
+	var desc_heal := heal_eff.get_formatted_description(arthur)
+	_log_test("[TC-17.4] Heal Description: %s" % desc_heal)
+	assert(desc_heal.contains("Hồi") and desc_heal.contains(EffectData.COLOR_HP), "FAIL TC-17.4: Heal description syntax")
+	_log_test(">>> 🟢 TC-17.4 HealEffectData scaling & BBCode Tooltip PASSED!")
+	
+	# 5. ABILITYSYSTEM PROCESS SCALED ATTACK
+	var mock_ability_data := AbilityData.new()
+	mock_ability_data.name = "Scaling Strike"
+	mock_ability_data.effects = [dmg_ad]
+	
+	var dummy_enemy: EnemyEntity = null
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			dummy_enemy = e
+			break
+	assert(dummy_enemy != null, "FAIL TC-17.5: Enemy dummy required")
+	
+	var enemy_hp_before := dummy_enemy.current_hp
+	ability_system._apply_effect(dmg_ad, arthur, dummy_enemy)
+	assert(dummy_enemy.current_hp < enemy_hp_before, "FAIL TC-17.5: Scaled ability must deal damage to enemy")
+	_log_test(">>> 🟢 TC-17.5 AbilitySystem scaled damage application PASSED!")
+	
+	_log_test(">>> 🟢 TC-17 PASSED: Skill Scaling & Dynamic BBCode Tooltips fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

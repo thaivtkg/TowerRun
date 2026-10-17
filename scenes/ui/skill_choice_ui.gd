@@ -247,26 +247,11 @@ func _get_type_color(type: AbilityData.AbilityType) -> Color:
 func _build_card_description(ability: AbilityData) -> String:
 	if ability == null:
 		return "Kỹ năng đặc biệt hỗ trợ chiến đấu."
+	if not ability.effects.is_empty():
+		return ability.get_formatted_tooltip()
 	if not ability.description.is_empty():
 		return ability.description
-	if ability.effects.is_empty():
-		return "Kỹ năng đặc biệt hỗ trợ chiến đấu."
-	
-	var lines: Array[String] = []
-	for effect in ability.effects:
-		if effect is DamageEffectData:
-			var dmg = effect as DamageEffectData
-			var type_name: String = "PHYSICAL"
-			if dmg.damage_type >= 0 and dmg.damage_type < DamageEvent.DamageType.size():
-				type_name = DamageEvent.DamageType.keys()[dmg.damage_type]
-			lines.append("Gây %.0f sát thương %s." % [dmg.base_damage, type_name])
-		elif effect is HealEffectData:
-			var heal = effect as HealEffectData
-			lines.append("Hồi %.0f Máu cho mục tiêu." % heal.heal_amount)
-	
-	if lines.is_empty():
-		return "Kỹ năng đặc biệt hỗ trợ chiến đấu."
-	return "\n".join(lines)
+	return "Kỹ năng đặc biệt hỗ trợ chiến đấu."
 
 func _ensure_mouse_filter_ignore(node: Node) -> void:
 	for child in node.get_children():
