@@ -40,6 +40,9 @@ var next_game_state: GameManager.GameState
 
 func _ready() -> void:
 	GameManager.change_state(GameManager.GameState.BATTLE)
+	if RunManager != null:
+		RunManager.start_new_run()
+		current_floor = RunManager.current_floor
 	_start_battle()
 	if "--run-tests" in OS.get_cmdline_user_args():
 		_run_all_tests()
@@ -350,6 +353,14 @@ func _end_battle(state: GameManager.GameState, log_message: String) -> void:
 	if progression_system != null:
 		progression_system.finalize_battle_xp(is_victory)
 	
+	var run_result: Dictionary = {}
+	if RunManager != null:
+		if is_victory:
+			run_result = RunManager.on_battle_won()
+		else:
+			run_result = RunManager.on_battle_lost()
+		current_floor = RunManager.current_floor
+	
 	_build_post_battle_choice_queue()
 	
 	if combat_summary_ui != null:
@@ -358,17 +369,46 @@ func _end_battle(state: GameManager.GameState, log_message: String) -> void:
 		for c in corpses:
 			if is_instance_valid(c) and c is HeroEntity and not summary_heroes.has(c):
 				summary_heroes.append(c)
-		combat_summary_ui.show_summary(is_victory, current_floor, summary_heroes)
+		var display_floor: int = run_result.get("floor", current_floor)
+		combat_summary_ui.show_summary(is_victory, display_floor, summary_heroes, run_result)
 	else:
 		_on_summary_continued()
 
 func _on_summary_continued() -> void:
-	if next_game_state == GameManager.GameState.GAME_OVER:
+	var can_continue: bool = true
+	if RunManager != null:
+		can_continue = RunManager.current_lives > 0
+		
+	if next_game_state == GameManager.GameState.GAME_OVER and not can_continue:
 		_finish_battle_cleanup()
+		_reset_heroes_for_new_run()
+		if RunManager != null:
+			RunManager.start_new_run()
+			current_floor = RunManager.current_floor
+		GameManager.change_state(GameManager.GameState.GAME_OVER)
+		print("[BattleManager] 🛑 PERMA-DEATH: Đã reset toàn bộ Hero về Level 1.")
 	elif not choice_queue.is_empty():
 		_process_next_choice()
 	else:
 		_finish_battle_cleanup()
+
+func _reset_heroes_for_new_run() -> void:
+	var all_heroes: Array[CombatEntity] = []
+	all_heroes.append_array(heroes)
+	for c in corpses:
+		if is_instance_valid(c) and c is HeroEntity and not all_heroes.has(c):
+			all_heroes.append(c)
+			
+	for h in all_heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			var hero := h as HeroEntity
+			if hero.progression != null:
+				hero.progression.current_level = 1
+				hero.progression.current_xp = 0.0
+				hero.progression.pending_milestones.clear()
+			if hero.unlocked_abilities.size() > 1:
+				hero.unlocked_abilities = hero.unlocked_abilities.slice(0, 1)
+			hero.reset_for_new_battle()
 
 func _build_post_battle_choice_queue() -> void:
 	choice_queue.clear()
@@ -418,8 +458,8 @@ func _finish_battle_cleanup() -> void:
 				corpse.queue_free()
 	corpses = surviving_hero_corpses
 
-	# Nếu GAME_OVER thì dừng lại, không tự qua tầng mới
-	if next_game_state == GameManager.GameState.GAME_OVER:
+	# Nếu GAME_OVER và hết mạng thì dừng lại, không tự qua tầng mới
+	if next_game_state == GameManager.GameState.GAME_OVER and (RunManager == null or RunManager.current_lives <= 0):
 		GameManager.change_state(GameManager.GameState.GAME_OVER)
 		print("[BattleManager] 🛑 GAME OVER - Stopping floor progression.")
 		return
@@ -428,7 +468,8 @@ func _finish_battle_cleanup() -> void:
 
 func _start_next_floor() -> void:
 	battle_ended = false
-	current_floor += 1
+	if RunManager != null:
+		current_floor = RunManager.current_floor
 	print("\n=====================================")
 	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG %d 🚀" % current_floor)
 	print("=====================================")
@@ -467,13 +508,16 @@ func _start_next_floor() -> void:
 			enemy.queue_free()
 	enemies.clear()
 	
-	# Sinh quái vật ngẫu nhiên trên các ô trống trong Enemy Zone
+	# Sinh quái vật ngẫu nhiên trên các ô trống trong Enemy Zone theo cấp độ tầng
 	if board_grid != null:
 		var empty_enemy_cells := board_grid.get_empty_enemy_cells()
 		empty_enemy_cells.shuffle()
 		var spawn_count: int = mini(5, empty_enemy_cells.size())
+		var hp_scaling: float = 80.0 + (current_floor - 1) * 40.0
+		var atk_scaling: float = 8.0 + (current_floor - 1) * 2.0
+		var def_scaling: float = 5.0 + (current_floor - 1) * 1.0
 		for i in range(spawn_count):
-			_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, empty_enemy_cells[i])
+			_spawn_enemy_at_grid("Slime Lv%d - " % current_floor + str(i+1), hp_scaling, atk_scaling, def_scaling, 1.0, 0.0, 2.0, empty_enemy_cells[i])
 			
 	enter_preparation_phase()
 
@@ -620,6 +664,7 @@ func _input(event: InputEvent) -> void:
 		KEY_EQUAL: _run_tc_11_grid_movement_and_pathfinding()
 		KEY_BRACKETLEFT: _run_tc_12_combat_metrics_and_progression()
 		KEY_BRACKETRIGHT: _run_tc_13_combat_summary_ui()
+		KEY_BACKSLASH: _run_tc_14_roguelike_run_lifecycle()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -645,8 +690,9 @@ func _run_all_tests() -> void:
 	_run_tc_11_grid_movement_and_pathfinding()
 	_run_tc_12_combat_metrics_and_progression()
 	_run_tc_13_combat_summary_ui()
+	_run_tc_14_roguelike_run_lifecycle()
 	
-	_log_test("\n🎉 TẤT CẢ 13 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 14 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1639,6 +1685,107 @@ func _run_tc_13_combat_summary_ui() -> void:
 	_log_test(">>> 🟢 TC-13 PASSED: Combat Summary UI & Damage Meter fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-14: Roguelike Run Lifecycle & Economy (Sprint 3 - Task S3.3)
+# ------------------------------------------------------------------------------
+func _run_tc_14_roguelike_run_lifecycle() -> void:
+	_log_test("\n==================== [TEST TC-14: ROGUELIKE RUN LIFECYCLE & ECONOMY] ====================")
+	_reset_test_battlefield()
+	
+	assert(RunManager != null, "FAIL TC-14: RunManager autoload must be available")
+	
+	# 1. Khởi tạo Run mới
+	RunManager.start_new_run(10, 2)
+	assert(RunManager.current_floor == 1, "FAIL TC-14.1: Initial floor must be 1")
+	assert(RunManager.current_gold == 10, "FAIL TC-14.1: Initial gold must be 10")
+	assert(RunManager.current_lives == 2, "FAIL TC-14.1: Initial lives must be 2")
+	assert(RunManager.max_lives == 2, "FAIL TC-14.1: Max lives must be 2")
+	_log_test(">>> 🟢 TC-14.1 Initial Run State PASSED!")
+	
+	# 2. Chiến thắng Tầng 1: Vàng cơ bản = 5 + 1 = 6; Lãi suất (10/10) = 1 -> Tổng cộng +7 Vàng
+	var won_res := RunManager.on_battle_won()
+	_log_test("[TC-14.2] Won Floor 1 -> Reward: %d (Base: %d, Interest: %d) | Total Gold: %d | New Floor: %d" % [
+		won_res["gold_earned"], won_res["base_gold"], won_res["interest_gold"], won_res["total_gold"], won_res["next_floor"]
+	])
+	assert(won_res["is_victory"] == true, "FAIL TC-14.2: is_victory should be true")
+	assert(won_res["gold_earned"] == 7, "FAIL TC-14.2: Expected 7 gold earned (6 base + 1 interest)")
+	assert(won_res["total_gold"] == 17, "FAIL TC-14.2: Expected 17 total gold")
+	assert(RunManager.current_floor == 2, "FAIL TC-14.2: Current floor should be 2")
+	assert(RunManager.current_lives == 2, "FAIL TC-14.2: Lives should remain 2")
+	_log_test(">>> 🟢 TC-14.2 Victory Reward & Interest Math PASSED!")
+	
+	# 3. Thất bại Tầng 2 lần 1 (Còn 1 mạng -> Cho phép đánh lại)
+	var lost_res1 := RunManager.on_battle_lost()
+	_log_test("[TC-14.3] Lost Floor 2 (1st time) -> Consol Gold: +%d | Total Gold: %d | Lives: %d/%d | Can Retry: %s" % [
+		lost_res1["gold_earned"], lost_res1["total_gold"], lost_res1["lives_left"], lost_res1["max_lives"], str(lost_res1["can_continue"])
+	])
+	assert(lost_res1["is_victory"] == false, "FAIL TC-14.3: is_victory should be false")
+	assert(lost_res1["can_continue"] == true, "FAIL TC-14.3: Should allow retry when 1 life left")
+	assert(lost_res1["lives_left"] == 1, "FAIL TC-14.3: Lives left should be 1")
+	assert(lost_res1["gold_earned"] == 2, "FAIL TC-14.3: Consol gold at Floor 2 should be 2")
+	assert(lost_res1["total_gold"] == 19, "FAIL TC-14.3: Total gold should be 19")
+	assert(RunManager.current_floor == 2, "FAIL TC-14.3: Current floor must not advance on loss")
+	_log_test(">>> 🟢 TC-14.3 Defeat with Lives Remaining (Retry Floor) PASSED!")
+	
+	# 4. Thất bại Tầng 2 lần 2 (Hết mạng -> Perma-death)
+	var run_ended_signal_fired := {"fired": false, "won": true}
+	var on_run_ended := func(is_vic: bool):
+		run_ended_signal_fired["fired"] = true
+		run_ended_signal_fired["won"] = is_vic
+	RunManager.run_ended.connect(on_run_ended, Object.CONNECT_ONE_SHOT)
+	
+	var lost_res2 := RunManager.on_battle_lost()
+	_log_test("[TC-14.4] Lost Floor 2 (2nd time) -> Lives: %d/%d | Can Retry: %s" % [
+		lost_res2["lives_left"], lost_res2["max_lives"], str(lost_res2["can_continue"])
+	])
+	assert(lost_res2["can_continue"] == false, "FAIL TC-14.4: Can continue must be false when 0 lives left")
+	assert(lost_res2["lives_left"] == 0, "FAIL TC-14.4: Lives left must be 0")
+	assert(run_ended_signal_fired["fired"] == true, "FAIL TC-14.4: run_ended signal must be emitted")
+	assert(run_ended_signal_fired["won"] == false, "FAIL TC-14.4: run_ended signal must indicate defeat")
+	_log_test(">>> 🟢 TC-14.4 Perma-death & Zero Lives Handling PASSED!")
+	
+	# 5. Kiểm tra CombatSummaryUI phản ánh chính xác dữ liệu RunResult
+	var hero_tank: HeroEntity = heroes[0] as HeroEntity
+	var hero_assassin: HeroEntity = heroes[1] as HeroEntity
+	
+	# 5a. UI Chiến thắng: Hiển thị Vàng & Lãi
+	combat_summary_ui.show_summary(true, 1, [hero_tank, hero_assassin], won_res)
+	assert(combat_summary_ui.meta_label.text.contains("💰 Vàng: +7"), "FAIL TC-14.5: Meta label must show +7 gold")
+	assert(combat_summary_ui.meta_label.text.contains("(Lãi +1)"), "FAIL TC-14.5: Meta label must show interest")
+	assert(combat_summary_ui.meta_label.text.contains("❤️ Mạng sống: 2/2"), "FAIL TC-14.5: Meta label must show lives 2/2")
+	assert(combat_summary_ui.continue_button.text.contains("TIẾP TỤC"), "FAIL TC-14.5: Button should say TIẾP TỤC")
+	
+	# 5b. UI Thất bại còn mạng: Nút Đánh Lại Tầng Này
+	combat_summary_ui.show_summary(false, 2, [hero_tank, hero_assassin], lost_res1)
+	assert(combat_summary_ui.title_label.text.contains("THẤT BẠI — TẦNG 2 (CÒN 1 MẠNG)"), "FAIL TC-14.5: Title must show remaining lives")
+	assert(combat_summary_ui.continue_button.text.contains("ĐÁNH LẠI TẦNG NÀY"), "FAIL TC-14.5: Button must say ĐÁNH LẠI TẦNG NÀY")
+	assert(combat_summary_ui.meta_label.text.contains("❤️ Mạng sống: 1/2"), "FAIL TC-14.5: Meta label must show lives 1/2")
+	
+	# 5c. UI Tận diệt hết mạng: Game Over & Bắt Đầu Run Mới
+	combat_summary_ui.show_summary(false, 2, [hero_tank, hero_assassin], lost_res2)
+	assert(combat_summary_ui.title_label.text.contains("GAME OVER — TẬN DIỆT Ở TẦNG 2"), "FAIL TC-14.5: Title must show Game Over")
+	assert(combat_summary_ui.continue_button.text.contains("BẮT ĐẦU RUN MỚI"), "FAIL TC-14.5: Button must say BẮT ĐẦU RUN MỚI")
+	assert(combat_summary_ui.meta_label.text.contains("❤️ Mạng sống: 0/2"), "FAIL TC-14.5: Meta label must show lives 0/2")
+	combat_summary_ui.hide()
+	_log_test(">>> 🟢 TC-14.5 CombatSummaryUI Roguelike Metas & Dynamic Buttons PASSED!")
+	
+	# 6. Kiểm tra Hero Perma-death Clean Reset
+	hero_tank.progression.current_level = 7
+	hero_tank.progression.current_xp = 150.0
+	hero_tank.progression.pending_milestones = [5]
+	var extra_ability := Ability.new(hero_tank, AbilityData.new())
+	hero_tank.unlocked_abilities.append(extra_ability)
+	assert(hero_tank.unlocked_abilities.size() > 1, "FAIL TC-14.6: Hero should have extra ability before reset")
+	
+	_reset_heroes_for_new_run()
+	assert(hero_tank.progression.current_level == 1, "FAIL TC-14.6: Hero level should reset to 1")
+	assert(hero_tank.progression.current_xp == 0.0, "FAIL TC-14.6: Hero XP should reset to 0.0")
+	assert(hero_tank.progression.pending_milestones.is_empty(), "FAIL TC-14.6: Pending milestones should be cleared")
+	assert(hero_tank.unlocked_abilities.size() <= 1, "FAIL TC-14.6: Hero abilities should be reset to base")
+	_log_test(">>> 🟢 TC-14.6 Hero Perma-death Clean Reset PASSED!")
+	
+	_log_test(">>> 🟢 TC-14 PASSED: Roguelike Run Lifecycle & Economy fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -1665,5 +1812,8 @@ func _reset_test_battlefield() -> void:
 	if camera != null:
 		camera.offset = Vector2.ZERO
 	battle_ended = false
+	if RunManager != null:
+		RunManager.start_new_run(10, 2)
+		current_floor = RunManager.current_floor
 	_spawn_mock_teams()
 	start_combat_phase()

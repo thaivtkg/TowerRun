@@ -17,6 +17,7 @@ var panel: PanelContainer
 var main_vbox: VBoxContainer
 var title_label: Label
 var subtitle_label: Label
+var meta_label: Label
 var tab_container: HBoxContainer
 var damage_tab_btn: Button
 var taken_tab_btn: Button
@@ -90,6 +91,13 @@ func _build_ui() -> void:
 	subtitle_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	main_vbox.add_child(subtitle_label)
 
+	meta_label = Label.new()
+	meta_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	meta_label.add_theme_font_size_override("font_size", 13)
+	meta_label.add_theme_color_override("font_color", Color("f1c40f"))
+	meta_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	main_vbox.add_child(meta_label)
+
 	# 5. Thanh Tab chuyển đổi (Damage, Taken, Heal)
 	tab_container = HBoxContainer.new()
 	tab_container.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -155,21 +163,45 @@ func _switch_tab(new_tab: MetricTab) -> void:
 	_style_tab_buttons()
 	_render_hero_rows()
 
-func show_summary(is_victory: bool, floor_number: int, all_heroes: Array) -> void:
+func show_summary(is_victory: bool, floor_number: int, all_heroes: Array, run_result: Dictionary = {}) -> void:
 	cached_is_victory = is_victory
 	cached_floor = floor_number
 	cached_heroes = all_heroes.duplicate()
+	
+	var gold_earned: int = run_result.get("gold_earned", 0)
+	var total_gold: int = run_result.get("total_gold", 0)
+	var lives_left: int = run_result.get("lives_left", 2)
+	var max_lives: int = run_result.get("max_lives", 2)
+	var interest_gold: int = run_result.get("interest_gold", 0)
+	var can_continue: bool = run_result.get("can_continue", true)
+	
+	if run_result.is_empty():
+		meta_label.text = ""
+	else:
+		var interest_str: String = " (Lãi +%d)" % interest_gold if interest_gold > 0 else ""
+		meta_label.text = "💰 Vàng: +%d%s (Tổng: %d)   •   ❤️ Mạng sống: %d/%d" % [gold_earned, interest_str, total_gold, lives_left, max_lives]
 	
 	if is_victory:
 		title_label.text = "🏆 CHIẾN THẮNG — TẦNG %d" % floor_number
 		title_label.add_theme_color_override("font_color", Color("f1c40f"))
 		continue_button.text = "TIẾP TỤC  ➔"
 		_style_continue_button(Color("27ae60"), Color("2ecc71"))
-	else:
+	elif run_result.is_empty():
 		title_label.text = "❌ THẤT TRẬN — TẦNG %d" % floor_number
 		title_label.add_theme_color_override("font_color", Color("e74c3c"))
 		continue_button.text = "CHƠI LẠI TỪ ĐẦU  🔄"
 		_style_continue_button(Color("c0392b"), Color("e74c3c"))
+	else:
+		if can_continue:
+			title_label.text = "⚠️ THẤT BẠI — TẦNG %d (CÒN %d MẠNG)" % [floor_number, lives_left]
+			title_label.add_theme_color_override("font_color", Color("e67e22"))
+			continue_button.text = "ĐÁNH LẠI TẦNG NÀY  ⚔️"
+			_style_continue_button(Color("d35400"), Color("e67e22"))
+		else:
+			title_label.text = "☠️ GAME OVER — TẬN DIỆT Ở TẦNG %d" % floor_number
+			title_label.add_theme_color_override("font_color", Color("e74c3c"))
+			continue_button.text = "BẮT ĐẦU RUN MỚI  🔄"
+			_style_continue_button(Color("c0392b"), Color("e74c3c"))
 
 	active_tab = MetricTab.DAMAGE
 	_style_tab_buttons()
