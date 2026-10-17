@@ -11,6 +11,7 @@ script = ExtResource("4_u8mya")
 id = "hero_kira"
 name = "Kira"
 hero_class = 2
+attack_range = 1
 base_attack = 20.0
 crit_chance = 0.5
 starting_energy = 50.0

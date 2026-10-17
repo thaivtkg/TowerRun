@@ -26,6 +26,10 @@ var is_dead: bool = false
 var target: CombatEntity = null # [FIX] Gom biến target về Base Class để TargetingSystem truy xuất an toàn
 var deployed_cell: Vector2i = Vector2i(-1, -1)
 
+var board_grid: BoardGrid = null
+var board_view: BoardView = null
+var _movement_tween: Tween = null
+
 @onready var sprite: Sprite2D = $Sprite2D
 var _base_sprite_pos: Vector2 = Vector2.ZERO
 var _base_sprite_scale: Vector2 = Vector2.ONE
@@ -155,6 +159,8 @@ func take_damage(amount: float) -> void:
 		_die()
 
 func _die() -> void:
+	if _movement_tween != null and _movement_tween.is_running():
+		_movement_tween.kill()
 	is_dead = true
 	visible = false
 	set_deferred("process_mode", Node.PROCESS_MODE_DISABLED)
@@ -167,6 +173,8 @@ func set_combat_active(active: bool) -> void:
 	set_process(active)
 
 func reset_for_new_battle() -> void:
+	if _movement_tween != null and _movement_tween.is_running():
+		_movement_tween.kill()
 	if is_dead:
 		is_dead = false
 		visible = true
@@ -193,6 +201,85 @@ func reset_for_new_battle() -> void:
 			hero.current_energy = 0.0
 		for ab in hero.unlocked_abilities:
 			ab.current_cooldown = 0.0
+
+# ==========================================
+# [S2.3] MOVEMENT & PATHFINDING
+# ==========================================
+
+func get_attack_range() -> int:
+	return 1
+
+func is_target_in_attack_range() -> bool:
+	if not is_instance_valid(target) or target.is_dead:
+		return false
+	if board_grid == null:
+		return true
+	var my_cell := board_grid.get_cell_for_entity(self)
+	var target_cell := board_grid.get_cell_for_entity(target)
+	if not board_grid.is_in_bounds(my_cell) or not board_grid.is_in_bounds(target_cell):
+		return true
+	var dist := board_grid.get_hex_distance(my_cell, target_cell)
+	return dist <= get_attack_range()
+
+func step_towards_target() -> bool:
+	if not is_instance_valid(target) or target.is_dead or board_grid == null:
+		return false
+	var my_cell := board_grid.get_cell_for_entity(self)
+	var target_cell := board_grid.get_cell_for_entity(target)
+	if not board_grid.is_in_bounds(my_cell) or not board_grid.is_in_bounds(target_cell):
+		return false
+	var next_cell := board_grid.get_best_step_towards(my_cell, target_cell)
+	if next_cell == my_cell:
+		return false
+	return move_to_grid_cell(next_cell)
+
+func move_to_grid_cell(next_cell: Vector2i, duration: float = 0.25) -> bool:
+	if board_grid == null:
+		return false
+	var my_cell := board_grid.get_cell_for_entity(self)
+	if not board_grid.move_entity(my_cell, next_cell, true):
+		return false
+		
+	var target_world_pos: Vector2
+	if board_view != null:
+		target_world_pos = board_view.grid_to_world(next_cell)
+	else:
+		target_world_pos = Vector2(next_cell * 80)
+		
+	if _movement_tween != null and _movement_tween.is_running():
+		_movement_tween.kill()
+		
+	_movement_tween = create_tween()
+	_movement_tween.tween_property(self, "global_position", target_world_pos, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	return true
+
+func teleport_to_grid_cell(target_cell: Vector2i) -> bool:
+	if board_grid == null:
+		return false
+	var my_cell := board_grid.get_cell_for_entity(self)
+	if not board_grid.move_entity(my_cell, target_cell, true):
+		return false
+		
+	var target_world_pos: Vector2
+	if board_view != null:
+		target_world_pos = board_view.grid_to_world(target_cell)
+	else:
+		target_world_pos = Vector2(target_cell * 80)
+		
+	if _movement_tween != null and _movement_tween.is_running():
+		_movement_tween.kill()
+		
+	_movement_tween = create_tween()
+	if sprite != null:
+		_movement_tween.tween_property(sprite, "modulate:a", 0.0, 0.1).set_trans(Tween.TRANS_SINE)
+		_movement_tween.tween_callback(func():
+			global_position = target_world_pos
+		)
+		_movement_tween.tween_property(sprite, "modulate:a", 1.0, 0.1).set_trans(Tween.TRANS_SINE)
+	else:
+		global_position = target_world_pos
+	return true
+
 
 # ==========================================
 # VIRTUAL METHODS (STATS CONTRACT)

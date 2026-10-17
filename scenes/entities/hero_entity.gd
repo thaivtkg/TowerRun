@@ -92,6 +92,11 @@ func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	if not is_instance_valid(target) or target.is_dead: return # [FIX P1.1] Không đánh không khí
 	
+	# [S2.3] Range Check & Movement
+	if not is_target_in_attack_range():
+		step_towards_target()
+		return
+	
 	if current_energy >= max_energy:
 		for ability in unlocked_abilities:
 			if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE and ability.is_ready(current_energy):
@@ -144,6 +149,7 @@ func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[Abi
 	var pool: Array = runtime_pools.get(milestone, [])
 	for ability in revealed: pool.erase(ability)
 
+func get_attack_range() -> int: return int(data.attack_range) if data != null else 1
 func get_defense() -> float: return data.base_defense if data != null else 0.0
 func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0

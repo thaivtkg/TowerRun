@@ -192,13 +192,14 @@ func _spawn_mock_teams() -> void:
 	# 1. Tướng THẬT (Kira - Assassin): Hàng đầu Hero Zone (y = 3)
 	var kira_data = load("res://data/heroes/kira_data.tres") as HeroData
 	if kira_data:
+		kira_data.attack_range = 1
 		_spawn_hero_at_grid(kira_data, Vector2i(4, 3))
 		
 	# 2. Sinh nhanh 4 Tướng ẢO (Trên–Dưới Layout)
-	_spawn_hero_at_grid(_create_mock_hero_data("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8), Vector2i(3, 3))
-	_spawn_hero_at_grid(_create_mock_hero_data("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7), Vector2i(2, 4))
-	_spawn_hero_at_grid(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5), Vector2i(3, 4))
-	_spawn_hero_at_grid(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6), Vector2i(4, 4))
+	_spawn_hero_at_grid(_create_mock_hero_data("Arthur", HeroData.HeroClass.TANK, 250.0, 5.0, 30.0, 0.8, 1), Vector2i(3, 3))
+	_spawn_hero_at_grid(_create_mock_hero_data("Jaina", HeroData.HeroClass.MAGE, 80.0, 25.0, 2.0, 0.7, 3), Vector2i(2, 4))
+	_spawn_hero_at_grid(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5, 4), Vector2i(3, 4))
+	_spawn_hero_at_grid(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6, 3), Vector2i(4, 4))
 	
 	# 3. Quái vật (Nửa trên bàn cờ: Hàng 1 & 2)
 	var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
@@ -206,7 +207,7 @@ func _spawn_mock_teams() -> void:
 		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, slime_coords[i])
 
 # Hàm hỗ trợ sinh Data nhanh bằng code
-func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float) -> HeroData:
+func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, atk_range: int = 1) -> HeroData:
 	var data: HeroData = HeroData.new()
 	data.name = h_name
 	data.hero_class = h_class
@@ -214,12 +215,15 @@ func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: flo
 	data.base_attack = atk
 	data.base_defense = def
 	data.attack_speed = spd
+	data.attack_range = atk_range
 	return data
 
 func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	var hero: HeroEntity = hero_scene.instantiate() as HeroEntity
 	add_child(hero)
 	hero.deployed_cell = cell
+	hero.board_grid = board_grid
+	hero.board_view = board_view
 	
 	if board_grid != null:
 		board_grid.place_entity(hero, cell)
@@ -266,11 +270,14 @@ func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd
 	data.base_attack = atk
 	data.base_defense = def
 	data.attack_speed = spd
+	data.attack_range = 1
 	data.crit_chance = crit_c
 	data.crit_damage = crit_d
 	
 	var enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
 	add_child(enemy)
+	enemy.board_grid = board_grid
+	enemy.board_view = board_view
 	
 	if board_grid != null:
 		board_grid.place_entity(enemy, cell)
@@ -588,6 +595,7 @@ func _input(event: InputEvent) -> void:
 		KEY_8: _run_tc_08_board_grid_model()
 		KEY_9: _run_tc_09_board_view_and_placement()
 		KEY_MINUS: _run_tc_10_targeting_and_spatial()
+		KEY_EQUAL: _run_tc_11_grid_movement_and_pathfinding()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -610,8 +618,9 @@ func _run_all_tests() -> void:
 	_run_tc_08_board_grid_model()
 	_run_tc_09_board_view_and_placement()
 	_run_tc_10_targeting_and_spatial()
+	_run_tc_11_grid_movement_and_pathfinding()
 	
-	_log_test("\n🎉 TẤT CẢ 10 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 11 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1318,6 +1327,109 @@ func _run_tc_10_targeting_and_spatial() -> void:
 	assert(aoe_cluster_targets.has(e_b1) and aoe_cluster_targets.has(e_b2) and aoe_cluster_targets.has(e_b3), "FAIL TC-10.4: Missing target in Cluster B AoE")
 	
 	_log_test(">>> 🟢 TC-10 PASSED: Targeting & Spatial Combat systems fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-11: Grid-based Movement & Pathfinding
+# ------------------------------------------------------------------------------
+func _run_tc_11_grid_movement_and_pathfinding() -> void:
+	_log_test("\n==================== [TEST TC-11: GRID MOVEMENT & PATHFINDING] ====================")
+	_reset_test_battlefield()
+	
+	var arthur: HeroEntity = null
+	var robin: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.name == "Arthur":
+				arthur = h
+			elif h.data.name == "Robin":
+				robin = h
+				
+	assert(arthur != null and robin != null, "FAIL TC-11: Arthur and Robin must be spawned")
+	
+	# Xóa các hero khác để test độc lập
+	for h in heroes.duplicate():
+		if h != arthur and h != robin:
+			heroes.erase(h)
+			if is_instance_valid(h):
+				board_grid.remove_dead_entity(h)
+				h.queue_free()
+				
+	# Giữ lại đúng 1 enemy tại (3, 1)
+	while enemies.size() > 1:
+		var extra = enemies.pop_back()
+		if is_instance_valid(extra):
+			board_grid.remove_dead_entity(extra)
+			extra.queue_free()
+			
+	var target_enemy = enemies[0] as EnemyEntity
+	board_grid.move_entity(board_grid.get_cell_for_entity(target_enemy), Vector2i(3, 1), true)
+	if board_view != null:
+		target_enemy.global_position = board_view.grid_to_world(Vector2i(3, 1))
+	
+	# 1. Test Range Check
+	# Robin (Marksman, range 4) tại (2, 4) -> di chuyển trước để giải phóng ô (3, 4)
+	board_grid.move_entity(board_grid.get_cell_for_entity(robin), Vector2i(2, 4), true)
+	if board_view != null:
+		robin.global_position = board_view.grid_to_world(Vector2i(2, 4))
+	robin.target = target_enemy
+	var dist_robin := board_grid.get_hex_distance(Vector2i(2, 4), Vector2i(3, 1))
+	_log_test("[TC-11.1] Robin (Range %d) at (2, 4) -> Enemy at (3, 1) | Hex Dist: %d" % [robin.get_attack_range(), dist_robin])
+	assert(dist_robin <= robin.get_attack_range(), "FAIL TC-11.1: Expected Robin distance <= attack_range")
+	assert(robin.is_target_in_attack_range(), "FAIL TC-11.1: Ranged Robin SHOULD be in attack range")
+
+	# Đặt Arthur (Tank, range 1) tại (3, 4) -> khoảng cách tới (3, 1) là 3 > attack_range (1)
+	var move_arthur := board_grid.move_entity(board_grid.get_cell_for_entity(arthur), Vector2i(3, 4), true)
+	assert(move_arthur, "FAIL TC-11.1: Arthur should move to empty cell (3, 4)")
+	if board_view != null:
+		arthur.global_position = board_view.grid_to_world(Vector2i(3, 4))
+	arthur.target = target_enemy
+	
+	var dist_arthur := board_grid.get_hex_distance(Vector2i(3, 4), Vector2i(3, 1))
+	_log_test("[TC-11.1] Arthur (Range %d) at (3, 4) -> Enemy at (3, 1) | Hex Dist: %d" % [arthur.get_attack_range(), dist_arthur])
+	assert(dist_arthur == 3, "FAIL TC-11.1: Expected hex distance 3 between (3, 4) and (3, 1)")
+	assert(not arthur.is_target_in_attack_range(), "FAIL TC-11.1: Melee Arthur should NOT be in attack range at distance 3")
+	_log_test(">>> 🟢 TC-11.1 Range check PASSED!")
+	
+	# 2. Test Greedy Hex Pathfinding
+	var next_step := board_grid.get_best_step_towards(Vector2i(3, 4), Vector2i(3, 1))
+	var dist_after_step := board_grid.get_hex_distance(next_step, Vector2i(3, 1))
+	_log_test("[TC-11.2] Best step from (3, 4) towards (3, 1): %s | New Dist: %d" % [str(next_step), dist_after_step])
+	assert(dist_after_step == 2, "FAIL TC-11.2: Greedy step should reduce distance from 3 to 2")
+	assert(board_grid.is_cell_empty(next_step), "FAIL TC-11.2: Selected step must be empty")
+	
+	var stepped = arthur.step_towards_target()
+	assert(stepped, "FAIL TC-11.2: Arthur step_towards_target() should return true")
+	assert(board_grid.get_cell_for_entity(arthur) == next_step, "FAIL TC-11.2: Arthur should occupy next_step on BoardGrid")
+	_log_test(">>> 🟢 TC-11.2 Greedy Step Execution PASSED!")
+	
+	# 3. Test Blocked / Alternative Path
+	board_grid.move_entity(board_grid.get_cell_for_entity(arthur), Vector2i(3, 4), true)
+	var blocker: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(blocker)
+	board_grid.place_entity(blocker, next_step)
+	
+	var alt_step := board_grid.get_best_step_towards(Vector2i(3, 4), Vector2i(3, 1))
+	_log_test("[TC-11.3] Blocked %s. Alternative step: %s (Dist: %d)" % [str(next_step), str(alt_step), board_grid.get_hex_distance(alt_step, Vector2i(3, 1))])
+	assert(alt_step != next_step, "FAIL TC-11.3: Should not step on blocked cell")
+	assert(board_grid.is_cell_empty(alt_step), "FAIL TC-11.3: Alternative step must be empty")
+	board_grid.remove_dead_entity(blocker)
+	blocker.queue_free()
+	_log_test(">>> 🟢 TC-11.3 Obstacle avoidance PASSED!")
+	
+	# 4. Test Assassin Blink Landing (get_closest_empty_cell_around & teleport_to_grid_cell)
+	var blink_target_cell := board_grid.get_closest_empty_cell_around(Vector2i(3, 1))
+	_log_test("[TC-11.4] Assassin Blink landing cell around (3, 1): %s" % str(blink_target_cell))
+	assert(blink_target_cell != Vector2i(-1, -1), "FAIL TC-11.4: Should find an empty landing cell")
+	assert(board_grid.get_hex_distance(blink_target_cell, Vector2i(3, 1)) == 1, "FAIL TC-11.4: Landing cell must be adjacent (dist=1) to target")
+	assert(board_grid.is_cell_empty(blink_target_cell), "FAIL TC-11.4: Landing cell must be empty")
+	
+	var teleported = arthur.teleport_to_grid_cell(blink_target_cell)
+	assert(teleported, "FAIL TC-11.4: teleport_to_grid_cell should succeed")
+	assert(board_grid.get_cell_for_entity(arthur) == blink_target_cell, "FAIL TC-11.4: Arthur should be at blink cell on BoardGrid")
+	assert(arthur.is_target_in_attack_range(), "FAIL TC-11.4: After blinking adjacent to target, Arthur must be in attack range")
+	_log_test(">>> 🟢 TC-11.4 Assassin Blink landing PASSED!")
+	
+	_log_test(">>> 🟢 TC-11 PASSED: Grid-based Movement & Pathfinding fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
