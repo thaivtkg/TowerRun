@@ -24,6 +24,7 @@ var progression_system: ProgressionSystem
 var ability_system: AbilitySystem
 var skill_ui: SkillChoiceUI
 var combat_summary_ui: CombatSummaryUI
+var character_stats_ui: CharacterStatsUI
 var choice_queue: Array[Dictionary] = []
 var current_floor: int = 1
 
@@ -76,6 +77,14 @@ func _init_systems() -> void:
 	if placement_controller != null:
 		placement_controller.board_grid = board_grid
 		placement_controller.board_view = board_view
+		placement_controller.hero_selected.connect(func(h):
+			if is_instance_valid(character_stats_ui):
+				character_stats_ui.inspect_hero(h)
+		)
+		placement_controller.hero_hovered.connect(func(h):
+			if is_instance_valid(character_stats_ui):
+				character_stats_ui.inspect_hero(h)
+		)
 
 	combat_system = CombatSystem.new()
 	combat_system.name = "CombatSystem"
@@ -110,6 +119,10 @@ func _init_systems() -> void:
 	combat_summary_ui = CombatSummaryUI.new()
 	add_child(combat_summary_ui)
 	combat_summary_ui.continued.connect(_on_summary_continued)
+	
+	character_stats_ui = CharacterStatsUI.new()
+	character_stats_ui.name = "CharacterStatsUI"
+	add_child(character_stats_ui)
 	
 	_create_start_combat_ui()
 
@@ -218,12 +231,13 @@ func _spawn_mock_teams() -> void:
 		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, slime_coords[i])
 
 # Hàm hỗ trợ sinh Data nhanh bằng code
-func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, atk_range: int = 1) -> HeroData:
+func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, atk_range: int = 1, spell_pow: float = 10.0) -> HeroData:
 	var data: HeroData = HeroData.new()
 	data.name = h_name
 	data.hero_class = h_class
 	data.base_hp = hp
 	data.base_attack = atk
+	data.base_spell_power = spell_pow
 	data.base_defense = def
 	data.attack_speed = spd
 	data.attack_range = atk_range
@@ -638,6 +652,17 @@ func _log_test(msg: String) -> void:
 		file.store_line(msg)
 		file.close()
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		var mouse_pos: Vector2 = get_global_mouse_position()
+		for h in heroes:
+			if is_instance_valid(h) and not h.is_dead:
+				var rad: float = board_config.hex_radius if board_config != null else 44.0
+				if h.global_position.distance_to(mouse_pos) <= rad:
+					if is_instance_valid(character_stats_ui):
+						character_stats_ui.inspect_hero(h)
+					return
+
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed): return
 	
@@ -648,7 +673,7 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 9 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 16 TEST CASE VÀ GHI REPORT
 		KEY_0:
 			_run_all_tests()
 			
@@ -668,6 +693,7 @@ func _input(event: InputEvent) -> void:
 		KEY_BRACKETRIGHT: _run_tc_13_combat_summary_ui()
 		KEY_BACKSLASH: _run_tc_14_roguelike_run_lifecycle()
 		KEY_SLASH: _run_tc_15_combat_retargeting()
+		KEY_PERIOD: _run_tc_16_character_stats_ui()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -695,8 +721,9 @@ func _run_all_tests() -> void:
 	_run_tc_13_combat_summary_ui()
 	_run_tc_14_roguelike_run_lifecycle()
 	_run_tc_15_combat_retargeting()
+	_run_tc_16_character_stats_ui()
 	
-	_log_test("\n🎉 TẤT CẢ 15 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 16 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1896,6 +1923,81 @@ func _run_tc_15_combat_retargeting() -> void:
 	_log_test(">>> 🟢 TC-15 PASSED: Smart Combat Retargeting & Anti-Kiting fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-16: Character Stats Panel & Inspection UI
+# ------------------------------------------------------------------------------
+func _run_tc_16_character_stats_ui() -> void:
+	_log_test("\n==================== [TEST TC-16: CHARACTER STATS PANEL & INSPECTION UI] ====================")
+	_reset_test_battlefield()
+	
+	assert(character_stats_ui != null, "FAIL TC-16: CharacterStatsUI instance must exist")
+	character_stats_ui.close()
+	assert(not character_stats_ui.visible, "FAIL TC-16.1: Panel must be hidden initially")
+	
+	var arthur: HeroEntity = null
+	var robin: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.name == "Arthur":
+				arthur = h
+			elif h.data.name == "Robin":
+				robin = h
+	assert(arthur != null and robin != null, "FAIL TC-16: Arthur and Robin must exist")
+	
+	# 1. INSPECT HERO & HEADER BINDING
+	character_stats_ui.inspect_hero(arthur)
+	assert(character_stats_ui.visible, "FAIL TC-16.1: Panel must be visible after inspect_hero")
+	assert(character_stats_ui.inspected_hero == arthur, "FAIL TC-16.1: Inspected hero must be Arthur")
+	assert(character_stats_ui.name_label.text == "Arthur", "FAIL TC-16.1: Name label must match Arthur")
+	assert(character_stats_ui.class_label.text.contains("TANK"), "FAIL TC-16.1: Class label must show TANK")
+	assert(character_stats_ui.level_label.text == "Cấp 1", "FAIL TC-16.1: Initial level must be Cấp 1")
+	_log_test(">>> 🟢 TC-16.1 Hero Inspection & Header Data Binding PASSED!")
+	
+	# 2. STAT GRID BINDING (ATTACK, SPELL POWER, DEFENSE, ETC.)
+	assert(character_stats_ui.attack_val_label.text == "%.1f" % arthur.get_attack(), "FAIL TC-16.2: Attack stat mismatch")
+	assert(character_stats_ui.spell_val_label.text == "%.1f" % arthur.get_spell_power(), "FAIL TC-16.2: Spell Power stat mismatch")
+	assert(character_stats_ui.def_val_label.text == "%.1f" % arthur.get_defense(), "FAIL TC-16.2: Defense stat mismatch")
+	assert(character_stats_ui.range_val_label.text == "%d ô" % arthur.get_attack_range(), "FAIL TC-16.2: Range stat mismatch")
+	_log_test(">>> 🟢 TC-16.2 Stat Grid Binding (Base Spell Power included) PASSED!")
+	
+	# 3. REACTIVE RESOURCE BAR UPDATES
+	var old_hp := arthur.current_hp
+	arthur.current_hp = old_hp - 25.0
+	assert(character_stats_ui.hp_bar.value == arthur.current_hp, "FAIL TC-16.3: HP bar did not reactively update")
+	assert(character_stats_ui.hp_label.text.contains("%.0f / %.0f" % [arthur.current_hp, arthur.max_hp]), "FAIL TC-16.3: HP label mismatch")
+	
+	arthur.current_energy = 50.0
+	assert(character_stats_ui.energy_bar.value == 50.0, "FAIL TC-16.3: Energy bar did not reactively update")
+	_log_test(">>> 🟢 TC-16.3 Reactive HP & Energy Updates PASSED!")
+	
+	# 4. SWITCH INSPECTED HERO & OLD TARGET DISCONNECTION
+	character_stats_ui.inspect_hero(robin)
+	assert(character_stats_ui.inspected_hero == robin, "FAIL TC-16.4: Inspected hero must switch to Robin")
+	assert(character_stats_ui.name_label.text == "Robin", "FAIL TC-16.4: Name label must update to Robin")
+	assert(character_stats_ui.range_val_label.text == "%d ô" % robin.get_attack_range(), "FAIL TC-16.4: Robin range must be %d ô" % robin.get_attack_range())
+	
+	# Đổi HP của Arthur -> không được ảnh hưởng đến bảng đang inspect Robin
+	var robin_hp := robin.current_hp
+	arthur.current_hp = 10.0
+	assert(character_stats_ui.hp_bar.value == robin_hp, "FAIL TC-16.4: Old target Arthur must not affect Robin inspection")
+	_log_test(">>> 🟢 TC-16.4 Hero Switching & Clean Disconnect PASSED!")
+	
+	# 5. CLOSE & DISMISS
+	character_stats_ui.close()
+	assert(not character_stats_ui.visible, "FAIL TC-16.5: Panel must hide on close")
+	assert(character_stats_ui.inspected_hero == null, "FAIL TC-16.5: Inspected hero must be null after close")
+	_log_test(">>> 🟢 TC-16.5 Panel Close & Dismissal PASSED!")
+	
+	# 6. PLACEMENT CONTROLLER SELECTION INTEGRATION
+	if placement_controller != null:
+		placement_controller.hero_selected.emit(arthur)
+		assert(character_stats_ui.visible, "FAIL TC-16.6: PlacementController hero_selected must open stats panel")
+		assert(character_stats_ui.inspected_hero == arthur, "FAIL TC-16.6: Inspected hero must be Arthur")
+		character_stats_ui.close()
+	_log_test(">>> 🟢 TC-16.6 PlacementController Integration PASSED!")
+	
+	_log_test(">>> 🟢 TC-16 PASSED: Character Stats Panel & Inspection UI fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -1914,6 +2016,8 @@ func _reset_test_battlefield() -> void:
 		skill_ui.hide()
 	if is_instance_valid(combat_summary_ui):
 		combat_summary_ui.hide()
+	if is_instance_valid(character_stats_ui):
+		character_stats_ui.close()
 	if get_tree() != null:
 		get_tree().paused = false
 	if _shake_tween != null and _shake_tween.is_running():

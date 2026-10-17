@@ -6,6 +6,9 @@ extends Node
 # Quản lý tương tác kéo thả Hero và kiểm tra luật vùng
 # ==========================================
 
+signal hero_selected(hero: HeroEntity)
+signal hero_hovered(hero: HeroEntity)
+
 var board_grid: BoardGrid
 var board_view: BoardView
 
@@ -70,6 +73,7 @@ func _on_mouse_pressed() -> void:
 		
 	var entity: CombatEntity = board_grid.get_occupant(cell)
 	if entity != null and entity is HeroEntity:
+		hero_selected.emit(entity)
 		if _snap_tweens.has(entity) and is_instance_valid(_snap_tweens[entity]):
 			_snap_tweens[entity].kill()
 			_snap_tweens.erase(entity)
@@ -101,6 +105,9 @@ func _on_mouse_moved() -> void:
 	else:
 		if board_grid.is_in_bounds(current_cell):
 			board_view.hovered_cell = current_cell
+			var occupant: CombatEntity = board_grid.get_occupant(current_cell)
+			if occupant != null and occupant is HeroEntity:
+				hero_hovered.emit(occupant)
 		else:
 			board_view.hovered_cell = Vector2i(-1, -1)
 

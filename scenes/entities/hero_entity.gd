@@ -159,3 +159,6 @@ func get_attack_range() -> int: return int(data.attack_range) if data != null el
 func get_defense() -> float: return data.base_defense if data != null else 0.0
 func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
+func get_attack() -> float: return data.base_attack if data != null else 10.0
+func get_spell_power() -> float: return data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
+func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
