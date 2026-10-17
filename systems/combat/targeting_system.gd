@@ -18,8 +18,53 @@ func _assign_targets(attackers: Array[CombatEntity], potential_targets: Array[Co
 		if attacker.is_dead:
 			continue
 			
+		attacker.targeting_system = self
+		
 		if attacker.target == null or attacker.target.is_dead or not is_instance_valid(attacker.target):
-			attacker.target = _find_closest_target(attacker, alive_targets)
+			var in_range := find_closest_target_in_range(attacker, attacker.get_attack_range(), alive_targets)
+			if in_range != null:
+				attacker.target = in_range
+			else:
+				attacker.target = _find_closest_target(attacker, alive_targets)
+		elif not attacker.is_target_in_attack_range():
+			var in_range := find_closest_target_in_range(attacker, attacker.get_attack_range(), alive_targets)
+			if in_range != null:
+				attacker.target = in_range
+
+func find_closest_target_in_range(attacker: CombatEntity, max_range: int, candidate_pool: Array[CombatEntity] = []) -> CombatEntity:
+	if attacker == null or attacker.is_dead or board_grid == null:
+		return null
+	var is_hero: bool = (attacker is HeroEntity) or (attacker in heroes)
+	var opponents: Array[CombatEntity] = candidate_pool if candidate_pool.size() > 0 else (enemies if is_hero else heroes)
+	var alive_opponents: Array[CombatEntity] = []
+	for e in opponents:
+		if is_instance_valid(e) and not e.is_dead:
+			alive_opponents.append(e)
+			
+	if alive_opponents.is_empty():
+		return null
+		
+	var my_cell := board_grid.get_cell_for_entity(attacker)
+	if not board_grid.is_in_bounds(my_cell):
+		return null
+		
+	var best_target: CombatEntity = null
+	var min_hex_dist: int = max_range + 1
+	
+	for candidate in alive_opponents:
+		var cand_cell := board_grid.get_cell_for_entity(candidate)
+		if not board_grid.is_in_bounds(cand_cell):
+			continue
+		var dist: int = board_grid.get_hex_distance(my_cell, cand_cell)
+		if dist <= max_range:
+			if dist < min_hex_dist:
+				min_hex_dist = dist
+				best_target = candidate
+			elif dist == min_hex_dist and best_target != null:
+				if candidate.current_hp < best_target.current_hp:
+					best_target = candidate
+					
+	return best_target
 
 func _find_closest_target(attacker: CombatEntity, targets: Array[CombatEntity]) -> CombatEntity:
 	var closest_target: CombatEntity = null

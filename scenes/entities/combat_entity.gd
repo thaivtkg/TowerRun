@@ -28,6 +28,7 @@ var deployed_cell: Vector2i = Vector2i(-1, -1)
 
 var board_grid: BoardGrid = null
 var board_view: BoardView = null
+var targeting_system: TargetingSystem = null
 var _movement_tween: Tween = null
 
 @onready var sprite: Sprite2D = $Sprite2D
@@ -201,6 +202,8 @@ func reset_for_new_battle() -> void:
 			hero.current_energy = 0.0
 		for ab in hero.unlocked_abilities:
 			ab.current_cooldown = 0.0
+		if hero.metrics != null:
+			hero.metrics.reset()
 
 # ==========================================
 # [S2.3] MOVEMENT & PATHFINDING

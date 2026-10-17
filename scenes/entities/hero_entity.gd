@@ -7,6 +7,7 @@ signal ability_requested(ability: Ability)
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
 var progression: HeroProgression = null
+var metrics: CombatMetric = CombatMetric.new()
 
 # SPRINT 4: RUNTIME ABILITIES STATE
 var unlocked_abilities: Array[Ability] = [] 
@@ -92,10 +93,15 @@ func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	if not is_instance_valid(target) or target.is_dead: return # [FIX P1.1] Không đánh không khí
 	
-	# [S2.3] Range Check & Movement
+	# [S2.3 / S3.4] Range Check & Smart Retargeting
 	if not is_target_in_attack_range():
-		step_towards_target()
-		return
+		if targeting_system != null:
+			var in_range := targeting_system.find_closest_target_in_range(self, get_attack_range())
+			if in_range != null:
+				target = in_range
+		if not is_target_in_attack_range():
+			step_towards_target()
+			return
 	
 	if current_energy >= max_energy:
 		for ability in unlocked_abilities:
@@ -153,3 +159,6 @@ func get_attack_range() -> int: return int(data.attack_range) if data != null el
 func get_defense() -> float: return data.base_defense if data != null else 0.0
 func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
+func get_attack() -> float: return data.base_attack if data != null else 10.0
+func get_spell_power() -> float: return data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
+func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0

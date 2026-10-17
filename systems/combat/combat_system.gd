@@ -2,9 +2,9 @@ class_name CombatSystem
 extends Node
 
 # Tín hiệu này sẽ được ProgressionSystem lắng nghe ở các Task sau
-signal metric_recorded(metric: CombatMetric)
 signal damage_dealt(source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool)
 signal entity_killed(killer: CombatEntity, victim: CombatEntity)
+signal entity_healed(source: CombatEntity, target: CombatEntity, amount: float)
 
 func process_attack(event: DamageEvent) -> void:
 	if event == null: return
@@ -34,26 +34,9 @@ func process_attack(event: DamageEvent) -> void:
 	# Áp dụng sát thương
 	event.target.take_damage(event.final_damage)
 	
-	# --- SPRINT 4: KÍCH HOẠT EVENT CHO PASSIVE & UI ---
+	# Kích hoạt signal cho UI, VFX, Passive & Progression
 	damage_dealt.emit(event.source, event.target, event.final_damage, event.is_crit)
 	
 	if event.target.is_dead:
 		entity_killed.emit(event.source, event.target)
-	
-	# ==========================================
-	# REPORTING METRICS (Phóng viên chiến trường)
-	# ==========================================
-	
-	# Metric 1: Damage (Ghi nhận lượng sát thương cuối cùng đã gây ra/gánh chịu)
-	var damage_metric = CombatMetric.new(CombatMetric.MetricType.DAMAGE, event.source, event.target, event.final_damage)
-	metric_recorded.emit(damage_metric)
-	
-	# Metric 2: Crit (Ghi nhận số lần chí mạng)
-	if event.is_crit:
-		var crit_metric = CombatMetric.new(CombatMetric.MetricType.CRIT, event.source, event.target, 1.0)
-		metric_recorded.emit(crit_metric)
-		
-	# Metric 3: Kill (Ghi nhận nếu mục tiêu vừa chết vì đòn đánh này)
-	if event.target.is_dead:
-		var kill_metric = CombatMetric.new(CombatMetric.MetricType.KILL, event.source, event.target, 1.0)
-		metric_recorded.emit(kill_metric)
+

@@ -42,10 +42,15 @@ func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
 	if not is_instance_valid(target) or target.is_dead: return
 	
-	# [S2.3] Range Check & Movement
+	# [S2.3 / S3.4] Range Check & Smart Retargeting
 	if not is_target_in_attack_range():
-		step_towards_target()
-		return
+		if targeting_system != null:
+			var in_range := targeting_system.find_closest_target_in_range(self, get_attack_range())
+			if in_range != null:
+				target = in_range
+		if not is_target_in_attack_range():
+			step_towards_target()
+			return
 		
 	var event := DamageEvent.new(self, target, data.base_attack, DamageEvent.DamageType.PHYSICAL)
 	event.is_crit = (randf() <= get_crit_chance())

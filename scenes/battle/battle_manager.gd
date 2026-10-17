@@ -23,7 +23,10 @@ var targeting_system: TargetingSystem
 var progression_system: ProgressionSystem
 var ability_system: AbilitySystem
 var skill_ui: SkillChoiceUI
+var combat_summary_ui: CombatSummaryUI
+var character_stats_ui: CharacterStatsUI
 var choice_queue: Array[Dictionary] = []
+var current_floor: int = 1
 
 var board_config: BoardConfig
 var board_grid: BoardGrid
@@ -38,6 +41,9 @@ var next_game_state: GameManager.GameState
 
 func _ready() -> void:
 	GameManager.change_state(GameManager.GameState.BATTLE)
+	if RunManager != null:
+		RunManager.start_new_run()
+		current_floor = RunManager.current_floor
 	_start_battle()
 	if "--run-tests" in OS.get_cmdline_user_args():
 		_run_all_tests()
@@ -71,6 +77,14 @@ func _init_systems() -> void:
 	if placement_controller != null:
 		placement_controller.board_grid = board_grid
 		placement_controller.board_view = board_view
+		placement_controller.hero_selected.connect(func(h):
+			if is_instance_valid(character_stats_ui):
+				character_stats_ui.inspect_hero(h)
+		)
+		placement_controller.hero_hovered.connect(func(h):
+			if is_instance_valid(character_stats_ui):
+				character_stats_ui.inspect_hero(h)
+		)
 
 	combat_system = CombatSystem.new()
 	combat_system.name = "CombatSystem"
@@ -101,6 +115,14 @@ func _init_systems() -> void:
 	skill_ui = SkillChoiceUI.new()
 	add_child(skill_ui)
 	skill_ui.skill_chosen.connect(_on_skill_chosen)
+	
+	combat_summary_ui = CombatSummaryUI.new()
+	add_child(combat_summary_ui)
+	combat_summary_ui.continued.connect(_on_summary_continued)
+	
+	character_stats_ui = CharacterStatsUI.new()
+	character_stats_ui.name = "CharacterStatsUI"
+	add_child(character_stats_ui)
 	
 	_create_start_combat_ui()
 
@@ -179,6 +201,8 @@ func start_combat_phase() -> void:
 		
 	for hero in heroes:
 		if is_instance_valid(hero):
+			if hero.metrics != null:
+				hero.metrics.reset()
 			hero.set_combat_active(true)
 	for enemy in enemies:
 		if is_instance_valid(enemy):
@@ -207,12 +231,13 @@ func _spawn_mock_teams() -> void:
 		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, slime_coords[i])
 
 # Hàm hỗ trợ sinh Data nhanh bằng code
-func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, atk_range: int = 1) -> HeroData:
+func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, atk_range: int = 1, spell_pow: float = 10.0) -> HeroData:
 	var data: HeroData = HeroData.new()
 	data.name = h_name
 	data.hero_class = h_class
 	data.base_hp = hp
 	data.base_attack = atk
+	data.base_spell_power = spell_pow
 	data.base_defense = def
 	data.attack_speed = spd
 	data.attack_range = atk_range
@@ -224,6 +249,7 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	hero.deployed_cell = cell
 	hero.board_grid = board_grid
 	hero.board_view = board_view
+	hero.targeting_system = targeting_system
 	
 	if board_grid != null:
 		board_grid.place_entity(hero, cell)
@@ -278,6 +304,7 @@ func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd
 	add_child(enemy)
 	enemy.board_grid = board_grid
 	enemy.board_view = board_view
+	enemy.targeting_system = targeting_system
 	
 	if board_grid != null:
 		board_grid.place_entity(enemy, cell)
@@ -342,12 +369,62 @@ func _end_battle(state: GameManager.GameState, log_message: String) -> void:
 	if progression_system != null:
 		progression_system.finalize_battle_xp(is_victory)
 	
+	var run_result: Dictionary = {}
+	if RunManager != null:
+		if is_victory:
+			run_result = RunManager.on_battle_won()
+		else:
+			run_result = RunManager.on_battle_lost()
+		current_floor = RunManager.current_floor
+	
 	_build_post_battle_choice_queue()
 	
-	if not choice_queue.is_empty():
+	if combat_summary_ui != null:
+		var summary_heroes: Array[CombatEntity] = []
+		summary_heroes.append_array(heroes)
+		for c in corpses:
+			if is_instance_valid(c) and c is HeroEntity and not summary_heroes.has(c):
+				summary_heroes.append(c)
+		var display_floor: int = run_result.get("floor", current_floor)
+		combat_summary_ui.show_summary(is_victory, display_floor, summary_heroes, run_result)
+	else:
+		_on_summary_continued()
+
+func _on_summary_continued() -> void:
+	var can_continue: bool = true
+	if RunManager != null:
+		can_continue = RunManager.current_lives > 0
+		
+	if next_game_state == GameManager.GameState.GAME_OVER and not can_continue:
+		_finish_battle_cleanup()
+		_reset_heroes_for_new_run()
+		if RunManager != null:
+			RunManager.start_new_run()
+			current_floor = RunManager.current_floor
+		GameManager.change_state(GameManager.GameState.GAME_OVER)
+		print("[BattleManager] 🛑 PERMA-DEATH: Đã reset toàn bộ Hero về Level 1.")
+	elif not choice_queue.is_empty():
 		_process_next_choice()
 	else:
 		_finish_battle_cleanup()
+
+func _reset_heroes_for_new_run() -> void:
+	var all_heroes: Array[CombatEntity] = []
+	all_heroes.append_array(heroes)
+	for c in corpses:
+		if is_instance_valid(c) and c is HeroEntity and not all_heroes.has(c):
+			all_heroes.append(c)
+			
+	for h in all_heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			var hero := h as HeroEntity
+			if hero.progression != null:
+				hero.progression.current_level = 1
+				hero.progression.current_xp = 0.0
+				hero.progression.pending_milestones.clear()
+			if hero.unlocked_abilities.size() > 1:
+				hero.unlocked_abilities = hero.unlocked_abilities.slice(0, 1)
+			hero.reset_for_new_battle()
 
 func _build_post_battle_choice_queue() -> void:
 	choice_queue.clear()
@@ -397,8 +474,8 @@ func _finish_battle_cleanup() -> void:
 				corpse.queue_free()
 	corpses = surviving_hero_corpses
 
-	# Nếu GAME_OVER thì dừng lại, không tự qua tầng mới
-	if next_game_state == GameManager.GameState.GAME_OVER:
+	# Nếu GAME_OVER và hết mạng thì dừng lại, không tự qua tầng mới
+	if next_game_state == GameManager.GameState.GAME_OVER and (RunManager == null or RunManager.current_lives <= 0):
 		GameManager.change_state(GameManager.GameState.GAME_OVER)
 		print("[BattleManager] 🛑 GAME OVER - Stopping floor progression.")
 		return
@@ -407,8 +484,10 @@ func _finish_battle_cleanup() -> void:
 
 func _start_next_floor() -> void:
 	battle_ended = false
+	if RunManager != null:
+		current_floor = RunManager.current_floor
 	print("\n=====================================")
-	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG TIẾP THEO 🚀")
+	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG %d 🚀" % current_floor)
 	print("=====================================")
 	
 	if board_grid != null:
@@ -445,13 +524,16 @@ func _start_next_floor() -> void:
 			enemy.queue_free()
 	enemies.clear()
 	
-	# Sinh quái vật ngẫu nhiên trên các ô trống trong Enemy Zone
+	# Sinh quái vật ngẫu nhiên trên các ô trống trong Enemy Zone theo cấp độ tầng
 	if board_grid != null:
 		var empty_enemy_cells := board_grid.get_empty_enemy_cells()
 		empty_enemy_cells.shuffle()
 		var spawn_count: int = mini(5, empty_enemy_cells.size())
+		var hp_scaling: float = 80.0 + (current_floor - 1) * 40.0
+		var atk_scaling: float = 8.0 + (current_floor - 1) * 2.0
+		var def_scaling: float = 5.0 + (current_floor - 1) * 1.0
 		for i in range(spawn_count):
-			_spawn_enemy_at_grid("Slime Lv2 - " + str(i+1), 120.0, 10.0, 6.0, 1.0, 0.0, 2.0, empty_enemy_cells[i])
+			_spawn_enemy_at_grid("Slime Lv%d - " % current_floor + str(i+1), hp_scaling, atk_scaling, def_scaling, 1.0, 0.0, 2.0, empty_enemy_cells[i])
 			
 	enter_preparation_phase()
 
@@ -570,6 +652,17 @@ func _log_test(msg: String) -> void:
 		file.store_line(msg)
 		file.close()
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		var mouse_pos: Vector2 = get_global_mouse_position()
+		for h in heroes:
+			if is_instance_valid(h) and not h.is_dead:
+				var rad: float = board_config.hex_radius if board_config != null else 44.0
+				if h.global_position.distance_to(mouse_pos) <= rad:
+					if is_instance_valid(character_stats_ui):
+						character_stats_ui.inspect_hero(h)
+					return
+
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed): return
 	
@@ -580,7 +673,7 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 9 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 16 TEST CASE VÀ GHI REPORT
 		KEY_0:
 			_run_all_tests()
 			
@@ -596,16 +689,21 @@ func _input(event: InputEvent) -> void:
 		KEY_9: _run_tc_09_board_view_and_placement()
 		KEY_MINUS: _run_tc_10_targeting_and_spatial()
 		KEY_EQUAL: _run_tc_11_grid_movement_and_pathfinding()
+		KEY_BRACKETLEFT: _run_tc_12_combat_metrics_and_progression()
+		KEY_BRACKETRIGHT: _run_tc_13_combat_summary_ui()
+		KEY_BACKSLASH: _run_tc_14_roguelike_run_lifecycle()
+		KEY_SLASH: _run_tc_15_combat_retargeting()
+		KEY_PERIOD: _run_tc_16_character_stats_ui()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
 	if file:
-		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 2, 4 & 5 ===")
+		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 2, 3, 4 & 5 ===")
 		file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
-		file.store_line("========================================\n")
+		file.store_line("==============================================\n")
 		file.close()
 	
-	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 2, 4 & 5)...")
+	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 2, 3, 4 & 5)...")
 	_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
 	
 	_run_tc_01_active_ability_xp()
@@ -619,8 +717,13 @@ func _run_all_tests() -> void:
 	_run_tc_09_board_view_and_placement()
 	_run_tc_10_targeting_and_spatial()
 	_run_tc_11_grid_movement_and_pathfinding()
+	_run_tc_12_combat_metrics_and_progression()
+	_run_tc_13_combat_summary_ui()
+	_run_tc_14_roguelike_run_lifecycle()
+	_run_tc_15_combat_retargeting()
+	_run_tc_16_character_stats_ui()
 	
-	_log_test("\n🎉 TẤT CẢ 11 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 16 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1432,6 +1535,471 @@ func _run_tc_11_grid_movement_and_pathfinding() -> void:
 	_log_test(">>> 🟢 TC-11 PASSED: Grid-based Movement & Pathfinding fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-12: Combat Metrics & Hero Progression (Sprint 3)
+# ------------------------------------------------------------------------------
+func _run_tc_12_combat_metrics_and_progression() -> void:
+	_log_test("\n==================== [TEST TC-12: COMBAT METRICS & PROGRESSION] ====================")
+	_reset_test_battlefield()
+	
+	# 1. Tìm 1 Tank (Arthur), 1 Assassin (Kira) và 1 Support (Soraka)
+	var tank: HeroEntity = null
+	var assassin: HeroEntity = null
+	var support: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.hero_class == HeroData.HeroClass.TANK:
+				tank = h
+			elif h.data.hero_class == HeroData.HeroClass.ASSASSIN:
+				assassin = h
+			elif h.data.hero_class == HeroData.HeroClass.SUPPORT:
+				support = h
+				
+	assert(tank != null and assassin != null and support != null, "FAIL TC-12: Tank, Assassin, and Support must exist")
+	
+	# 2. Reset và nạp giả lập 500 damage_taken và 500 damage_dealt cho cả Tank và Assassin
+	tank.metrics.reset()
+	assassin.metrics.reset()
+	tank.progression = HeroProgression.new()
+	assassin.progression = HeroProgression.new()
+	
+	tank.metrics.damage_taken = 500.0
+	tank.metrics.damage_dealt = 500.0
+	
+	assassin.metrics.damage_taken = 500.0
+	assassin.metrics.damage_dealt = 500.0
+	
+	var tank_contrib := progression_system.calculate_hero_contribution(tank)
+	var assassin_contrib := progression_system.calculate_hero_contribution(assassin)
+	
+	# Tank raw: 500*0.2 (dealt) + 500*1.2 (taken) = 100 + 600 = 700.0
+	# Assassin raw: 500*1.5 (dealt) + 500*0.1 (taken) = 750 + 50 = 800.0
+	_log_test("[TC-12.1] Raw Contribution: Tank = %.1f | Assassin = %.1f" % [tank_contrib, assassin_contrib])
+	assert(is_equal_approx(tank_contrib, 700.0), "FAIL TC-12.1: Tank raw contribution expected 700.0")
+	assert(is_equal_approx(assassin_contrib, 800.0), "FAIL TC-12.1: Assassin raw contribution expected 800.0")
+	
+	# Kiểm tra tính phân hóa vai trò:
+	# Lượng XP Tank nhận từ chống chịu (600) > Assassin nhận từ chống chịu (50)
+	var tank_taken_xp: float = 500.0 * 1.2
+	var assassin_taken_xp: float = 500.0 * 0.1
+	assert(tank_taken_xp > assassin_taken_xp, "FAIL TC-12.1: Tank must gain more XP from damage taken than Assassin")
+	
+	# Lượng XP Assassin nhận từ sát thương gây ra (750) > Tank nhận từ sát thương (100)
+	var assassin_dealt_xp: float = 500.0 * 1.5
+	var tank_dealt_xp: float = 500.0 * 0.2
+	assert(assassin_dealt_xp > tank_dealt_xp, "FAIL TC-12.1: Assassin must gain more XP from damage dealt than Tank")
+	
+	# 3. Finalize Battle XP với win_multiplier = 1.2 (Victory)
+	progression_system.finalize_battle_xp(true, [tank, assassin])
+	# Tank final XP: 700 * 1.2 = 840.0 -> Đạt Level 6
+	# Assassin final XP: 800 * 1.2 = 960.0 -> Đạt Level 6
+	_log_test("[TC-12.1] Post-battle Level: Tank = Lv%d | Assassin = Lv%d" % [tank.progression.current_level, assassin.progression.current_level])
+	assert(tank.progression.current_level >= 5, "FAIL TC-12.1: Tank should reach at least Level 5")
+	assert(assassin.progression.current_level >= 5, "FAIL TC-12.1: Assassin should reach at least Level 5")
+	assert(tank.progression.pending_milestones.has(5), "FAIL TC-12.1: Tank should have milestone 5 registered")
+	assert(assassin.progression.pending_milestones.has(5), "FAIL TC-12.1: Assassin should have milestone 5 registered")
+	_log_test(">>> 🟢 TC-12.1 Class XP Contribution & Role Differentiation PASSED!")
+	
+	# 4. Support Healing Attribution Test
+	support.metrics.reset()
+	support.metrics.healing_done = 300.0
+	var support_contrib := progression_system.calculate_hero_contribution(support)
+	# Support healing weight = 2.0x -> 300 * 2.0 = 600.0
+	_log_test("[TC-12.2] Support Healing (300 HP) -> Raw Contrib: %.1f" % support_contrib)
+	assert(is_equal_approx(support_contrib, 600.0), "FAIL TC-12.2: Support healing should yield 600.0 raw XP")
+	_log_test(">>> 🟢 TC-12.2 Support Healing Attribution PASSED!")
+	
+	# 5. Multi-level overflow & Milestone queue test
+	var p := HeroProgression.new()
+	_log_test("[TC-12.3] Adding 2000 XP to fresh HeroProgression...")
+	p.add_xp(2000.0)
+	_log_test("[TC-12.3] Level after 2000 XP: Lv%d | Milestones: %s" % [p.current_level, str(p.pending_milestones)])
+	assert(p.current_level == 10, "FAIL TC-12.3: Expected Level 10 after 2000 XP")
+	assert(p.pending_milestones == [5, 10], "FAIL TC-12.3: Expected pending milestones [5, 10]")
+	
+	_log_test("[TC-12.3] Adding 3000 XP more (Total 5000 XP)...")
+	p.add_xp(3000.0)
+	_log_test("[TC-12.3] Level after 5000 XP: Lv%d | Milestones: %s" % [p.current_level, str(p.pending_milestones)])
+	assert(p.current_level == 16, "FAIL TC-12.3: Expected Level 16 after 5000 XP")
+	assert(p.pending_milestones == [5, 10, 15], "FAIL TC-12.3: Expected pending milestones [5, 10, 15]")
+	_log_test(">>> 🟢 TC-12.3 Multi-level overflow & Milestone queue PASSED!")
+	
+	_log_test(">>> 🟢 TC-12 PASSED: Combat Metrics & Hero Progression fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-13: Combat Summary UI & Damage Meter (Sprint 3 - Task S3.2)
+# ------------------------------------------------------------------------------
+func _run_tc_13_combat_summary_ui() -> void:
+	_log_test("\n==================== [TEST TC-13: COMBAT SUMMARY UI & DAMAGE METER] ====================")
+	_reset_test_battlefield()
+	
+	assert(combat_summary_ui != null, "FAIL TC-13: combat_summary_ui must be initialized")
+	
+	# 1. Lấy 2 Tướng từ battlefield
+	var hero_tank: HeroEntity = heroes[0] as HeroEntity
+	var hero_assassin: HeroEntity = heroes[1] as HeroEntity
+	
+	hero_tank.metrics.reset()
+	hero_assassin.metrics.reset()
+	
+	# Tab DAMAGE: Tank 300, Assassin 900 -> max_val = 900.0, total = 1200.0
+	hero_tank.metrics.damage_dealt = 300.0
+	hero_assassin.metrics.damage_dealt = 900.0
+	
+	# Tab TAKEN: Tank 600, Assassin 200 -> max_val = 600.0, total = 800.0
+	hero_tank.metrics.damage_taken = 600.0
+	hero_assassin.metrics.damage_taken = 200.0
+	
+	# Tab HEAL: Tank 0, Assassin 400 -> max_val = 400.0, total = 400.0
+	hero_tank.metrics.healing_done = 0.0
+	hero_assassin.metrics.healing_done = 400.0
+	
+	# 2. Kiểm tra Hiển thị Chiến Thắng & Chuẩn hóa Thanh Sát Thương (Damage Normalization)
+	combat_summary_ui.show_summary(true, 5, [hero_tank, hero_assassin])
+	assert(combat_summary_ui.visible == true, "FAIL TC-13.1: CombatSummaryUI should be visible")
+	assert(combat_summary_ui.active_tab == CombatSummaryUI.MetricTab.DAMAGE, "FAIL TC-13.1: Default tab must be DAMAGE")
+	assert(combat_summary_ui.title_label.text.contains("CHIẾN THẮNG"), "FAIL TC-13.1: Victory title expected")
+	assert(combat_summary_ui.title_label.text.contains("5"), "FAIL TC-13.1: Title should include floor 5")
+	assert(combat_summary_ui.continue_button.text.contains("TIẾP TỤC"), "FAIL TC-13.1: Button text should be TIẾP TỤC")
+	
+	var rows: Array = combat_summary_ui.rows_container.get_children()
+	assert(rows.size() == 2, "FAIL TC-13.1: Expected 2 hero rows")
+	
+	var row_tank_bar: ProgressBar = rows[0].get_node("BarContainer/ProgressBar") as ProgressBar
+	var row_assassin_bar: ProgressBar = rows[1].get_node("BarContainer/ProgressBar") as ProgressBar
+	
+	assert(row_tank_bar != null and row_assassin_bar != null, "FAIL TC-13.1: ProgressBars must exist in rows")
+	_log_test("[TC-13.1] Damage Tab: Tank = %.1f/%.1f | Assassin = %.1f/%.1f" % [row_tank_bar.value, row_tank_bar.max_value, row_assassin_bar.value, row_assassin_bar.max_value])
+	assert(is_equal_approx(row_tank_bar.max_value, 900.0), "FAIL TC-13.1: Max value for Damage tab should normalize to 900.0")
+	assert(is_equal_approx(row_assassin_bar.max_value, 900.0), "FAIL TC-13.1: Max value for Assassin should normalize to 900.0")
+	assert(is_equal_approx(row_tank_bar.value, 300.0), "FAIL TC-13.1: Tank damage value should be 300.0")
+	assert(is_equal_approx(row_assassin_bar.value, 900.0), "FAIL TC-13.1: Assassin damage value should be 900.0")
+	_log_test(">>> 🟢 TC-13.1 Damage Normalization & Victory Title PASSED!")
+	
+	# 3. Kiểm tra Chuyển Tab (TAKEN & HEAL)
+	combat_summary_ui._switch_tab(CombatSummaryUI.MetricTab.TAKEN)
+	assert(combat_summary_ui.active_tab == CombatSummaryUI.MetricTab.TAKEN, "FAIL TC-13.2: Active tab should be TAKEN")
+	rows = combat_summary_ui.rows_container.get_children()
+	row_tank_bar = rows[0].get_node("BarContainer/ProgressBar") as ProgressBar
+	row_assassin_bar = rows[1].get_node("BarContainer/ProgressBar") as ProgressBar
+	_log_test("[TC-13.2] Taken Tab: Tank = %.1f/%.1f | Assassin = %.1f/%.1f" % [row_tank_bar.value, row_tank_bar.max_value, row_assassin_bar.value, row_assassin_bar.max_value])
+	assert(is_equal_approx(row_tank_bar.max_value, 600.0), "FAIL TC-13.2: Max value for Taken tab should normalize to 600.0")
+	assert(is_equal_approx(row_tank_bar.value, 600.0), "FAIL TC-13.2: Tank taken value should be 600.0")
+	assert(is_equal_approx(row_assassin_bar.value, 200.0), "FAIL TC-13.2: Assassin taken value should be 200.0")
+	
+	combat_summary_ui._switch_tab(CombatSummaryUI.MetricTab.HEAL)
+	assert(combat_summary_ui.active_tab == CombatSummaryUI.MetricTab.HEAL, "FAIL TC-13.2: Active tab should be HEAL")
+	rows = combat_summary_ui.rows_container.get_children()
+	row_tank_bar = rows[0].get_node("BarContainer/ProgressBar") as ProgressBar
+	row_assassin_bar = rows[1].get_node("BarContainer/ProgressBar") as ProgressBar
+	_log_test("[TC-13.2] Heal Tab: Tank = %.1f/%.1f | Assassin = %.1f/%.1f" % [row_tank_bar.value, row_tank_bar.max_value, row_assassin_bar.value, row_assassin_bar.max_value])
+	assert(is_equal_approx(row_assassin_bar.max_value, 400.0), "FAIL TC-13.2: Max value for Heal tab should normalize to 400.0")
+	assert(is_equal_approx(row_tank_bar.value, 0.0), "FAIL TC-13.2: Tank heal value should be 0.0")
+	assert(is_equal_approx(row_assassin_bar.value, 400.0), "FAIL TC-13.2: Assassin heal value should be 400.0")
+	_log_test(">>> 🟢 TC-13.2 Tab Switching & Metric Recalculation PASSED!")
+	
+	# 4. Kiểm tra Giao diện Thất Trận (Defeat Styling)
+	combat_summary_ui.show_summary(false, 3, [hero_tank, hero_assassin])
+	assert(combat_summary_ui.title_label.text.contains("THẤT TRẬN"), "FAIL TC-13.3: Defeat title expected")
+	assert(combat_summary_ui.title_label.text.contains("3"), "FAIL TC-13.3: Title should include floor 3")
+	assert(combat_summary_ui.continue_button.text.contains("CHƠI LẠI TỪ ĐẦU"), "FAIL TC-13.3: Button text should be CHƠI LẠI TỪ ĐẦU")
+	_log_test(">>> 🟢 TC-13.3 Defeat Styling & Retry Prompt PASSED!")
+	
+	# 5. Kiểm tra Tín hiệu Continued & Đóng Giao diện
+	var signal_state := {"emitted": false}
+	var on_continued := func(): signal_state["emitted"] = true
+	combat_summary_ui.continued.connect(on_continued, Object.CONNECT_ONE_SHOT)
+	combat_summary_ui._on_continue_pressed()
+	assert(signal_state["emitted"] == true, "FAIL TC-13.4: continued signal must be emitted")
+	assert(combat_summary_ui.visible == false, "FAIL TC-13.4: UI must hide after continue pressed")
+	_log_test(">>> 🟢 TC-13.4 Continued Signal & Dismissal PASSED!")
+	
+	_log_test(">>> 🟢 TC-13 PASSED: Combat Summary UI & Damage Meter fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-14: Roguelike Run Lifecycle & Economy (Sprint 3 - Task S3.3)
+# ------------------------------------------------------------------------------
+func _run_tc_14_roguelike_run_lifecycle() -> void:
+	_log_test("\n==================== [TEST TC-14: ROGUELIKE RUN LIFECYCLE & ECONOMY] ====================")
+	_reset_test_battlefield()
+	
+	assert(RunManager != null, "FAIL TC-14: RunManager autoload must be available")
+	
+	# 1. Khởi tạo Run mới
+	RunManager.start_new_run(10, 2)
+	assert(RunManager.current_floor == 1, "FAIL TC-14.1: Initial floor must be 1")
+	assert(RunManager.current_gold == 10, "FAIL TC-14.1: Initial gold must be 10")
+	assert(RunManager.current_lives == 2, "FAIL TC-14.1: Initial lives must be 2")
+	assert(RunManager.max_lives == 2, "FAIL TC-14.1: Max lives must be 2")
+	_log_test(">>> 🟢 TC-14.1 Initial Run State PASSED!")
+	
+	# 2. Chiến thắng Tầng 1: Vàng cơ bản = 5 + 1 = 6; Lãi suất (10/10) = 1 -> Tổng cộng +7 Vàng
+	var won_res := RunManager.on_battle_won()
+	_log_test("[TC-14.2] Won Floor 1 -> Reward: %d (Base: %d, Interest: %d) | Total Gold: %d | New Floor: %d" % [
+		won_res["gold_earned"], won_res["base_gold"], won_res["interest_gold"], won_res["total_gold"], won_res["next_floor"]
+	])
+	assert(won_res["is_victory"] == true, "FAIL TC-14.2: is_victory should be true")
+	assert(won_res["gold_earned"] == 7, "FAIL TC-14.2: Expected 7 gold earned (6 base + 1 interest)")
+	assert(won_res["total_gold"] == 17, "FAIL TC-14.2: Expected 17 total gold")
+	assert(RunManager.current_floor == 2, "FAIL TC-14.2: Current floor should be 2")
+	assert(RunManager.current_lives == 2, "FAIL TC-14.2: Lives should remain 2")
+	_log_test(">>> 🟢 TC-14.2 Victory Reward & Interest Math PASSED!")
+	
+	# 3. Thất bại Tầng 2 lần 1 (Còn 1 mạng -> Cho phép đánh lại)
+	var lost_res1 := RunManager.on_battle_lost()
+	_log_test("[TC-14.3] Lost Floor 2 (1st time) -> Consol Gold: +%d | Total Gold: %d | Lives: %d/%d | Can Retry: %s" % [
+		lost_res1["gold_earned"], lost_res1["total_gold"], lost_res1["lives_left"], lost_res1["max_lives"], str(lost_res1["can_continue"])
+	])
+	assert(lost_res1["is_victory"] == false, "FAIL TC-14.3: is_victory should be false")
+	assert(lost_res1["can_continue"] == true, "FAIL TC-14.3: Should allow retry when 1 life left")
+	assert(lost_res1["lives_left"] == 1, "FAIL TC-14.3: Lives left should be 1")
+	assert(lost_res1["gold_earned"] == 2, "FAIL TC-14.3: Consol gold at Floor 2 should be 2")
+	assert(lost_res1["total_gold"] == 19, "FAIL TC-14.3: Total gold should be 19")
+	assert(RunManager.current_floor == 2, "FAIL TC-14.3: Current floor must not advance on loss")
+	_log_test(">>> 🟢 TC-14.3 Defeat with Lives Remaining (Retry Floor) PASSED!")
+	
+	# 4. Thất bại Tầng 2 lần 2 (Hết mạng -> Perma-death)
+	var run_ended_signal_fired := {"fired": false, "won": true}
+	var on_run_ended := func(is_vic: bool):
+		run_ended_signal_fired["fired"] = true
+		run_ended_signal_fired["won"] = is_vic
+	RunManager.run_ended.connect(on_run_ended, Object.CONNECT_ONE_SHOT)
+	
+	var lost_res2 := RunManager.on_battle_lost()
+	_log_test("[TC-14.4] Lost Floor 2 (2nd time) -> Lives: %d/%d | Can Retry: %s" % [
+		lost_res2["lives_left"], lost_res2["max_lives"], str(lost_res2["can_continue"])
+	])
+	assert(lost_res2["can_continue"] == false, "FAIL TC-14.4: Can continue must be false when 0 lives left")
+	assert(lost_res2["lives_left"] == 0, "FAIL TC-14.4: Lives left must be 0")
+	assert(run_ended_signal_fired["fired"] == true, "FAIL TC-14.4: run_ended signal must be emitted")
+	assert(run_ended_signal_fired["won"] == false, "FAIL TC-14.4: run_ended signal must indicate defeat")
+	_log_test(">>> 🟢 TC-14.4 Perma-death & Zero Lives Handling PASSED!")
+	
+	# 5. Kiểm tra CombatSummaryUI phản ánh chính xác dữ liệu RunResult
+	var hero_tank: HeroEntity = heroes[0] as HeroEntity
+	var hero_assassin: HeroEntity = heroes[1] as HeroEntity
+	
+	# 5a. UI Chiến thắng: Hiển thị Vàng & Lãi
+	combat_summary_ui.show_summary(true, 1, [hero_tank, hero_assassin], won_res)
+	assert(combat_summary_ui.meta_label.text.contains("💰 Vàng: +7"), "FAIL TC-14.5: Meta label must show +7 gold")
+	assert(combat_summary_ui.meta_label.text.contains("(Lãi +1)"), "FAIL TC-14.5: Meta label must show interest")
+	assert(combat_summary_ui.meta_label.text.contains("❤️ Mạng sống: 2/2"), "FAIL TC-14.5: Meta label must show lives 2/2")
+	assert(combat_summary_ui.continue_button.text.contains("TIẾP TỤC"), "FAIL TC-14.5: Button should say TIẾP TỤC")
+	
+	# 5b. UI Thất bại còn mạng: Nút Đánh Lại Tầng Này
+	combat_summary_ui.show_summary(false, 2, [hero_tank, hero_assassin], lost_res1)
+	assert(combat_summary_ui.title_label.text.contains("THẤT BẠI — TẦNG 2 (CÒN 1 MẠNG)"), "FAIL TC-14.5: Title must show remaining lives")
+	assert(combat_summary_ui.continue_button.text.contains("ĐÁNH LẠI TẦNG NÀY"), "FAIL TC-14.5: Button must say ĐÁNH LẠI TẦNG NÀY")
+	assert(combat_summary_ui.meta_label.text.contains("❤️ Mạng sống: 1/2"), "FAIL TC-14.5: Meta label must show lives 1/2")
+	
+	# 5c. UI Tận diệt hết mạng: Game Over & Bắt Đầu Run Mới
+	combat_summary_ui.show_summary(false, 2, [hero_tank, hero_assassin], lost_res2)
+	assert(combat_summary_ui.title_label.text.contains("GAME OVER — TẬN DIỆT Ở TẦNG 2"), "FAIL TC-14.5: Title must show Game Over")
+	assert(combat_summary_ui.continue_button.text.contains("BẮT ĐẦU RUN MỚI"), "FAIL TC-14.5: Button must say BẮT ĐẦU RUN MỚI")
+	assert(combat_summary_ui.meta_label.text.contains("❤️ Mạng sống: 0/2"), "FAIL TC-14.5: Meta label must show lives 0/2")
+	combat_summary_ui.hide()
+	_log_test(">>> 🟢 TC-14.5 CombatSummaryUI Roguelike Metas & Dynamic Buttons PASSED!")
+	
+	# 6. Kiểm tra Hero Perma-death Clean Reset
+	hero_tank.progression.current_level = 7
+	hero_tank.progression.current_xp = 150.0
+	hero_tank.progression.pending_milestones = [5]
+	var extra_ability := Ability.new(hero_tank, AbilityData.new())
+	hero_tank.unlocked_abilities.append(extra_ability)
+	assert(hero_tank.unlocked_abilities.size() > 1, "FAIL TC-14.6: Hero should have extra ability before reset")
+	
+	_reset_heroes_for_new_run()
+	assert(hero_tank.progression.current_level == 1, "FAIL TC-14.6: Hero level should reset to 1")
+	assert(hero_tank.progression.current_xp == 0.0, "FAIL TC-14.6: Hero XP should reset to 0.0")
+	assert(hero_tank.progression.pending_milestones.is_empty(), "FAIL TC-14.6: Pending milestones should be cleared")
+	assert(hero_tank.unlocked_abilities.size() <= 1, "FAIL TC-14.6: Hero abilities should be reset to base")
+	_log_test(">>> 🟢 TC-14.6 Hero Perma-death Clean Reset PASSED!")
+	
+	_log_test(">>> 🟢 TC-14 PASSED: Roguelike Run Lifecycle & Economy fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-15: Smart Combat Retargeting (Ranged & Melee Anti-Kiting)
+# ------------------------------------------------------------------------------
+func _run_tc_15_combat_retargeting() -> void:
+	_log_test("\n==================== [TEST TC-15: COMBAT RETARGETING & ANTI-KITING] ====================")
+	_reset_test_battlefield()
+	
+	# Dọn bớt quái để kiểm soát tọa độ chính xác
+	while enemies.size() > 0:
+		var e = enemies.pop_back()
+		if is_instance_valid(e):
+			board_grid.remove_dead_entity(e)
+			e.queue_free()
+			
+	var robin: HeroEntity = null
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.name == "Robin":
+				robin = h
+			elif h.data.name == "Arthur":
+				arthur = h
+	assert(robin != null and arthur != null, "FAIL TC-15: Robin and Arthur must exist")
+	
+	for h in heroes.duplicate():
+		if h != arthur and h != robin:
+			heroes.erase(h)
+			if is_instance_valid(h):
+				board_grid.remove_dead_entity(h)
+				h.queue_free()
+	
+	# 1. RANGED RETARGETING (Tướng đánh xa không di chuyển nếu có địch trong tầm)
+	# Đặt Robin (range 4) tại (2, 5)
+	board_grid.move_entity(board_grid.get_cell_for_entity(robin), Vector2i(2, 5), true)
+	if board_view != null: robin.global_position = board_view.grid_to_world(Vector2i(2, 5))
+	
+	# Sinh Quái A (ngoài tầm 4) tại (2, 0) -> Hex dist = 5
+	var slime_far := _spawn_enemy_at_grid("SlimeFar", 100.0, 10.0, 5.0, 1.0, 0.0, 2.0, Vector2i(2, 0))
+	# Sinh Quái B (trong tầm 4) tại (2, 3) -> Hex dist = 2
+	var slime_near := _spawn_enemy_at_grid("SlimeNear", 100.0, 10.0, 5.0, 1.0, 0.0, 2.0, Vector2i(2, 3))
+	
+	# Khẳng định khoảng cách lục giác
+	var dist_far := board_grid.get_hex_distance(Vector2i(2, 5), Vector2i(2, 0))
+	var dist_near := board_grid.get_hex_distance(Vector2i(2, 5), Vector2i(2, 3))
+	_log_test("[TC-15.1] Robin at (2, 5) -> SlimeFar at (2, 0) Dist: %d | SlimeNear at (2, 3) Dist: %d" % [dist_far, dist_near])
+	assert(dist_far == 5, "FAIL TC-15.1: Expected dist 5 to SlimeFar")
+	assert(dist_near == 2, "FAIL TC-15.1: Expected dist 2 to SlimeNear")
+	
+	# Ban đầu ép target của Robin là SlimeFar (đã chạy ra ngoài tầm)
+	robin.target = slime_far
+	assert(not robin.is_target_in_attack_range(), "FAIL TC-15.1: SlimeFar must be out of range for Robin")
+	
+	# Kích hoạt nhịp đánh của Robin
+	robin._on_attack_timer_timeout()
+	
+	# Robin phải tự động đổi mục tiêu sang SlimeNear và ĐỨNG YÊN TẠI CHỖ (không bước đi)
+	var robin_cell := board_grid.get_cell_for_entity(robin)
+	_log_test("[TC-15.1] Post-tick Robin Target: %s | Robin Cell: %s" % [robin.target.name if robin.target else "null", str(robin_cell)])
+	assert(robin.target == slime_near, "FAIL TC-15.1: Robin must retarget to SlimeNear")
+	assert(robin_cell == Vector2i(2, 5), "FAIL TC-15.1: Robin must remain stationary at (2, 5) when in-range target exists")
+	_log_test(">>> 🟢 TC-15.1 Ranged Retargeting without Moving PASSED!")
+	
+	# 2. RANGED STEPS WHEN NO TARGETS IN RANGE (Chỉ di chuyển khi không còn ai trong tầm)
+	board_grid.remove_dead_entity(slime_near)
+	enemies.erase(slime_near)
+	slime_near.queue_free()
+	
+	robin.target = slime_far
+	robin._on_attack_timer_timeout()
+	var new_robin_cell := board_grid.get_cell_for_entity(robin)
+	_log_test("[TC-15.2] Robin stepped when no targets in range: %s -> %s" % [str(robin_cell), str(new_robin_cell)])
+	assert(new_robin_cell != Vector2i(2, 5), "FAIL TC-15.2: Robin must step towards target when no enemies in range")
+	assert(board_grid.get_hex_distance(new_robin_cell, Vector2i(2, 0)) < dist_far, "FAIL TC-15.2: Distance to SlimeFar must decrease")
+	_log_test(">>> 🟢 TC-15.2 Ranged Step Execution when No Targets in Range PASSED!")
+	
+	# 3. MELEE ANTI-KITING (Tướng cận chiến không chạy xuyên qua địch kề bên)
+	board_grid.move_entity(board_grid.get_cell_for_entity(arthur), Vector2i(3, 4), true)
+	if board_view != null: arthur.global_position = board_view.grid_to_world(Vector2i(3, 4))
+	
+	var slime_adj := _spawn_enemy_at_grid("SlimeAdj", 100.0, 10.0, 5.0, 1.0, 0.0, 2.0, Vector2i(3, 3))
+	var arthur_dist_adj := board_grid.get_hex_distance(Vector2i(3, 4), Vector2i(3, 3))
+	var arthur_dist_far := board_grid.get_hex_distance(Vector2i(3, 4), Vector2i(2, 0))
+	_log_test("[TC-15.3] Arthur at (3, 4) -> SlimeAdj Dist: %d | SlimeFar Dist: %d" % [arthur_dist_adj, arthur_dist_far])
+	assert(arthur_dist_adj == 1, "FAIL TC-15.3: SlimeAdj must be adjacent (dist 1)")
+	assert(arthur_dist_far > 1, "FAIL TC-15.3: SlimeFar must be out of melee range")
+	
+	arthur.target = slime_far
+	arthur._on_attack_timer_timeout()
+	
+	var arthur_cell := board_grid.get_cell_for_entity(arthur)
+	_log_test("[TC-15.3] Post-tick Arthur Target: %s | Arthur Cell: %s" % [arthur.target.name if arthur.target else "null", str(arthur_cell)])
+	assert(arthur.target == slime_adj, "FAIL TC-15.3: Arthur must retarget to adjacent enemy")
+	assert(arthur_cell == Vector2i(3, 4), "FAIL TC-15.3: Arthur must not leave cell when adjacent enemy exists")
+	_log_test(">>> 🟢 TC-15.3 Melee Anti-Kiting PASSED!")
+	
+	# 4. TARGETINGSYSTEM PROCESS DYNAMIC RETARGETING
+	board_grid.move_entity(board_grid.get_cell_for_entity(robin), Vector2i(2, 5), true)
+	if board_view != null: robin.global_position = board_view.grid_to_world(Vector2i(2, 5))
+	robin.target = slime_far
+	assert(not robin.is_target_in_attack_range(), "FAIL TC-15.4: SlimeFar must be out of Robin's range at (2, 5)")
+	targeting_system._assign_targets([robin], enemies)
+	assert(robin.target == slime_adj, "FAIL TC-15.4: TargetingSystem must automatically switch out-of-range target")
+	_log_test(">>> 🟢 TC-15.4 TargetingSystem dynamic retargeting PASSED!")
+	
+	_log_test(">>> 🟢 TC-15 PASSED: Smart Combat Retargeting & Anti-Kiting fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-16: Character Stats Panel & Inspection UI
+# ------------------------------------------------------------------------------
+func _run_tc_16_character_stats_ui() -> void:
+	_log_test("\n==================== [TEST TC-16: CHARACTER STATS PANEL & INSPECTION UI] ====================")
+	_reset_test_battlefield()
+	
+	assert(character_stats_ui != null, "FAIL TC-16: CharacterStatsUI instance must exist")
+	character_stats_ui.close()
+	assert(not character_stats_ui.visible, "FAIL TC-16.1: Panel must be hidden initially")
+	
+	var arthur: HeroEntity = null
+	var robin: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.name == "Arthur":
+				arthur = h
+			elif h.data.name == "Robin":
+				robin = h
+	assert(arthur != null and robin != null, "FAIL TC-16: Arthur and Robin must exist")
+	
+	# 1. INSPECT HERO & HEADER BINDING
+	character_stats_ui.inspect_hero(arthur)
+	assert(character_stats_ui.visible, "FAIL TC-16.1: Panel must be visible after inspect_hero")
+	assert(character_stats_ui.inspected_hero == arthur, "FAIL TC-16.1: Inspected hero must be Arthur")
+	assert(character_stats_ui.name_label.text == "Arthur", "FAIL TC-16.1: Name label must match Arthur")
+	assert(character_stats_ui.class_label.text.contains("TANK"), "FAIL TC-16.1: Class label must show TANK")
+	assert(character_stats_ui.level_label.text == "Cấp 1", "FAIL TC-16.1: Initial level must be Cấp 1")
+	_log_test(">>> 🟢 TC-16.1 Hero Inspection & Header Data Binding PASSED!")
+	
+	# 2. STAT GRID BINDING & RIGHT-DOCK VERIFICATION
+	assert(character_stats_ui.panel_container.position.x >= 800, "FAIL TC-16.2: Panel must be docked on the right side (x >= 800)")
+	assert(character_stats_ui.attack_val_label.text == "%.1f" % arthur.get_attack(), "FAIL TC-16.2: Attack stat mismatch")
+	assert(character_stats_ui.spell_val_label.text == "%.1f" % arthur.get_spell_power(), "FAIL TC-16.2: Spell Power stat mismatch")
+	assert(character_stats_ui.def_val_label.text == "%.1f" % arthur.get_defense(), "FAIL TC-16.2: Defense stat mismatch")
+	assert(character_stats_ui.range_val_label.text == "%d ô" % arthur.get_attack_range(), "FAIL TC-16.2: Range stat mismatch")
+	assert(character_stats_ui.skills_container.get_child_count() > 0, "FAIL TC-16.2: Skills container must contain skill icons")
+	_log_test(">>> 🟢 TC-16.2 Right-dock, Hexagon Skills & 4x2 Stat Grid PASSED!")
+	
+	# 3. REACTIVE RESOURCE BAR UPDATES
+	var old_hp := arthur.current_hp
+	arthur.current_hp = old_hp - 25.0
+	assert(character_stats_ui.hp_bar.value == arthur.current_hp, "FAIL TC-16.3: HP bar did not reactively update")
+	assert(character_stats_ui.hp_label.text.contains("%.0f / %.0f" % [arthur.current_hp, arthur.max_hp]), "FAIL TC-16.3: HP label mismatch")
+	
+	arthur.current_energy = 50.0
+	assert(character_stats_ui.energy_bar.value == 50.0, "FAIL TC-16.3: Energy bar did not reactively update")
+	_log_test(">>> 🟢 TC-16.3 Reactive HP & Energy Updates PASSED!")
+	
+	# 4. SWITCH INSPECTED HERO & OLD TARGET DISCONNECTION
+	character_stats_ui.inspect_hero(robin)
+	assert(character_stats_ui.inspected_hero == robin, "FAIL TC-16.4: Inspected hero must switch to Robin")
+	assert(character_stats_ui.name_label.text == "Robin", "FAIL TC-16.4: Name label must update to Robin")
+	assert(character_stats_ui.range_val_label.text == "%d ô" % robin.get_attack_range(), "FAIL TC-16.4: Robin range must be %d ô" % robin.get_attack_range())
+	
+	# Đổi HP của Arthur -> không được ảnh hưởng đến bảng đang inspect Robin
+	var robin_hp := robin.current_hp
+	arthur.current_hp = 10.0
+	assert(character_stats_ui.hp_bar.value == robin_hp, "FAIL TC-16.4: Old target Arthur must not affect Robin inspection")
+	_log_test(">>> 🟢 TC-16.4 Hero Switching & Clean Disconnect PASSED!")
+	
+	# 5. CLOSE & DISMISS
+	character_stats_ui.close()
+	assert(not character_stats_ui.visible, "FAIL TC-16.5: Panel must hide on close")
+	assert(character_stats_ui.inspected_hero == null, "FAIL TC-16.5: Inspected hero must be null after close")
+	_log_test(">>> 🟢 TC-16.5 Panel Close & Dismissal PASSED!")
+	
+	# 6. PLACEMENT CONTROLLER SELECTION INTEGRATION
+	if placement_controller != null:
+		placement_controller.hero_selected.emit(arthur)
+		assert(character_stats_ui.visible, "FAIL TC-16.6: PlacementController hero_selected must open stats panel")
+		assert(character_stats_ui.inspected_hero == arthur, "FAIL TC-16.6: Inspected hero must be Arthur")
+		character_stats_ui.close()
+	_log_test(">>> 🟢 TC-16.6 PlacementController Integration PASSED!")
+	
+	_log_test(">>> 🟢 TC-16 PASSED: Character Stats Panel & Inspection UI fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -1448,6 +2016,10 @@ func _reset_test_battlefield() -> void:
 		placement_controller.set_locked(false)
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
+	if is_instance_valid(combat_summary_ui):
+		combat_summary_ui.hide()
+	if is_instance_valid(character_stats_ui):
+		character_stats_ui.close()
 	if get_tree() != null:
 		get_tree().paused = false
 	if _shake_tween != null and _shake_tween.is_running():
@@ -1456,5 +2028,8 @@ func _reset_test_battlefield() -> void:
 	if camera != null:
 		camera.offset = Vector2.ZERO
 	battle_ended = false
+	if RunManager != null:
+		RunManager.start_new_run(10, 2)
+		current_floor = RunManager.current_floor
 	_spawn_mock_teams()
 	start_combat_phase()

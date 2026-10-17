@@ -1,19 +1,18 @@
 class_name CombatMetric
 extends RefCounted
 
-enum MetricType {
-	DAMAGE, # Ghi nhận lượng sát thương thực tế
-	CRIT,   # Ghi nhận một cú đánh chí mạng
-	KILL    # Ghi nhận một pha kết liễu
-}
+# ==========================================
+# COMBAT METRIC (SPRINT 3)
+# Sổ sách ghi nhận đóng góp chiến đấu của Hero
+# ==========================================
 
-var type: MetricType
-var source: CombatEntity
-var target: CombatEntity
-var value: float
+var damage_dealt: float = 0.0
+var damage_taken: float = 0.0
+var healing_done: float = 0.0
+var kills: int = 0
 
-func _init(_type: MetricType, _source: CombatEntity, _target: CombatEntity, _value: float = 0.0) -> void:
-	type = _type
-	source = _source
-	target = _target
-	value = _value
+func reset() -> void:
+	damage_dealt = 0.0
+	damage_taken = 0.0
+	healing_done = 0.0
+	kills = 0
