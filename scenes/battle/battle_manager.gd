@@ -569,6 +569,8 @@ func _on_summary_continued() -> void:
 		if RunManager != null:
 			RunManager.start_new_run()
 			current_floor = RunManager.current_floor
+		if SaveManager != null:
+			SaveManager.delete_save()
 		GameManager.change_state(GameManager.GameState.GAME_OVER)
 		print("[BattleManager] 🛑 PERMA-DEATH: Đã reset toàn bộ Hero về Level 1.")
 	elif not choice_queue.is_empty():
@@ -671,9 +673,19 @@ func _finish_battle_cleanup() -> void:
 
 	# Nếu GAME_OVER và hết mạng thì dừng lại, không tự qua tầng mới
 	if next_game_state == GameManager.GameState.GAME_OVER and (RunManager == null or RunManager.current_lives <= 0):
+		if SaveManager != null:
+			SaveManager.delete_save()
 		GameManager.change_state(GameManager.GameState.GAME_OVER)
 		print("[BattleManager] 🛑 GAME OVER - Stopping floor progression.")
 		return
+
+	if SaveManager != null and RunManager != null:
+		SaveManager.save_game({
+			"floor": current_floor,
+			"gold": RunManager.current_gold,
+			"lives": RunManager.current_lives,
+			"max_lives": RunManager.max_lives
+		})
 
 	get_tree().create_timer(1.0).timeout.connect(_start_next_floor)
 
@@ -713,23 +725,7 @@ func _start_next_floor() -> void:
 			if board_view != null and placed:
 				hero.global_position = board_view.grid_to_world(target_cell)
 				
-	# Dọn dẹp quái vật cũ còn sót lại (nếu có)
-	for enemy in enemies:
-		if is_instance_valid(enemy):
-			enemy.queue_free()
-	enemies.clear()
-	
-	# Sinh quái vật ngẫu nhiên trên các ô trống trong Enemy Zone theo cấp độ tầng
-	if board_grid != null:
-		var empty_enemy_cells := board_grid.get_empty_enemy_cells()
-		empty_enemy_cells.shuffle()
-		var spawn_count: int = mini(5, empty_enemy_cells.size())
-		var hp_scaling: float = 80.0 + (current_floor - 1) * 40.0
-		var atk_scaling: float = 8.0 + (current_floor - 1) * 2.0
-		var def_scaling: float = 5.0 + (current_floor - 1) * 1.0
-		for i in range(spawn_count):
-			_spawn_enemy_at_grid("Slime Lv%d - " % current_floor + str(i+1), hp_scaling, atk_scaling, def_scaling, 1.0, 0.0, 2.0, empty_enemy_cells[i])
-			
+	spawn_encounter_for_floor(current_floor)
 	enter_preparation_phase()
 
 # ==========================================

@@ -36,12 +36,16 @@ func save_game(data: Dictionary) -> Error:
 	
 	# Bước 3: Backup file save cũ (nếu có)
 	if FileAccess.file_exists(SAVE_PATH):
+		if FileAccess.file_exists(BACKUP_PATH):
+			DirAccess.remove_absolute(BACKUP_PATH)
 		var copy_err := DirAccess.copy_absolute(SAVE_PATH, BACKUP_PATH)
 		if copy_err != OK:
 			printerr("[SaveManager] WARNING: Failed to create backup. Error code: ", copy_err)
 			# Tiếp tục vì backup lỗi không nguy hiểm bằng việc dừng save
 			
 	# Bước 4: Đổi tên file tạm thành file chính thức (Atomic operation)
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(SAVE_PATH)
 	var rename_err := DirAccess.rename_absolute(TEMP_PATH, SAVE_PATH)
 	if rename_err != OK:
 		printerr("[SaveManager] FATAL: Failed to finalize save. Error code: ", rename_err)
@@ -51,6 +55,16 @@ func save_game(data: Dictionary) -> Error:
 		print("[SaveManager] Game saved successfully.")
 		
 	return OK
+
+func delete_save() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(SAVE_PATH)
+	if FileAccess.file_exists(BACKUP_PATH):
+		DirAccess.remove_absolute(BACKUP_PATH)
+	if FileAccess.file_exists(TEMP_PATH):
+		DirAccess.remove_absolute(TEMP_PATH)
+	if debug_mode:
+		print("[SaveManager] Save data wiped.")
 
 # 🔮 PREDICTIVE ERROR HANDLING:
 # Lỗi: File save bị hỏng (corrupted) hoặc JSON parse lỗi.

@@ -3,6 +3,8 @@ extends Node
 # Tuân thủ DoD: Biến debug_mode để in log kiểm soát
 @export var debug_mode: bool = true
 
+signal game_state_changed(new_state: GameState, old_state: GameState)
+
 enum GameState {
 	MAIN_MENU,
 	SHOP,
@@ -28,4 +30,4 @@ func change_state(new_state: GameState) -> void:
 		print("[GameManager] State transition: ", GameState.keys()[old_state], " -> ", GameState.keys()[new_state])
 		
 	# Báo hiệu cho các hệ thống khác (UI, Audio, Scene Transition)
-	EventBus.game_state_changed.emit(new_state, old_state)
+	game_state_changed.emit(new_state, old_state)

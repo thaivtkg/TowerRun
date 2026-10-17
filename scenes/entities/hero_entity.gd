@@ -1,8 +1,6 @@
 class_name HeroEntity
 extends CombatEntity
 
-signal pending_skill_choice(hero: HeroEntity, milestone: int, choices: Array[AbilityData])
-
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
 var progression: HeroProgression = null
@@ -93,16 +91,6 @@ func set_combat_active(active: bool) -> void:
 				attack_timer.start()
 		else:
 			attack_timer.stop()
-
-func _process(delta: float) -> void:
-	if is_dead: return
-	
-	for ability in unlocked_abilities:
-		ability.process_cooldown(delta)
-		if ability.data.ability_type == AbilityData.AbilityType.ACTIVE and ability.is_ready(current_energy):
-			# [FIX P2.1] Chỉ request nếu là buff bản thân, hoặc có mục tiêu hợp lệ
-			if ability.data.target_rule == AbilityData.TargetRule.SELF or (is_instance_valid(target) and not target.is_dead):
-				ability_requested.emit(ability)
 
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
