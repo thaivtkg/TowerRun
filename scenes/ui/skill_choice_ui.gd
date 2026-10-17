@@ -1,10 +1,10 @@
 class_name SkillChoiceUI
 extends CanvasLayer
 
-signal skill_chosen(chosen: AbilityData, all_choices: Array[AbilityData])
+signal skill_chosen(chosen: Variant, all_choices: Array)
 
 var _selection_locked: bool = false
-var current_choices: Array[AbilityData] = []
+var current_choices: Array = []
 
 var dim_bg: ColorRect
 var center_container: CenterContainer
@@ -53,40 +53,73 @@ func show_choices(hero_name: String, milestone: int, choices: Array) -> void:
 	# Bẫy 4: Mở khóa chọn cho lần mở UI mới
 	_selection_locked = false
 	current_choices.clear()
-	for c in choices:
-		if c is AbilityData:
-			current_choices.append(c as AbilityData)
+	current_choices.append_array(choices)
 	
 	for child in cards_container.get_children():
 		cards_container.remove_child(child)
 		child.queue_free()
 		
-	title_label.text = "=== %s REACHED LEVEL %d ===\nCHOOSE 1 ABILITY" % [hero_name.to_upper(), milestone]
+	title_label.text = "=== %s REACHED LEVEL %d ===\nCHOOSE 1 UPGRADE" % [hero_name.to_upper(), milestone]
 	
 	for i in range(current_choices.size()):
-		var ability: AbilityData = current_choices[i]
-		var card: Control = _create_card(ability, i)
+		var choice = current_choices[i]
+		var card: Control = _create_card(choice, i)
 		cards_container.add_child(card)
 		
 	show()
 	get_tree().paused = true # Tạm dừng thời gian trong trận đấu
 
-func _create_card(ability: AbilityData, index: int) -> Control:
-	var type_color := _get_type_color(ability.ability_type)
+func _create_card(choice: Variant, index: int) -> Control:
+	var border_color: Color = Color.WHITE
+	var badge_text: String = ""
+	var name_text: String = ""
+	var stat_text: String = ""
+	var desc_text: String = ""
+	var action_text: String = "[ CHỌN KỸ NĂNG ]"
+	
+	if choice is SkillUpgradeCard:
+		var card_item := choice as SkillUpgradeCard
+		border_color = card_item.get_border_color()
+		badge_text = card_item.get_badge_text()
+		name_text = card_item.title
+		action_text = "[ CHỌN NÂNG CẤP ]"
+		desc_text = card_item.get_card_bbcode()
+		
+		match card_item.upgrade_type:
+			SkillUpgradeCard.UpgradeType.SCALE_BOOST:
+				stat_text = "Loại: Tăng Tỷ Lệ Cộng Hưởng"
+			SkillUpgradeCard.UpgradeType.ULTIMATE_EVOLVE:
+				stat_text = "Loại: Tiến Hóa Tuyệt Kỹ"
+			SkillUpgradeCard.UpgradeType.NEW_ABILITY:
+				stat_text = "Loại: Mở Khóa Kỹ Năng Mới"
+			_:
+				stat_text = "Loại: Cường Hóa Chỉ Số Cơ Bản"
+	elif choice is AbilityData:
+		var ability := choice as AbilityData
+		border_color = _get_type_color(ability.ability_type)
+		badge_text = "[ %s ]" % AbilityData.AbilityType.keys()[ability.ability_type]
+		name_text = ability.name
+		action_text = "[ CHỌN KỸ NĂNG ]"
+		desc_text = _build_card_description(ability)
+		if ability.ability_type == AbilityData.AbilityType.PASSIVE:
+			var cond_name: String = AbilityData.TriggerCondition.keys()[ability.trigger_condition]
+			stat_text = "Trigger: " + cond_name
+		elif ability.ability_type == AbilityData.AbilityType.ULTIMATE:
+			stat_text = "Cost: 100% Energy"
+		else:
+			stat_text = "CD: %.1fs  |  Cost: %.0f MP" % [ability.cooldown, ability.energy_cost]
 	
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(240, 320)
+	card.custom_minimum_size = Vector2(250, 330)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	
-	# Bẫy 2: Cài đặt tâm xoay/phóng về giữa thẻ bài
-	card.pivot_offset = Vector2(120, 160)
+	card.pivot_offset = Vector2(125, 165)
 	card.resized.connect(func(): card.pivot_offset = card.size * 0.5)
 	
 	# StyleBoxFlat cho card
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.10, 0.12, 0.16, 0.96)
-	style.border_color = type_color
+	style.border_color = border_color
 	style.border_width_left = 2
 	style.border_width_top = 2
 	style.border_width_right = 2
@@ -110,16 +143,15 @@ func _create_card(ability: AbilityData, index: int) -> Control:
 	
 	# 1. Type Badge
 	var badge := Label.new()
-	var type_str: String = AbilityData.AbilityType.keys()[ability.ability_type]
-	badge.text = "[ %s ]" % type_str
+	badge.text = badge_text
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	badge.add_theme_color_override("font_color", type_color)
+	badge.add_theme_color_override("font_color", border_color)
 	badge.add_theme_font_size_override("font_size", 13)
 	vbox.add_child(badge)
 	
-	# 2. Skill Name
+	# 2. Skill / Upgrade Name
 	var name_lbl := Label.new()
-	name_lbl.text = ability.name
+	name_lbl.text = name_text
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name_lbl.add_theme_font_size_override("font_size", 18)
@@ -135,32 +167,27 @@ func _create_card(ability: AbilityData, index: int) -> Control:
 	stats_lbl.add_theme_font_size_override("font_size", 12)
 	stats_lbl.add_theme_color_override("font_color", Color(0.8, 0.82, 0.85))
 	stats_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	
-	if ability.ability_type == AbilityData.AbilityType.PASSIVE:
-		var cond_name: String = AbilityData.TriggerCondition.keys()[ability.trigger_condition]
-		stats_lbl.text = "Trigger: " + cond_name
-	elif ability.ability_type == AbilityData.AbilityType.ULTIMATE:
-		stats_lbl.text = "Cost: 100% Energy"
-	else:
-		stats_lbl.text = "CD: %.1fs  |  Cost: %.0f MP" % [ability.cooldown, ability.energy_cost]
-		
+	stats_lbl.text = stat_text
 	vbox.add_child(stats_lbl)
 	
-	# 5. Dynamic Description (Bẫy 5: Fallback an toàn)
-	var desc_lbl := Label.new()
+	# 5. Dynamic Description (RichTextLabel với BBCode Enabled)
+	var desc_lbl := RichTextLabel.new()
+	desc_lbl.bbcode_enabled = true
+	desc_lbl.fit_content = true
+	desc_lbl.scroll_active = false
 	desc_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_lbl.add_theme_font_size_override("font_size", 13)
-	desc_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
-	desc_lbl.text = _build_card_description(ability)
+	desc_lbl.add_theme_font_size_override("normal_font_size", 13)
+	desc_lbl.add_theme_font_size_override("bold_font_size", 13)
+	desc_lbl.text = desc_text
 	vbox.add_child(desc_lbl)
 	
 	# 6. Action prompt
 	var action_lbl := Label.new()
-	action_lbl.text = "[ CHỌN KỸ NĂNG ]"
+	action_lbl.text = action_text
 	action_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	action_lbl.add_theme_font_size_override("font_size", 13)
-	action_lbl.add_theme_color_override("font_color", type_color)
+	action_lbl.add_theme_color_override("font_color", border_color)
 	vbox.add_child(action_lbl)
 	
 	# Bẫy 3: Ép tất cả node con trong thẻ bài có mouse_filter = IGNORE để chống giật nháy chuột
@@ -175,9 +202,9 @@ func _create_card(ability: AbilityData, index: int) -> Control:
 	in_tween.parallel().tween_property(card, "modulate:a", 1.0, 0.15)
 	
 	# Hover & Click Signals
-	card.mouse_entered.connect(func(): _on_card_hover_enter(card, type_color))
-	card.mouse_exited.connect(func(): _on_card_hover_exit(card, type_color))
-	card.gui_input.connect(func(event: InputEvent): _on_card_gui_input(event, ability, card))
+	card.mouse_entered.connect(func(): _on_card_hover_enter(card, border_color))
+	card.mouse_exited.connect(func(): _on_card_hover_exit(card, border_color))
+	card.gui_input.connect(func(event: InputEvent): _on_card_gui_input(event, choice, card))
 	
 	return card
 
@@ -218,7 +245,7 @@ func _on_card_hover_exit(card: PanelContainer, _type_color: Color) -> void:
 		style.border_width_right = 2
 		style.border_width_bottom = 2
 
-func _on_card_gui_input(event: InputEvent, ability: AbilityData, card: PanelContainer) -> void:
+func _on_card_gui_input(event: InputEvent, chosen: Variant, card: PanelContainer) -> void:
 	if _selection_locked:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -230,7 +257,7 @@ func _on_card_gui_input(event: InputEvent, ability: AbilityData, card: PanelCont
 		select_tween.tween_callback(func():
 			hide()
 			get_tree().paused = false
-			skill_chosen.emit(ability, current_choices)
+			skill_chosen.emit(chosen, current_choices)
 		)
 
 func _get_type_color(type: AbilityData.AbilityType) -> Color:

@@ -30,6 +30,37 @@ var max_energy: float = 100.0:
 
 var energy_per_attack: float = 25.0 # Đánh 4 phát là xả Ultimate
 
+# ==========================================
+# SPRINT 4: RUNTIME ABILITY CLONING (P0 ISOLATION)
+# ==========================================
+static func clone_ability_runtime(src: AbilityData) -> AbilityData:
+	if src == null:
+		return null
+	var copy: AbilityData = src.duplicate()
+	copy.effects = []
+	for eff in src.effects:
+		if eff != null:
+			var eff_copy: EffectData = eff.duplicate()
+			eff_copy.scalings = eff.scalings.duplicate()
+			copy.effects.append(eff_copy)
+	return copy
+
+func _init_runtime_pools() -> void:
+	runtime_pools.clear()
+	var raw_pools = {
+		5: data.pool_lv5_passives,
+		10: data.pool_lv10_actives,
+		15: data.pool_lv15_utilities,
+		20: data.pool_lv20_upgrades,
+		25: data.pool_lv25_signatures
+	}
+	for milestone in raw_pools.keys():
+		var arr: Array[AbilityData] = []
+		for ab in raw_pools[milestone]:
+			if ab != null:
+				arr.append(clone_ability_runtime(ab))
+		runtime_pools[milestone] = arr
+
 func initialize(initial_data: HeroData) -> void:
 	data = initial_data
 	if data == null: return
@@ -47,18 +78,19 @@ func initialize(initial_data: HeroData) -> void:
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
 	
-	progression = HeroProgression.new()
-	progression.leveled_up.connect(_on_level_up)
-	progression.milestone_reached.connect(_on_milestone_reached)
+	if progression == null:
+		progression = HeroProgression.new()
+		progression.leveled_up.connect(_on_level_up)
+		progression.milestone_reached.connect(_on_milestone_reached)
+	else:
+		progression.current_level = 1
+		progression.current_xp = 0.0
+		progression.pending_milestones.clear()
 	
 	if data.basic_attack != null:
-		basic_attack_ability = Ability.new(self, data.basic_attack)
+		basic_attack_ability = Ability.new(self, clone_ability_runtime(data.basic_attack))
 	
-	runtime_pools[5] = data.pool_lv5_passives.duplicate()
-	runtime_pools[10] = data.pool_lv10_actives.duplicate()
-	runtime_pools[15] = data.pool_lv15_utilities.duplicate()
-	runtime_pools[20] = data.pool_lv20_upgrades.duplicate()
-	runtime_pools[25] = data.pool_lv25_signatures.duplicate()
+	_init_runtime_pools()
 	
 	var safe_speed: float = max(0.1, data.attack_speed)
 	attack_timer.wait_time = 1.0 / safe_speed
@@ -147,7 +179,8 @@ func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[Abi
 		printerr("[HeroEntity] Invalid skill choice. Rejected.")
 		return
 		
-	var runtime_ability = Ability.new(self, chosen)
+	var cloned := clone_ability_runtime(chosen)
+	var runtime_ability = Ability.new(self, cloned)
 	unlocked_abilities.append(runtime_ability)
 	
 	print("[HeroEntity] %s unlocked ability: [%s] %s" % [name, AbilityData.AbilityType.keys()[chosen.ability_type], chosen.name])

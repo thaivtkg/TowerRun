@@ -422,8 +422,24 @@ func _reset_heroes_for_new_run() -> void:
 				hero.progression.current_level = 1
 				hero.progression.current_xp = 0.0
 				hero.progression.pending_milestones.clear()
-			if hero.unlocked_abilities.size() > 1:
-				hero.unlocked_abilities = hero.unlocked_abilities.slice(0, 1)
+			hero.unlocked_abilities.clear()
+			if hero.data != null:
+				hero.initialize(hero.data)
+			var has_ult: bool = false
+			for ab in hero.unlocked_abilities:
+				if ab.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+					has_ult = true
+					break
+			if not has_ult and hero.data != null:
+				var default_ult := AbilityData.new()
+				default_ult.name = hero.data.name + " Ultimate"
+				default_ult.ability_type = AbilityData.AbilityType.ULTIMATE
+				default_ult.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
+				default_ult.cooldown = 1.0
+				var ult_dmg := DamageEffectData.new()
+				ult_dmg.base_damage = hero.data.base_attack * 2.5
+				default_ult.effects.append(ult_dmg)
+				hero.unlocked_abilities.append(Ability.new(hero, default_ult))
 			hero.reset_for_new_battle()
 
 func _build_post_battle_choice_queue() -> void:
@@ -437,7 +453,11 @@ func _build_post_battle_choice_queue() -> void:
 		if entity is HeroEntity:
 			var hero = entity as HeroEntity
 			for milestone in hero.pending_milestones:
-				var choices = hero.pull_milestone_choices(milestone)
+				var choices: Array = []
+				if progression_system != null:
+					choices = progression_system.generate_upgrade_choices(hero, milestone)
+				if choices.is_empty():
+					choices = hero.pull_milestone_choices(milestone)
 				if not choices.is_empty():
 					choice_queue.append({
 						"hero": hero,
@@ -451,13 +471,20 @@ func _process_next_choice() -> void:
 	var next = choice_queue[0]
 	skill_ui.show_choices(next.hero.name, next.milestone, next.choices)
 
-func _on_skill_chosen(chosen: AbilityData, all_choices: Array[AbilityData]) -> void:
+func _on_skill_chosen(chosen: Variant, all_choices: Array) -> void:
 	if choice_queue.is_empty():
 		return
 	var current = choice_queue.pop_front()
 	if current == null or not current.has("hero") or not is_instance_valid(current.hero):
 		return
-	current.hero.apply_skill_choice(current.milestone, chosen, all_choices)
+	if chosen is SkillUpgradeCard:
+		chosen.apply_to_hero(current.hero)
+	elif chosen is AbilityData:
+		var all_ab: Array[AbilityData] = []
+		for c in all_choices:
+			if c is AbilityData:
+				all_ab.append(c as AbilityData)
+		current.hero.apply_skill_choice(current.milestone, chosen, all_ab)
 	
 	if choice_queue.size() > 0:
 		_process_next_choice()
@@ -695,6 +722,7 @@ func _input(event: InputEvent) -> void:
 		KEY_SLASH: _run_tc_15_combat_retargeting()
 		KEY_PERIOD: _run_tc_16_character_stats_ui()
 		KEY_COMMA: _run_tc_17_skill_scaling_and_tooltip()
+		KEY_SEMICOLON: _run_tc_18_skill_upgrades_and_isolation()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -724,8 +752,9 @@ func _run_all_tests() -> void:
 	_run_tc_15_combat_retargeting()
 	_run_tc_16_character_stats_ui()
 	_run_tc_17_skill_scaling_and_tooltip()
+	_run_tc_18_skill_upgrades_and_isolation()
 	
-	_log_test("\n🎉 TẤT CẢ 17 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 18 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -2110,6 +2139,127 @@ func _run_tc_17_skill_scaling_and_tooltip() -> void:
 	_log_test(">>> 🟢 TC-17.5 AbilitySystem scaled damage application PASSED!")
 	
 	_log_test(">>> 🟢 TC-17 PASSED: Skill Scaling & Dynamic BBCode Tooltips fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-18: Weighted Skill Upgrades & Resource Isolation (Sprint 4 - Task S4.2)
+# ------------------------------------------------------------------------------
+func _run_tc_18_skill_upgrades_and_isolation() -> void:
+	_log_test("\n==================== [TEST TC-18: SKILL UPGRADES & RESOURCE ISOLATION] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-18.1: CÔ LẬP VÙNG NHỚ RESOURCE (P0 CHECK) & PERMA-DEATH RESET
+	var kira: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null and h.data.name == "Kira":
+			kira = h
+			break
+	assert(kira != null, "FAIL TC-18.1: Kira must exist on battlefield")
+	
+	var orig_ult_res := load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
+	assert(orig_ult_res != null, "FAIL TC-18.1: Kira_Ultimate.tres must exist")
+	var orig_base: float = orig_ult_res.effects[0].base_amount
+	assert(orig_base == 150.0, "FAIL TC-18.1: Original Kira Ultimate base must be 150.0")
+	assert(not orig_ult_res.effects[0].scalings.has(EffectData.STAT_AP), "FAIL TC-18.1: Original should not have AP scaling")
+	
+	# Trang bị cho Kira bản sao runtime Ultimate
+	var kira_runtime_ult := HeroEntity.clone_ability_runtime(orig_ult_res)
+	kira.unlocked_abilities.clear()
+	kira.unlocked_abilities.append(Ability.new(kira, kira_runtime_ult))
+	
+	# Áp dụng 1 thẻ FLAT_BOOST (+50) và 1 thẻ SCALE_BOOST (+20% AP)
+	var flat_card := SkillUpgradeCard.new()
+	flat_card.upgrade_type = SkillUpgradeCard.UpgradeType.FLAT_BOOST
+	flat_card.target_ability = kira_runtime_ult
+	flat_card.bonus_value = 50.0
+	flat_card.apply_to_hero(kira)
+	
+	var scale_card := SkillUpgradeCard.new()
+	scale_card.upgrade_type = SkillUpgradeCard.UpgradeType.SCALE_BOOST
+	scale_card.target_ability = kira_runtime_ult
+	scale_card.stat_key = EffectData.STAT_AP
+	scale_card.bonus_value = 0.20
+	scale_card.apply_to_hero(kira)
+	
+	# Kiểm tra Ultimate runtime của Kira đã nhận đủ chỉ số
+	assert(kira_runtime_ult.effects[0].base_amount == 200.0, "FAIL TC-18.1: Runtime base amount should be 200.0")
+	assert(kira_runtime_ult.effects[0].scalings.get(EffectData.STAT_AP, 0.0) == 0.20, "FAIL TC-18.1: Runtime AP scale should be 0.20")
+	
+	# [P0 CRITICAL ASSERTION] Resource gốc trong bộ nhớ RAM KHÔNG ĐƯỢC PHÉP bị biến đổi!
+	assert(orig_ult_res.effects[0].base_amount == 150.0, "FAIL TC-18.1: Original resource base_amount was mutated!")
+	assert(not orig_ult_res.effects[0].scalings.has(EffectData.STAT_AP), "FAIL TC-18.1: Original resource scalings was mutated!")
+	_log_test("[TC-18.1] RAM Isolation verified: Original .tres base = 150.0 (Unchanged), Runtime copy = 200.0")
+	
+	# Perma-death Clean Reset
+	_reset_heroes_for_new_run()
+	assert(kira.progression.current_level == 1, "FAIL TC-18.1: Hero level must reset to 1")
+	var reset_ult_data = kira.unlocked_abilities[0].data
+	assert(not reset_ult_data.effects[0].scalings.has(EffectData.STAT_AP), "FAIL TC-18.1: Reset hero retained mutated AP scaling!")
+	_log_test(">>> 🟢 TC-18.1 Memory Isolation & Perma-death Clean Reset PASSED!")
+	
+	# 2. TC-18.2: KIỂM CHỨNG TOÁN HỌC SAU NÂNG CẤP
+	var test_hero_data := _create_mock_hero_data("MageTest", HeroData.HeroClass.MAGE, 100.0, 10.0, 10.0, 1.0, 3, 40.0)
+	var test_entity := hero_scene.instantiate() as HeroEntity
+	add_child(test_entity)
+	test_entity.initialize(test_hero_data)
+	
+	var test_ability := AbilityData.new()
+	test_ability.name = "Fireball"
+	var eff := DamageEffectData.new()
+	eff.base_amount = 100.0
+	eff.scalings = { EffectData.STAT_AP: 0.50 }
+	test_ability.effects.append(eff)
+	test_entity.unlocked_abilities.append(Ability.new(test_entity, test_ability))
+	
+	var val_before: float = eff.calculate_total_value(test_entity)
+	assert(val_before == 120.0, "FAIL TC-18.2: Initial value should be 120.0 (100 + 40*0.5)")
+	
+	var flat_card2 := SkillUpgradeCard.new()
+	flat_card2.upgrade_type = SkillUpgradeCard.UpgradeType.FLAT_BOOST
+	flat_card2.target_ability = test_ability
+	flat_card2.bonus_value = 30.0
+	flat_card2.apply_to_hero(test_entity)
+	
+	var scale_card2 := SkillUpgradeCard.new()
+	scale_card2.upgrade_type = SkillUpgradeCard.UpgradeType.SCALE_BOOST
+	scale_card2.target_ability = test_ability
+	scale_card2.stat_key = EffectData.STAT_AP
+	scale_card2.bonus_value = 0.25
+	scale_card2.apply_to_hero(test_entity)
+	
+	var val_after: float = eff.calculate_total_value(test_entity)
+	assert(abs(val_after - 160.0) < 0.001, "FAIL TC-18.2: Expected 160.0 after upgrades, got %f" % val_after)
+	
+	var tooltip: String = test_ability.get_formatted_tooltip(test_entity)
+	_log_test("[TC-18.2] Post-upgrade Tooltip: %s" % tooltip)
+	assert(tooltip.contains("+75% SMPT"), "FAIL TC-18.2: Tooltip must show updated +75% SMPT")
+	assert(tooltip.contains("160"), "FAIL TC-18.2: Tooltip must show total value 160")
+	test_entity.queue_free()
+	_log_test(">>> 🟢 TC-18.2 Upgrade Math & Dynamic Tooltip Recalculation PASSED!")
+	
+	# 3. TC-18.3: PHÂN PHỐI XÁC SUẤT GACHA TRỌNG SỐ (MONTE-CARLO 500 SAMPLES)
+	var card_flat := SkillUpgradeCard.new()
+	card_flat.upgrade_type = SkillUpgradeCard.UpgradeType.FLAT_BOOST
+	card_flat.weight = 80
+	
+	var card_scale := SkillUpgradeCard.new()
+	card_scale.upgrade_type = SkillUpgradeCard.UpgradeType.SCALE_BOOST
+	card_scale.weight = 20
+	
+	var sample_pool: Array[SkillUpgradeCard] = [card_flat, card_scale]
+	var scale_count: int = 0
+	var iterations: int = 500
+	
+	for i in range(iterations):
+		var picked: SkillUpgradeCard = ProgressionSystem.sample_weighted_card(sample_pool)
+		if picked.upgrade_type == SkillUpgradeCard.UpgradeType.SCALE_BOOST:
+			scale_count += 1
+			
+	var scale_pct: float = float(scale_count) / float(iterations)
+	_log_test("[TC-18.3] 500 Gacha Samples: SCALE_BOOST drawn %d times (%.1f%%, Target 20.0%%)" % [scale_count, scale_pct * 100.0])
+	assert(scale_pct >= 0.12 and scale_pct <= 0.28, "FAIL TC-18.3: Gacha probability outside 12%% - 28%% (got %.2f)" % scale_pct)
+	_log_test(">>> 🟢 TC-18.3 Monte-Carlo Gacha Probability Distribution PASSED!")
+	
+	_log_test(">>> 🟢 TC-18 PASSED: Skill Upgrades & Resource Isolation fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
