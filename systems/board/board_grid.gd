@@ -104,8 +104,8 @@ func _do_remove_entity(cell: Vector2i) -> CombatEntity:
 			_entity_cleanup_callables.erase(entity)
 	return entity
 
-func move_entity(from_cell: Vector2i, to_cell: Vector2i) -> bool:
-	if is_locked:
+func move_entity(from_cell: Vector2i, to_cell: Vector2i, ignore_lock: bool = false) -> bool:
+	if is_locked and not ignore_lock:
 		return false
 	if from_cell == to_cell:
 		return true
@@ -150,6 +150,11 @@ func get_hex_neighbors(cell: Vector2i) -> Array[Vector2i]:
 
 func get_neighbors_8(cell: Vector2i) -> Array[Vector2i]:
 	return get_hex_neighbors(cell)
+
+func get_hex_distance(cell_a: Vector2i, cell_b: Vector2i) -> int:
+	if config != null:
+		return config.get_hex_distance(cell_a, cell_b)
+	return 0
 
 func get_empty_enemy_cells() -> Array[Vector2i]:
 	var cells: Array[Vector2i] = []

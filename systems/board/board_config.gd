@@ -33,3 +33,16 @@ func is_enemy_zone(cell: Vector2i) -> bool:
 # Nửa dưới bàn cờ (Hàng 3, 4, 5)
 func is_hero_zone(cell: Vector2i) -> bool:
 	return is_in_bounds(cell) and cell.y >= (rows - hero_zone_rows)
+
+# Chuyển đổi Odd-R sang Cube (q, r, s)
+func oddr_to_cube(cell: Vector2i) -> Vector3i:
+	var q: int = cell.x - (cell.y - (cell.y & 1)) / 2
+	var r: int = cell.y
+	return Vector3i(q, r, -q - r)
+
+# Tính khoảng cách số bước ô giữa 2 tọa độ Odd-R
+func get_hex_distance(cell_a: Vector2i, cell_b: Vector2i) -> int:
+	var cube_a := oddr_to_cube(cell_a)
+	var cube_b := oddr_to_cube(cell_b)
+	return int((abs(cube_a.x - cube_b.x) + abs(cube_a.y - cube_b.y) + abs(cube_a.z - cube_b.z)) / 2.0)
+

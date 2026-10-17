@@ -22,7 +22,7 @@ func execute_ability(ability: Ability) -> bool:
 	# [FIX ISSUE #2] Kiểm tra năng lượng thực tế truyền từ Hero
 	if not ability.is_ready(source.current_energy): return false 
 	
-	var targets: Array[CombatEntity] = targeting_system.get_targets_for_rule(source, ability.data.target_rule)
+	var targets: Array[CombatEntity] = targeting_system.get_targets_for_ability(source, ability.data)
 	# [FIX ISSUE #4] Ngăn Start Cooldown và trừ Energy nếu không có mục tiêu
 	if targets.is_empty(): return false 
 	
@@ -57,7 +57,7 @@ func trigger_passives(source: CombatEntity, condition: AbilityData.TriggerCondit
 				# [FIX P1.5] Chặn tự gọi đệ quy (Cycle), nhưng cho phép gọi chéo (Chain)
 				if ability in _executing_passives: continue 
 				
-				var targets = targeting_system.get_targets_for_rule(hero, ability.data.target_rule)
+				var targets = targeting_system.get_targets_for_ability(hero, ability.data)
 				if targets.is_empty(): continue
 				
 				_executing_passives.append(ability) # Khóa Ability này

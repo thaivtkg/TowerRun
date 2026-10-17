@@ -5,7 +5,13 @@ enum AbilityType { PASSIVE, ACTIVE, ULTIMATE }
 
 enum TargetRule {
 	SELF, SINGLE_ENEMY, LOWEST_HP_ENEMY, NEAREST_ENEMY,
-	SINGLE_ALLY, LOWEST_HP_ALLY, ALL_ENEMIES, ALL_ALLIES
+	SINGLE_ALLY, LOWEST_HP_ALLY, ALL_ENEMIES, ALL_ALLIES,
+	FURTHEST_ENEMY, LOWEST_HP_PERCENT_ENEMY, DENSEST_ENEMY_CLUSTER
+}
+
+enum AoEShape {
+	SINGLE,
+	HEX_RADIUS
 }
 
 # [ADDED] Các điều kiện để kích hoạt Passive
@@ -28,6 +34,8 @@ enum AbilityTag {
 @export_multiline var description: String = ""
 @export var ability_type: AbilityType = AbilityType.ACTIVE
 @export var target_rule: TargetRule = TargetRule.SINGLE_ENEMY
+@export var aoe_shape: AoEShape = AoEShape.SINGLE
+@export var aoe_radius: int = 1
 @export var trigger_condition: TriggerCondition = TriggerCondition.NONE # [ADDED]
 
 @export_flags("Crit", "Bleed", "Execute", "AoE", "Defense", "Heal", "Buff", "Debuff", "Mobility", "Control") var tags: int = 0

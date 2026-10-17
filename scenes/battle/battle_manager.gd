@@ -81,6 +81,7 @@ func _init_systems() -> void:
 	targeting_system.name = "TargetingSystem"
 	targeting_system.heroes = self.heroes
 	targeting_system.enemies = self.enemies
+	targeting_system.board_grid = board_grid
 	add_child(targeting_system)
 	
 	progression_system = ProgressionSystem.new()
@@ -586,16 +587,17 @@ func _input(event: InputEvent) -> void:
 		KEY_7: _run_tc_07_sprint5_ui_vfx()
 		KEY_8: _run_tc_08_board_grid_model()
 		KEY_9: _run_tc_09_board_view_and_placement()
+		KEY_MINUS: _run_tc_10_targeting_and_spatial()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
 	if file:
-		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 4 & 5 ===")
+		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 2, 4 & 5 ===")
 		file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
 		file.store_line("========================================\n")
 		file.close()
 	
-	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 4 & 5)...")
+	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 2, 4 & 5)...")
 	_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
 	
 	_run_tc_01_active_ability_xp()
@@ -607,8 +609,9 @@ func _run_all_tests() -> void:
 	_run_tc_07_sprint5_ui_vfx()
 	_run_tc_08_board_grid_model()
 	_run_tc_09_board_view_and_placement()
+	_run_tc_10_targeting_and_spatial()
 	
-	_log_test("\n🎉 TẤT CẢ 9 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 10 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1176,6 +1179,147 @@ func _run_tc_09_board_view_and_placement() -> void:
 	_log_test(">>> 🟢 TC-09 PASSED: BoardView & PlacementController fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-10: Targeting & Spatial Combat (Sprint 2 Task S2.2)
+# ------------------------------------------------------------------------------
+func _run_tc_10_targeting_and_spatial() -> void:
+	_log_test("\n==================== [TEST TC-10: TARGETING & SPATIAL COMBAT] ====================")
+	_reset_test_battlefield()
+	
+	# 1. Hex Cube Distance Math Verification
+	_log_test("[TC-10.1] Checking BoardConfig Cube coordinates & hex distance math...")
+	assert(board_config != null, "FAIL TC-10.1: BoardConfig not found")
+	assert(board_config.get_hex_distance(Vector2i(0, 0), Vector2i(1, 0)) == 1, "FAIL TC-10.1: Even row neighbor distance must be 1")
+	assert(board_config.get_hex_distance(Vector2i(0, 0), Vector2i(0, 1)) == 1, "FAIL TC-10.1: Odd row neighbor distance must be 1")
+	assert(board_config.get_hex_distance(Vector2i(0, 0), Vector2i(1, 1)) == 2, "FAIL TC-10.1: Diagonal distance must be 2")
+	assert(board_config.get_hex_distance(Vector2i(2, 2), Vector2i(2, 2)) == 0, "FAIL TC-10.1: Same cell distance must be 0")
+	assert(board_config.get_hex_distance(Vector2i(0, 0), Vector2i(3, 0)) == 3, "FAIL TC-10.1: 3-step row distance must be 3")
+	
+	# 2. BoardGrid Combat Move Override Lock Verification
+	_log_test("[TC-10.2] Checking BoardGrid.move_entity ignore_lock in COMBAT...")
+	assert(board_grid != null, "FAIL TC-10.2: BoardGrid not found")
+	var test_hero = heroes[0] as HeroEntity
+	var initial_hero_cell: Vector2i = board_grid.get_cell_for_entity(test_hero)
+	assert(initial_hero_cell != Vector2i(-1, -1), "FAIL TC-10.2: Test hero not on grid")
+	
+	board_grid.is_locked = true
+	var empty_hero_cells = board_grid.get_empty_hero_cells()
+	assert(not empty_hero_cells.is_empty(), "FAIL TC-10.2: No empty hero cells for test")
+	var move_dest = empty_hero_cells[0]
+	
+	# Attempt move without ignore_lock -> should fail
+	var move_blocked = board_grid.move_entity(initial_hero_cell, move_dest, false)
+	assert(move_blocked == false, "FAIL TC-10.2: move_entity without ignore_lock must fail when locked")
+	assert(board_grid.get_cell_for_entity(test_hero) == initial_hero_cell, "FAIL TC-10.2: Hero moved despite lock")
+	
+	# Attempt move with ignore_lock = true (combat blink/dash) -> should succeed
+	var move_success = board_grid.move_entity(initial_hero_cell, move_dest, true)
+	assert(move_success == true, "FAIL TC-10.2: move_entity with ignore_lock must succeed")
+	assert(board_grid.get_cell_for_entity(test_hero) == move_dest, "FAIL TC-10.2: Hero cell not updated")
+	
+	# Rollback move
+	board_grid.move_entity(move_dest, initial_hero_cell, true)
+	board_grid.is_locked = false
+	
+	# 3. FURTHEST_ENEMY & LOWEST_HP_PERCENT_ENEMY Verification
+	_log_test("[TC-10.3] Checking FURTHEST_ENEMY & LOWEST_HP_PERCENT_ENEMY...")
+	while heroes.size() > 1:
+		var extra_h = heroes.pop_back()
+		if is_instance_valid(extra_h): extra_h.queue_free()
+	while enemies.size() > 3:
+		var extra_e = enemies.pop_back()
+		if is_instance_valid(extra_e): extra_e.queue_free()
+		
+	var caster = heroes[0]
+	caster.global_position = Vector2(0, 0)
+	
+	var e_close = enemies[0]
+	e_close.name = "E_Close"
+	e_close.max_hp = 100.0; e_close.current_hp = 100.0 # 100%
+	e_close.global_position = Vector2(50, 0)
+	
+	var e_mid = enemies[1]
+	e_mid.name = "E_LowPercent"
+	e_mid.max_hp = 200.0; e_mid.current_hp = 60.0 # 30% (Low percent, raw HP 60 > 50)
+	e_mid.global_position = Vector2(120, 0)
+	
+	var e_far = enemies[2]
+	e_far.name = "E_Far"
+	e_far.max_hp = 100.0; e_far.current_hp = 50.0 # 50% (Lower raw HP than e_mid)
+	e_far.global_position = Vector2(250, 0)
+	
+	var furthest = targeting_system.get_targets_for_rule(caster, AbilityData.TargetRule.FURTHEST_ENEMY)
+	assert(furthest.size() == 1 and furthest[0] == e_far, "FAIL TC-10.3: FURTHEST_ENEMY did not pick e_far")
+	_log_test("[TC-10.3] FURTHEST_ENEMY: %s (Expected: E_Far)" % furthest[0].name)
+	
+	var lowest_pct = targeting_system.get_targets_for_rule(caster, AbilityData.TargetRule.LOWEST_HP_PERCENT_ENEMY)
+	assert(lowest_pct.size() == 1 and lowest_pct[0] == e_mid, "FAIL TC-10.3: LOWEST_HP_PERCENT_ENEMY did not pick e_mid (30% HP)")
+	_log_test("[TC-10.3] LOWEST_HP_PERCENT_ENEMY: %s (Expected: E_LowPercent 30%% vs 50%%)" % lowest_pct[0].name)
+	
+	# 4. DENSEST_ENEMY_CLUSTER & Tie-breaker & AoE Radius Verification
+	_log_test("[TC-10.4] Checking DENSEST_ENEMY_CLUSTER & Tie-breaker logic...")
+	board_grid.clear()
+	
+	# Đặt Caster tại (2, 3)
+	board_grid.place_entity(caster, Vector2i(2, 3))
+	if board_view != null:
+		caster.global_position = board_view.grid_to_world(Vector2i(2, 3))
+		
+	# Cụm A (2 quân gần Caster): tại (1, 1) và (1, 2)
+	var e_a1 = e_close; e_a1.name = "E_A1"
+	var e_a2 = e_mid;   e_a2.name = "E_A2"
+	board_grid.place_entity(e_a1, Vector2i(1, 1))
+	board_grid.place_entity(e_a2, Vector2i(1, 2))
+	if board_view != null:
+		e_a1.global_position = board_view.grid_to_world(Vector2i(1, 1))
+		e_a2.global_position = board_view.grid_to_world(Vector2i(1, 2))
+		
+	# Cụm B (2 quân xa Caster): tại (5, 1) và (5, 2)
+	var e_b1 = e_far; e_b1.name = "E_B1"
+	board_grid.place_entity(e_b1, Vector2i(5, 1))
+	if board_view != null:
+		e_b1.global_position = board_view.grid_to_world(Vector2i(5, 1))
+		
+	var e_b2: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(e_b2); enemies.append(e_b2)
+	e_b2.name = "E_B2"; e_b2.max_hp = 100.0; e_b2.current_hp = 100.0
+	board_grid.place_entity(e_b2, Vector2i(5, 2))
+	if board_view != null:
+		e_b2.global_position = board_view.grid_to_world(Vector2i(5, 2))
+		
+	# Cả Cụm A và Cụm B đều có 2 kẻ địch (Cluster count = 2).
+	# Tie-breaker: Cụm A ở gần Caster hơn Cụm B -> Phải chọn mục tiêu thuộc Cụm A!
+	var ability_cluster := AbilityData.new()
+	ability_cluster.target_rule = AbilityData.TargetRule.DENSEST_ENEMY_CLUSTER
+	ability_cluster.aoe_shape = AbilityData.AoEShape.SINGLE
+	ability_cluster.aoe_radius = 1
+	
+	var tie_target = targeting_system.get_targets_for_ability(caster, ability_cluster)
+	assert(tie_target.size() == 1, "FAIL TC-10.4: Expected 1 target for tie test")
+	assert(tie_target[0] == e_a1 or tie_target[0] == e_a2, "FAIL TC-10.4: Tie-breaker failed to pick closer cluster A")
+	_log_test("[TC-10.4] Tie-breaker picked: %s (Cluster A, closer to caster)" % tie_target[0].name)
+	
+	# Thêm quân thứ 3 vào Cụm B tại (5, 0)
+	var e_b3: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(e_b3); enemies.append(e_b3)
+	e_b3.name = "E_B3"; e_b3.max_hp = 100.0; e_b3.current_hp = 100.0
+	board_grid.place_entity(e_b3, Vector2i(5, 0))
+	if board_view != null:
+		e_b3.global_position = board_view.grid_to_world(Vector2i(5, 0))
+		
+	# Cụm B có 3 quân (E_B1, E_B2, E_B3), Cụm A có 2 quân (E_A1, E_A2).
+	# Phải chọn Cụm B dù Cụm B ở xa hơn!
+	ability_cluster.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
+	var aoe_cluster_targets = targeting_system.get_targets_for_ability(caster, ability_cluster)
+	_log_test("[TC-10.4] Densest Cluster with AoE HEX_RADIUS hit %d targets: %s" % [
+		aoe_cluster_targets.size(),
+		str(aoe_cluster_targets.map(func(e): return e.name))
+	])
+	assert(aoe_cluster_targets.size() == 3, "FAIL TC-10.4: AoE HEX_RADIUS should hit all 3 enemies in Cluster B")
+	assert(aoe_cluster_targets.has(e_b1) and aoe_cluster_targets.has(e_b2) and aoe_cluster_targets.has(e_b3), "FAIL TC-10.4: Missing target in Cluster B AoE")
+	
+	_log_test(">>> 🟢 TC-10 PASSED: Targeting & Spatial Combat systems fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -1186,6 +1330,8 @@ func _reset_test_battlefield() -> void:
 	if board_grid != null:
 		board_grid.is_locked = false
 		board_grid.clear()
+	if targeting_system != null:
+		targeting_system.board_grid = board_grid
 	if placement_controller != null:
 		placement_controller.set_locked(false)
 	if is_instance_valid(skill_ui):
