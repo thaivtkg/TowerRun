@@ -23,7 +23,9 @@ var targeting_system: TargetingSystem
 var progression_system: ProgressionSystem
 var ability_system: AbilitySystem
 var skill_ui: SkillChoiceUI
+var combat_summary_ui: CombatSummaryUI
 var choice_queue: Array[Dictionary] = []
+var current_floor: int = 1
 
 var board_config: BoardConfig
 var board_grid: BoardGrid
@@ -101,6 +103,10 @@ func _init_systems() -> void:
 	skill_ui = SkillChoiceUI.new()
 	add_child(skill_ui)
 	skill_ui.skill_chosen.connect(_on_skill_chosen)
+	
+	combat_summary_ui = CombatSummaryUI.new()
+	add_child(combat_summary_ui)
+	combat_summary_ui.continued.connect(_on_summary_continued)
 	
 	_create_start_combat_ui()
 
@@ -346,7 +352,20 @@ func _end_battle(state: GameManager.GameState, log_message: String) -> void:
 	
 	_build_post_battle_choice_queue()
 	
-	if not choice_queue.is_empty():
+	if combat_summary_ui != null:
+		var summary_heroes: Array[CombatEntity] = []
+		summary_heroes.append_array(heroes)
+		for c in corpses:
+			if is_instance_valid(c) and c is HeroEntity and not summary_heroes.has(c):
+				summary_heroes.append(c)
+		combat_summary_ui.show_summary(is_victory, current_floor, summary_heroes)
+	else:
+		_on_summary_continued()
+
+func _on_summary_continued() -> void:
+	if next_game_state == GameManager.GameState.GAME_OVER:
+		_finish_battle_cleanup()
+	elif not choice_queue.is_empty():
 		_process_next_choice()
 	else:
 		_finish_battle_cleanup()
@@ -409,8 +428,9 @@ func _finish_battle_cleanup() -> void:
 
 func _start_next_floor() -> void:
 	battle_ended = false
+	current_floor += 1
 	print("\n=====================================")
-	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG TIẾP THEO 🚀")
+	print("[BattleManager] 🚀 BẮT ĐẦU MÀN MỚI / TẦNG %d 🚀" % current_floor)
 	print("=====================================")
 	
 	if board_grid != null:
@@ -599,6 +619,7 @@ func _input(event: InputEvent) -> void:
 		KEY_MINUS: _run_tc_10_targeting_and_spatial()
 		KEY_EQUAL: _run_tc_11_grid_movement_and_pathfinding()
 		KEY_BRACKETLEFT: _run_tc_12_combat_metrics_and_progression()
+		KEY_BRACKETRIGHT: _run_tc_13_combat_summary_ui()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -623,8 +644,9 @@ func _run_all_tests() -> void:
 	_run_tc_10_targeting_and_spatial()
 	_run_tc_11_grid_movement_and_pathfinding()
 	_run_tc_12_combat_metrics_and_progression()
+	_run_tc_13_combat_summary_ui()
 	
-	_log_test("\n🎉 TẤT CẢ 12 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 13 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1527,6 +1549,96 @@ func _run_tc_12_combat_metrics_and_progression() -> void:
 	_log_test(">>> 🟢 TC-12 PASSED: Combat Metrics & Hero Progression fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-13: Combat Summary UI & Damage Meter (Sprint 3 - Task S3.2)
+# ------------------------------------------------------------------------------
+func _run_tc_13_combat_summary_ui() -> void:
+	_log_test("\n==================== [TEST TC-13: COMBAT SUMMARY UI & DAMAGE METER] ====================")
+	_reset_test_battlefield()
+	
+	assert(combat_summary_ui != null, "FAIL TC-13: combat_summary_ui must be initialized")
+	
+	# 1. Lấy 2 Tướng từ battlefield
+	var hero_tank: HeroEntity = heroes[0] as HeroEntity
+	var hero_assassin: HeroEntity = heroes[1] as HeroEntity
+	
+	hero_tank.metrics.reset()
+	hero_assassin.metrics.reset()
+	
+	# Tab DAMAGE: Tank 300, Assassin 900 -> max_val = 900.0, total = 1200.0
+	hero_tank.metrics.damage_dealt = 300.0
+	hero_assassin.metrics.damage_dealt = 900.0
+	
+	# Tab TAKEN: Tank 600, Assassin 200 -> max_val = 600.0, total = 800.0
+	hero_tank.metrics.damage_taken = 600.0
+	hero_assassin.metrics.damage_taken = 200.0
+	
+	# Tab HEAL: Tank 0, Assassin 400 -> max_val = 400.0, total = 400.0
+	hero_tank.metrics.healing_done = 0.0
+	hero_assassin.metrics.healing_done = 400.0
+	
+	# 2. Kiểm tra Hiển thị Chiến Thắng & Chuẩn hóa Thanh Sát Thương (Damage Normalization)
+	combat_summary_ui.show_summary(true, 5, [hero_tank, hero_assassin])
+	assert(combat_summary_ui.visible == true, "FAIL TC-13.1: CombatSummaryUI should be visible")
+	assert(combat_summary_ui.active_tab == CombatSummaryUI.MetricTab.DAMAGE, "FAIL TC-13.1: Default tab must be DAMAGE")
+	assert(combat_summary_ui.title_label.text.contains("CHIẾN THẮNG"), "FAIL TC-13.1: Victory title expected")
+	assert(combat_summary_ui.title_label.text.contains("5"), "FAIL TC-13.1: Title should include floor 5")
+	assert(combat_summary_ui.continue_button.text.contains("TIẾP TỤC"), "FAIL TC-13.1: Button text should be TIẾP TỤC")
+	
+	var rows: Array = combat_summary_ui.rows_container.get_children()
+	assert(rows.size() == 2, "FAIL TC-13.1: Expected 2 hero rows")
+	
+	var row_tank_bar: ProgressBar = rows[0].get_node("BarContainer/ProgressBar") as ProgressBar
+	var row_assassin_bar: ProgressBar = rows[1].get_node("BarContainer/ProgressBar") as ProgressBar
+	
+	assert(row_tank_bar != null and row_assassin_bar != null, "FAIL TC-13.1: ProgressBars must exist in rows")
+	_log_test("[TC-13.1] Damage Tab: Tank = %.1f/%.1f | Assassin = %.1f/%.1f" % [row_tank_bar.value, row_tank_bar.max_value, row_assassin_bar.value, row_assassin_bar.max_value])
+	assert(is_equal_approx(row_tank_bar.max_value, 900.0), "FAIL TC-13.1: Max value for Damage tab should normalize to 900.0")
+	assert(is_equal_approx(row_assassin_bar.max_value, 900.0), "FAIL TC-13.1: Max value for Assassin should normalize to 900.0")
+	assert(is_equal_approx(row_tank_bar.value, 300.0), "FAIL TC-13.1: Tank damage value should be 300.0")
+	assert(is_equal_approx(row_assassin_bar.value, 900.0), "FAIL TC-13.1: Assassin damage value should be 900.0")
+	_log_test(">>> 🟢 TC-13.1 Damage Normalization & Victory Title PASSED!")
+	
+	# 3. Kiểm tra Chuyển Tab (TAKEN & HEAL)
+	combat_summary_ui._switch_tab(CombatSummaryUI.MetricTab.TAKEN)
+	assert(combat_summary_ui.active_tab == CombatSummaryUI.MetricTab.TAKEN, "FAIL TC-13.2: Active tab should be TAKEN")
+	rows = combat_summary_ui.rows_container.get_children()
+	row_tank_bar = rows[0].get_node("BarContainer/ProgressBar") as ProgressBar
+	row_assassin_bar = rows[1].get_node("BarContainer/ProgressBar") as ProgressBar
+	_log_test("[TC-13.2] Taken Tab: Tank = %.1f/%.1f | Assassin = %.1f/%.1f" % [row_tank_bar.value, row_tank_bar.max_value, row_assassin_bar.value, row_assassin_bar.max_value])
+	assert(is_equal_approx(row_tank_bar.max_value, 600.0), "FAIL TC-13.2: Max value for Taken tab should normalize to 600.0")
+	assert(is_equal_approx(row_tank_bar.value, 600.0), "FAIL TC-13.2: Tank taken value should be 600.0")
+	assert(is_equal_approx(row_assassin_bar.value, 200.0), "FAIL TC-13.2: Assassin taken value should be 200.0")
+	
+	combat_summary_ui._switch_tab(CombatSummaryUI.MetricTab.HEAL)
+	assert(combat_summary_ui.active_tab == CombatSummaryUI.MetricTab.HEAL, "FAIL TC-13.2: Active tab should be HEAL")
+	rows = combat_summary_ui.rows_container.get_children()
+	row_tank_bar = rows[0].get_node("BarContainer/ProgressBar") as ProgressBar
+	row_assassin_bar = rows[1].get_node("BarContainer/ProgressBar") as ProgressBar
+	_log_test("[TC-13.2] Heal Tab: Tank = %.1f/%.1f | Assassin = %.1f/%.1f" % [row_tank_bar.value, row_tank_bar.max_value, row_assassin_bar.value, row_assassin_bar.max_value])
+	assert(is_equal_approx(row_assassin_bar.max_value, 400.0), "FAIL TC-13.2: Max value for Heal tab should normalize to 400.0")
+	assert(is_equal_approx(row_tank_bar.value, 0.0), "FAIL TC-13.2: Tank heal value should be 0.0")
+	assert(is_equal_approx(row_assassin_bar.value, 400.0), "FAIL TC-13.2: Assassin heal value should be 400.0")
+	_log_test(">>> 🟢 TC-13.2 Tab Switching & Metric Recalculation PASSED!")
+	
+	# 4. Kiểm tra Giao diện Thất Trận (Defeat Styling)
+	combat_summary_ui.show_summary(false, 3, [hero_tank, hero_assassin])
+	assert(combat_summary_ui.title_label.text.contains("THẤT TRẬN"), "FAIL TC-13.3: Defeat title expected")
+	assert(combat_summary_ui.title_label.text.contains("3"), "FAIL TC-13.3: Title should include floor 3")
+	assert(combat_summary_ui.continue_button.text.contains("CHƠI LẠI TỪ ĐẦU"), "FAIL TC-13.3: Button text should be CHƠI LẠI TỪ ĐẦU")
+	_log_test(">>> 🟢 TC-13.3 Defeat Styling & Retry Prompt PASSED!")
+	
+	# 5. Kiểm tra Tín hiệu Continued & Đóng Giao diện
+	var signal_state := {"emitted": false}
+	var on_continued := func(): signal_state["emitted"] = true
+	combat_summary_ui.continued.connect(on_continued, Object.CONNECT_ONE_SHOT)
+	combat_summary_ui._on_continue_pressed()
+	assert(signal_state["emitted"] == true, "FAIL TC-13.4: continued signal must be emitted")
+	assert(combat_summary_ui.visible == false, "FAIL TC-13.4: UI must hide after continue pressed")
+	_log_test(">>> 🟢 TC-13.4 Continued Signal & Dismissal PASSED!")
+	
+	_log_test(">>> 🟢 TC-13 PASSED: Combat Summary UI & Damage Meter fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -1543,6 +1655,8 @@ func _reset_test_battlefield() -> void:
 		placement_controller.set_locked(false)
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
+	if is_instance_valid(combat_summary_ui):
+		combat_summary_ui.hide()
 	if get_tree() != null:
 		get_tree().paused = false
 	if _shake_tween != null and _shake_tween.is_running():
