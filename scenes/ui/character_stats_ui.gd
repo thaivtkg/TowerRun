@@ -6,6 +6,7 @@ extends CanvasLayer
 # Bảng hiển thị thông tin & chỉ số chi tiết Tướng đặt cạnh phải màn hình chuẩn TFT
 # ==============================================================================
 
+signal entity_inspected(entity: CombatEntity)
 signal hero_inspected(hero: HeroEntity)
 signal panel_closed
 
@@ -116,7 +117,13 @@ var crit_dmg_val_label: Label
 var start_energy_val_label: Label
 
 # Inspected Target State
-var inspected_hero: HeroEntity = null
+var inspected_entity: CombatEntity = null
+var inspected_hero: HeroEntity:
+	get:
+		return inspected_entity as HeroEntity
+	set(val):
+		inspected_entity = val
+
 var _on_hp_changed_callable: Callable
 var _on_energy_changed_callable: Callable
 var _on_died_callable: Callable
@@ -385,94 +392,96 @@ func _create_separator() -> HSeparator:
 # PUBLIC API: INSPECTION & REACTIVITY
 # ==============================================================================
 
-func inspect_hero(hero: HeroEntity) -> void:
-	if hero == null or not is_instance_valid(hero):
+func inspect_entity(entity: CombatEntity) -> void:
+	if entity == null or not is_instance_valid(entity):
 		close()
 		return
 		
-	_disconnect_inspected_hero()
-	
-	inspected_hero = hero
-	_connect_inspected_hero()
+	_disconnect_inspected_entity()
+	inspected_entity = entity
+	_connect_inspected_entity()
 	
 	update_stats()
 	show()
-	hero_inspected.emit(hero)
+	entity_inspected.emit(entity)
+	if entity is HeroEntity:
+		hero_inspected.emit(entity as HeroEntity)
+
+func inspect_hero(hero: CombatEntity) -> void:
+	inspect_entity(hero)
 
 func close() -> void:
-	_disconnect_inspected_hero()
-	inspected_hero = null
+	_disconnect_inspected_entity()
+	inspected_entity = null
 	hide()
 	panel_closed.emit()
 
 func update_stats() -> void:
-	if inspected_hero == null or not is_instance_valid(inspected_hero):
+	if inspected_entity == null or not is_instance_valid(inspected_entity):
 		close()
 		return
 		
-	var data: HeroData = inspected_hero.data
-	name_label.text = data.name if data != null else inspected_hero.name
+	if inspected_entity is HeroEntity:
+		_render_hero_prestige_ui(inspected_entity as HeroEntity)
+	elif inspected_entity is EnemyEntity:
+		_render_enemy_rank_ui(inspected_entity as EnemyEntity)
+	else:
+		_render_generic_entity_ui(inspected_entity)
+
+func _render_hero_prestige_ui(hero: HeroEntity) -> void:
+	var data: HeroData = hero.data
+	name_label.text = data.name if data != null else hero.name
 	
-	# Class Banner Styling
+	# Class Banner Label
+	class_label.visible = true
 	var class_str := "TƯỚNG"
 	if data != null:
 		class_str = HeroData.HeroClass.keys()[data.hero_class]
-		match data.hero_class:
-			HeroData.HeroClass.TANK:
-				avatar_bg_style.bg_color = Color(0.18, 0.28, 0.45)
-				avatar_initial_label.text = "🛡️"
-			HeroData.HeroClass.ASSASSIN:
-				avatar_bg_style.bg_color = Color(0.38, 0.16, 0.42)
-				avatar_initial_label.text = "🗡️"
-			HeroData.HeroClass.MAGE:
-				avatar_bg_style.bg_color = Color(0.20, 0.32, 0.55)
-				avatar_initial_label.text = "🔮"
-			HeroData.HeroClass.MARKSMAN:
-				avatar_bg_style.bg_color = Color(0.18, 0.38, 0.28)
-				avatar_initial_label.text = "🏹"
-			HeroData.HeroClass.SUPPORT:
-				avatar_bg_style.bg_color = Color(0.14, 0.38, 0.38)
-				avatar_initial_label.text = "💚"
-			_:
-				avatar_bg_style.bg_color = Color(0.35, 0.25, 0.18)
-				avatar_initial_label.text = "⚔️"
 	class_label.text = "[%s]" % class_str
 	
 	# Progression & Level
 	var current_lvl: int = 1
 	var cur_xp: float = 0.0
 	var req_xp: float = 100.0
-	if inspected_hero.progression != null:
-		current_lvl = inspected_hero.progression.current_level
-		cur_xp = inspected_hero.progression.current_xp
-		req_xp = inspected_hero.progression.required_xp
+	if hero.progression != null:
+		current_lvl = hero.progression.current_level
+		cur_xp = hero.progression.current_xp
+		req_xp = hero.progression.required_xp
 	level_label.text = "Cấp %d" % current_lvl
+	level_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	
+	# XP Bar
+	xp_label.visible = true
+	xp_bar.visible = true
 	xp_label.text = "XP: %.0f / %.0f" % [cur_xp, req_xp]
 	xp_bar.max_value = req_xp
 	xp_bar.value = cur_xp
 	
 	# HP & Energy
-	hp_label.text = "HP: %.0f / %.0f" % [inspected_hero.current_hp, inspected_hero.max_hp]
-	hp_bar.max_value = inspected_hero.max_hp
-	hp_bar.value = inspected_hero.current_hp
+	hp_label.text = "HP: %.0f / %.0f" % [hero.current_hp, hero.max_hp]
+	hp_bar.max_value = hero.max_hp
+	hp_bar.value = hero.current_hp
 	
-	energy_label.text = "Năng lượng: %.0f / %.0f" % [inspected_hero.current_energy, inspected_hero.max_energy]
-	energy_bar.max_value = inspected_hero.max_energy
-	energy_bar.value = inspected_hero.current_energy
+	energy_label.visible = true
+	energy_bar.visible = true
+	energy_label.text = "Năng lượng: %.0f / %.0f" % [hero.current_energy, hero.max_energy]
+	energy_bar.max_value = hero.max_energy
+	energy_bar.value = hero.current_energy
 	
 	# 4x2 Grid Core Stats
-	var atk: float = inspected_hero.get_attack()
-	var spell_pow: float = inspected_hero.get_spell_power()
-	var def: float = inspected_hero.get_defense()
-	var atk_rng: int = inspected_hero.get_attack_range()
-	var spd: float = inspected_hero.get_attack_speed()
-	var crit_c: float = inspected_hero.get_crit_chance() * 100.0
-	var crit_d: float = inspected_hero.get_crit_damage() * 100.0
+	var atk: float = hero.get_attack()
+	var spell_pow: float = hero.get_spell_power()
+	var def: float = hero.get_defense()
+	var atk_rng: int = hero.get_attack_range()
+	var spd: float = hero.get_attack_speed()
+	var crit_c: float = hero.get_crit_chance() * 100.0
+	var crit_d: float = hero.get_crit_damage() * 100.0
 	var start_en: float = data.starting_energy if (data != null and "starting_energy" in data) else 0.0
 	
 	attack_val_label.text = "%.1f" % atk
 	spell_val_label.text = "%.1f" % spell_pow
 	def_val_label.text = "%.1f" % def
+	def_val_label.tooltip_text = "Giáp: %.1f" % def
 	range_val_label.text = "%d ô" % atk_rng
 	speed_val_label.text = "%.2f/s" % spd
 	crit_val_label.text = "%.0f%%" % crit_c
@@ -484,13 +493,13 @@ func update_stats() -> void:
 		child.queue_free()
 		
 	var skills_found: int = 0
-	if inspected_hero.basic_attack_ability != null and inspected_hero.basic_attack_ability.data != null:
-		var basic_desc: String = inspected_hero.basic_attack_ability.data.get_formatted_tooltip(inspected_hero)
-		var basic_icon := HexSkillIcon.new(inspected_hero.basic_attack_ability.data.name, "Đánh thường", Color(0.65, 0.70, 0.80), basic_desc)
+	if hero.basic_attack_ability != null and hero.basic_attack_ability.data != null:
+		var basic_desc: String = hero.basic_attack_ability.data.get_formatted_tooltip(hero)
+		var basic_icon := HexSkillIcon.new(hero.basic_attack_ability.data.name, "Đánh thường", Color(0.65, 0.70, 0.80), basic_desc)
 		skills_container.add_child(basic_icon)
 		skills_found += 1
 		
-	for runtime_ab in inspected_hero.unlocked_abilities:
+	for runtime_ab in hero.unlocked_abilities:
 		if is_instance_valid(runtime_ab) and runtime_ab.data != null:
 			var type_name: String = str(AbilityData.AbilityType.keys()[runtime_ab.data.ability_type])
 			var border_col := Color(0.35, 0.75, 1.0)
@@ -498,7 +507,7 @@ func update_stats() -> void:
 				border_col = Color(1.0, 0.85, 0.2)
 			elif runtime_ab.data.ability_type == AbilityData.AbilityType.PASSIVE:
 				border_col = Color(0.4, 0.9, 0.4)
-			var skill_desc: String = runtime_ab.data.get_formatted_tooltip(inspected_hero)
+			var skill_desc: String = runtime_ab.data.get_formatted_tooltip(hero)
 			var skill_icon := HexSkillIcon.new(runtime_ab.data.name, type_name, border_col, skill_desc)
 			skills_container.add_child(skill_icon)
 			skills_found += 1
@@ -509,26 +518,242 @@ func update_stats() -> void:
 		empty_lbl.add_theme_font_size_override("font_size", 10)
 		empty_lbl.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
 		skills_container.add_child(empty_lbl)
+		
+	_apply_prestige_style(hero)
 
-func _connect_inspected_hero() -> void:
-	if inspected_hero == null: return
+func _render_enemy_rank_ui(enemy: EnemyEntity) -> void:
+	var edata: EnemyData = enemy.data
+	name_label.text = edata.name if edata != null else enemy.name
+	
+	# Class Label is hidden for enemies
+	class_label.visible = false
+	
+	var is_boss: bool = (edata != null and edata.rank == EnemyData.EnemyRank.BOSS) or enemy.damage_reduction >= 0.30
+	var is_elite: bool = (edata != null and edata.rank == EnemyData.EnemyRank.ELITE)
+	
+	if is_boss:
+		level_label.text = "[👑 LÃNH CHÚA TẦNG] - Cấp %d" % enemy.level
+		level_label.add_theme_color_override("font_color", Color(1.0, 0.25, 0.25))
+	elif is_elite:
+		level_label.text = "[🔥 TINH ANH] - Cấp %d" % enemy.level
+		level_label.add_theme_color_override("font_color", Color(0.75, 0.40, 0.95))
+	else:
+		level_label.text = "[QUÁI THƯỜNG] - Cấp %d" % enemy.level
+		level_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+		
+	# XP bar is hidden for enemies
+	xp_label.visible = false
+	xp_bar.visible = false
+	
+	# HP bar
+	hp_label.text = "HP: %.0f / %.0f" % [enemy.current_hp, enemy.max_hp]
+	hp_bar.max_value = enemy.max_hp
+	hp_bar.value = enemy.current_hp
+	
+	# Energy bar: hidden if enemy has no abilities
+	var has_skills: bool = not enemy.unlocked_abilities.is_empty()
+	energy_label.visible = has_skills
+	energy_bar.visible = has_skills
+	if has_skills:
+		energy_label.text = "Năng lượng: %.0f / %.0f" % [enemy.current_energy, enemy.max_energy]
+		energy_bar.max_value = enemy.max_energy
+		energy_bar.value = enemy.current_energy
+		
+	# 4x2 Grid Core Stats
+	var atk: float = enemy.get_attack()
+	var spell_pow: float = enemy.get_spell_power()
+	var def: float = enemy.get_defense()
+	var atk_rng: int = enemy.get_attack_range()
+	var spd: float = enemy.get_attack_speed()
+	var crit_c: float = enemy.get_crit_chance() * 100.0
+	var crit_d: float = enemy.get_crit_damage() * 100.0
+	var start_en: float = edata.starting_energy if (edata != null and "starting_energy" in edata) else 0.0
+	
+	attack_val_label.text = "%.1f" % atk
+	spell_val_label.text = "%.1f" % spell_pow
+	
+	# Giáp & Kháng sát thương
+	if enemy.damage_reduction > 0.0:
+		var dr_pct := roundi(enemy.damage_reduction * 100.0)
+		def_val_label.text = "%.0f (-%d%%)" % [def, dr_pct]
+		def_val_label.tooltip_text = "Giáp: %.1f | Kháng sát thương: %d%%" % [def, dr_pct]
+	else:
+		def_val_label.text = "%.1f" % def
+		def_val_label.tooltip_text = "Giáp: %.1f" % def
+		
+	range_val_label.text = "%d ô" % atk_rng
+	speed_val_label.text = "%.2f/s" % spd
+	crit_val_label.text = "%.0f%%" % crit_c
+	crit_dmg_val_label.text = "%.0f%%" % crit_d
+	start_energy_val_label.text = "%.0f" % start_en
+	
+	# Hexagonal Skills Section
+	for child in skills_container.get_children():
+		child.queue_free()
+		
+	var skills_found: int = 0
+	for runtime_ab in enemy.unlocked_abilities:
+		if is_instance_valid(runtime_ab) and runtime_ab.data != null:
+			var type_name: String = str(AbilityData.AbilityType.keys()[runtime_ab.data.ability_type])
+			var border_col := Color(0.85, 0.35, 0.8) if is_elite else (Color(1.0, 0.85, 0.2) if is_boss else Color(0.35, 0.75, 1.0))
+			var skill_desc: String = runtime_ab.data.get_formatted_tooltip(enemy)
+			var skill_icon := HexSkillIcon.new(runtime_ab.data.name, type_name, border_col, skill_desc)
+			skills_container.add_child(skill_icon)
+			skills_found += 1
+			
+	if skills_found == 0:
+		var empty_lbl := Label.new()
+		empty_lbl.text = "(Không có kỹ năng)"
+		empty_lbl.add_theme_font_size_override("font_size", 10)
+		empty_lbl.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
+		skills_container.add_child(empty_lbl)
+		
+	_apply_prestige_style(enemy)
+
+func _render_generic_entity_ui(entity: CombatEntity) -> void:
+	name_label.text = entity.name
+	class_label.visible = false
+	level_label.text = "Cấp %d" % entity.level
+	xp_label.visible = false
+	xp_bar.visible = false
+	hp_label.text = "HP: %.0f / %.0f" % [entity.current_hp, entity.max_hp]
+	hp_bar.max_value = entity.max_hp
+	hp_bar.value = entity.current_hp
+	energy_label.text = "Năng lượng: %.0f / %.0f" % [entity.current_energy, entity.max_energy]
+	energy_bar.max_value = entity.max_energy
+	energy_bar.value = entity.current_energy
+	attack_val_label.text = "%.1f" % entity.get_attack()
+	spell_val_label.text = "%.1f" % entity.get_spell_power()
+	def_val_label.text = "%.1f" % entity.get_defense()
+	range_val_label.text = "%d ô" % entity.get_attack_range()
+	speed_val_label.text = "%.2f/s" % entity.get_attack_speed()
+	crit_val_label.text = "%.0f%%" % (entity.get_crit_chance() * 100.0)
+	crit_dmg_val_label.text = "%.0f%%" % (entity.get_crit_damage() * 100.0)
+	start_energy_val_label.text = "0"
+
+func _apply_prestige_style(entity: CombatEntity) -> void:
+	if entity is HeroEntity:
+		var hero := entity as HeroEntity
+		var lvl: int = hero.progression.current_level if hero.progression != null else hero.level
+		
+		if lvl >= 99:
+			# Thần Thoại (Mythic Prismatic Pink)
+			avatar_bg_style.border_color = Color(1.0, 0.2, 0.7, 1.0)
+			avatar_bg_style.set_border_width_all(3)
+			avatar_bg_style.shadow_color = Color(1.0, 0.2, 0.7, 0.8)
+			avatar_bg_style.shadow_size = 12
+			avatar_bg_style.bg_color = Color(0.28, 0.08, 0.22)
+		elif lvl >= 75:
+			# Đỏ Hoàng Kim (Radiant Gold-Red)
+			avatar_bg_style.border_color = Color(1.0, 0.35, 0.15, 1.0)
+			avatar_bg_style.set_border_width_all(3)
+			avatar_bg_style.shadow_color = Color(1.0, 0.4, 0.1, 0.7)
+			avatar_bg_style.shadow_size = 10
+			avatar_bg_style.bg_color = Color(0.32, 0.12, 0.12)
+		elif lvl >= 50:
+			# Tím Hoàng Gia (Royal Purple)
+			avatar_bg_style.border_color = Color(0.70, 0.30, 0.95, 1.0)
+			avatar_bg_style.set_border_width_all(2)
+			avatar_bg_style.shadow_color = Color(0.70, 0.30, 0.95, 0.6)
+			avatar_bg_style.shadow_size = 8
+			avatar_bg_style.bg_color = Color(0.22, 0.12, 0.35)
+		elif lvl >= 25:
+			# Lam Ngọc (Sapphire Blue)
+			avatar_bg_style.border_color = Color(0.20, 0.65, 1.0, 1.0)
+			avatar_bg_style.set_border_width_all(2)
+			avatar_bg_style.shadow_color = Color(0.20, 0.65, 1.0, 0.5)
+			avatar_bg_style.shadow_size = 6
+			avatar_bg_style.bg_color = Color(0.12, 0.22, 0.38)
+		elif lvl >= 10:
+			# Ngọc Lục Bảo (Emerald Green)
+			avatar_bg_style.border_color = Color(0.18, 0.85, 0.45, 1.0)
+			avatar_bg_style.set_border_width_all(2)
+			avatar_bg_style.shadow_color = Color(0.18, 0.85, 0.45, 0.4)
+			avatar_bg_style.shadow_size = 4
+			avatar_bg_style.bg_color = Color(0.12, 0.30, 0.20)
+		else:
+			# Dưới cấp 10: Màu cơ bản theo Class
+			avatar_bg_style.border_color = Color(0.35, 0.4, 0.5, 0.8)
+			avatar_bg_style.set_border_width_all(1)
+			avatar_bg_style.shadow_color = Color(0, 0, 0, 0)
+			avatar_bg_style.shadow_size = 0
+			_apply_hero_class_bg(hero.data)
+			
+	elif entity is EnemyEntity:
+		var enemy := entity as EnemyEntity
+		var is_boss: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.BOSS) or enemy.damage_reduction >= 0.30
+		var is_elite: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.ELITE)
+		
+		if is_boss:
+			# Hắc Ám (Dark Abyss Boss)
+			avatar_bg_style.border_color = Color(0.90, 0.12, 0.20, 1.0)
+			avatar_bg_style.set_border_width_all(3)
+			avatar_bg_style.shadow_color = Color(0.90, 0.12, 0.20, 0.8)
+			avatar_bg_style.shadow_size = 12
+			avatar_bg_style.bg_color = Color(0.24, 0.05, 0.08)
+			avatar_initial_label.text = "👑"
+		elif is_elite:
+			# Huyết Tử (Crimson Elite)
+			avatar_bg_style.border_color = Color(0.85, 0.35, 0.80, 1.0)
+			avatar_bg_style.set_border_width_all(2)
+			avatar_bg_style.shadow_color = Color(0.85, 0.35, 0.80, 0.6)
+			avatar_bg_style.shadow_size = 8
+			avatar_bg_style.bg_color = Color(0.25, 0.10, 0.28)
+			avatar_initial_label.text = "🔥"
+		else:
+			# Đỏ Tro (Ash Normal)
+			avatar_bg_style.border_color = Color(0.48, 0.48, 0.52, 0.8)
+			avatar_bg_style.set_border_width_all(1)
+			avatar_bg_style.shadow_color = Color(0, 0, 0, 0)
+			avatar_bg_style.shadow_size = 0
+			avatar_bg_style.bg_color = Color(0.18, 0.18, 0.22)
+			avatar_initial_label.text = "👾"
+
+func _apply_hero_class_bg(data: HeroData) -> void:
+	if data == null:
+		avatar_bg_style.bg_color = Color(0.18, 0.24, 0.36)
+		avatar_initial_label.text = "⚔️"
+		return
+	match data.hero_class:
+		HeroData.HeroClass.TANK:
+			avatar_bg_style.bg_color = Color(0.18, 0.28, 0.45)
+			avatar_initial_label.text = "🛡️"
+		HeroData.HeroClass.ASSASSIN:
+			avatar_bg_style.bg_color = Color(0.38, 0.16, 0.42)
+			avatar_initial_label.text = "🗡️"
+		HeroData.HeroClass.MAGE:
+			avatar_bg_style.bg_color = Color(0.20, 0.32, 0.55)
+			avatar_initial_label.text = "🔮"
+		HeroData.HeroClass.MARKSMAN:
+			avatar_bg_style.bg_color = Color(0.18, 0.38, 0.28)
+			avatar_initial_label.text = "🏹"
+		HeroData.HeroClass.SUPPORT:
+			avatar_bg_style.bg_color = Color(0.14, 0.38, 0.38)
+			avatar_initial_label.text = "💚"
+		_:
+			avatar_bg_style.bg_color = Color(0.35, 0.25, 0.18)
+			avatar_initial_label.text = "⚔️"
+
+func _connect_inspected_entity() -> void:
+	if inspected_entity == null: return
 	_on_hp_changed_callable = func(_c, _m): update_stats()
 	_on_energy_changed_callable = func(_c, _m): update_stats()
 	_on_died_callable = func(_e): close()
 	_on_exiting_callable = func(): close()
 	
-	inspected_hero.hp_changed.connect(_on_hp_changed_callable)
-	inspected_hero.energy_changed.connect(_on_energy_changed_callable)
-	inspected_hero.died.connect(_on_died_callable)
-	inspected_hero.tree_exiting.connect(_on_exiting_callable)
+	inspected_entity.hp_changed.connect(_on_hp_changed_callable)
+	inspected_entity.energy_changed.connect(_on_energy_changed_callable)
+	inspected_entity.died.connect(_on_died_callable)
+	inspected_entity.tree_exiting.connect(_on_exiting_callable)
 
-func _disconnect_inspected_hero() -> void:
-	if inspected_hero != null and is_instance_valid(inspected_hero):
-		if _on_hp_changed_callable.is_valid() and inspected_hero.hp_changed.is_connected(_on_hp_changed_callable):
-			inspected_hero.hp_changed.disconnect(_on_hp_changed_callable)
-		if _on_energy_changed_callable.is_valid() and inspected_hero.energy_changed.is_connected(_on_energy_changed_callable):
-			inspected_hero.energy_changed.disconnect(_on_energy_changed_callable)
-		if _on_died_callable.is_valid() and inspected_hero.died.is_connected(_on_died_callable):
-			inspected_hero.died.disconnect(_on_died_callable)
-		if _on_exiting_callable.is_valid() and inspected_hero.tree_exiting.is_connected(_on_exiting_callable):
-			inspected_hero.tree_exiting.disconnect(_on_exiting_callable)
+func _disconnect_inspected_entity() -> void:
+	if inspected_entity != null and is_instance_valid(inspected_entity):
+		if _on_hp_changed_callable.is_valid() and inspected_entity.hp_changed.is_connected(_on_hp_changed_callable):
+			inspected_entity.hp_changed.disconnect(_on_hp_changed_callable)
+		if _on_energy_changed_callable.is_valid() and inspected_entity.energy_changed.is_connected(_on_energy_changed_callable):
+			inspected_entity.energy_changed.disconnect(_on_energy_changed_callable)
+		if _on_died_callable.is_valid() and inspected_entity.died.is_connected(_on_died_callable):
+			inspected_entity.died.disconnect(_on_died_callable)
+		if _on_exiting_callable.is_valid() and inspected_entity.tree_exiting.is_connected(_on_exiting_callable):
+			inspected_entity.tree_exiting.disconnect(_on_exiting_callable)
+

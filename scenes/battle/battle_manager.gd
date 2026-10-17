@@ -895,6 +895,7 @@ func _input(event: InputEvent) -> void:
 		KEY_COMMA: _run_tc_17_skill_scaling_and_tooltip()
 		KEY_SEMICOLON: _run_tc_18_skill_upgrades_and_isolation()
 		KEY_APOSTROPHE: _run_tc_19_narrative_and_encounter_director()
+		KEY_ENTER: _run_tc_20_procedural_ui_and_polymorphism()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -926,8 +927,9 @@ func _run_all_tests() -> void:
 	_run_tc_17_skill_scaling_and_tooltip()
 	_run_tc_18_skill_upgrades_and_isolation()
 	_run_tc_19_narrative_and_encounter_director()
+	_run_tc_20_procedural_ui_and_polymorphism()
 	
-	_log_test("\n🎉 TẤT CẢ 19 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 20 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -2630,6 +2632,145 @@ func _run_tc_19_narrative_and_encounter_director() -> void:
 	_log_test(">>> 🟢 TC-19.4 Encounter Director Floor Compositions PASSED!")
 	
 	_log_test(">>> 🟢 TC-19 PASSED: Narrative Interpolation, Lv99 XP & Encounter Director fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-20: Procedural Prestige UI & Input Polymorphism (Sprint 4 Task S4.5)
+# ------------------------------------------------------------------------------
+func _run_tc_20_procedural_ui_and_polymorphism() -> void:
+	_log_test("\n==================== [TEST TC-20: PROCEDURAL PRESTIGE UI & POLYMORPHISM] ====================")
+	_reset_test_battlefield()
+	assert(character_stats_ui != null, "FAIL TC-20: CharacterStatsUI instance missing")
+	character_stats_ui.close()
+	
+	# 1. TC-20.1: HERO BASE (LV1) VS MYTHIC (LV99) PRESTIGE BORDERS
+	_log_test("[TC-20.1] Checking Hero Base vs Mythic Lv99 Prestige Borders...")
+	var mage_data := _create_mock_hero_data("Merlin", HeroData.HeroClass.MAGE, 100.0, 10.0, 5.0, 1.0, 3, 50.0)
+	var hero_inst := hero_scene.instantiate() as HeroEntity
+	add_child(hero_inst)
+	hero_inst.initialize(mage_data)
+	hero_inst.progression.current_level = 1
+	
+	character_stats_ui.inspect_entity(hero_inst)
+	assert(character_stats_ui.visible == true, "FAIL TC-20.1: Panel should be visible")
+	assert(character_stats_ui.inspected_entity == hero_inst, "FAIL TC-20.1: Inspected entity mismatch")
+	assert(character_stats_ui.level_label.text == "Cấp 1", "FAIL TC-20.1: Level label should be Cấp 1")
+	assert(character_stats_ui.avatar_bg_style.border_width_left == 1, "FAIL TC-20.1: Lv1 hero border width should be 1")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 0, "FAIL TC-20.1: Lv1 hero shadow size should be 0")
+	assert(character_stats_ui.xp_bar.visible == true, "FAIL TC-20.1: Hero XP bar should be visible")
+	assert(character_stats_ui.energy_bar.visible == true, "FAIL TC-20.1: Hero Energy bar should be visible")
+	
+	# Thần Thoại (Lv99)
+	hero_inst.progression.current_level = 99
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.level_label.text == "Cấp 99", "FAIL TC-20.1: Level label should update to Cấp 99")
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(1.0, 0.2, 0.7, 1.0), "FAIL TC-20.1: Mythic border color mismatch")
+	assert(character_stats_ui.avatar_bg_style.border_width_left == 3, "FAIL TC-20.1: Mythic border width should be 3")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 12, "FAIL TC-20.1: Mythic shadow size should be 12")
+	_log_test(">>> 🟢 TC-20.1 Hero Base vs Mythic Lv99 Prestige Borders PASSED!")
+	
+	# 2. TC-20.2: INTERMEDIATE HERO MILESTONES (10, 25, 50, 75)
+	_log_test("[TC-20.2] Checking Intermediate Hero Milestones (10, 25, 50, 75)...")
+	# Level 10 (Ngọc Lục Bảo)
+	hero_inst.progression.current_level = 10
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(0.18, 0.85, 0.45, 1.0), "FAIL TC-20.2: Lv10 Emerald Green border mismatch")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 4, "FAIL TC-20.2: Lv10 shadow size mismatch")
+	
+	# Level 25 (Lam Ngọc)
+	hero_inst.progression.current_level = 25
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(0.20, 0.65, 1.0, 1.0), "FAIL TC-20.2: Lv25 Sapphire Blue border mismatch")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 6, "FAIL TC-20.2: Lv25 shadow size mismatch")
+	
+	# Level 50 (Tím Hoàng Gia)
+	hero_inst.progression.current_level = 50
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(0.70, 0.30, 0.95, 1.0), "FAIL TC-20.2: Lv50 Royal Purple border mismatch")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 8, "FAIL TC-20.2: Lv50 shadow size mismatch")
+	
+	# Level 75 (Đỏ Hoàng Kim)
+	hero_inst.progression.current_level = 75
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(1.0, 0.35, 0.15, 1.0), "FAIL TC-20.2: Lv75 Radiant Gold-Red border mismatch")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 10, "FAIL TC-20.2: Lv75 shadow size mismatch")
+	
+	hero_inst.queue_free()
+	_log_test(">>> 🟢 TC-20.2 Intermediate Hero Milestones PASSED!")
+	
+	# 3. TC-20.3: NORMAL ENEMY (NO SKILLS) INSPECTION
+	_log_test("[TC-20.3] Checking Normal Enemy (No skills) Inspection...")
+	var norm_data := EnemyData.new()
+	norm_data.name = "NormalSlime"
+	norm_data.rank = EnemyData.EnemyRank.NORMAL
+	norm_data.base_hp = 100.0
+	norm_data.base_attack = 10.0
+	norm_data.base_defense = 5.0
+	norm_data.abilities = []
+	var norm_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(norm_enemy)
+	norm_enemy.initialize(norm_data, 1, EnemyData.EnemyRank.NORMAL, false)
+	
+	character_stats_ui.inspect_entity(norm_enemy)
+	assert(character_stats_ui.xp_label.visible == false and character_stats_ui.xp_bar.visible == false, "FAIL TC-20.3: XP bar must be hidden for Enemy")
+	assert(character_stats_ui.energy_label.visible == false and character_stats_ui.energy_bar.visible == false, "FAIL TC-20.3: Energy bar must be hidden for Enemy without skills")
+	assert(character_stats_ui.class_label.visible == false, "FAIL TC-20.3: Class label must be hidden for Enemy")
+	assert(character_stats_ui.level_label.text.contains("[QUÁI THƯỜNG]"), "FAIL TC-20.3: Level badge should contain [QUÁI THƯỜNG]")
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(0.48, 0.48, 0.52, 0.8), "FAIL TC-20.3: Ash Normal border color mismatch")
+	assert(character_stats_ui.avatar_initial_label.text == "👾", "FAIL TC-20.3: Normal enemy icon should be 👾")
+	norm_enemy.queue_free()
+	_log_test(">>> 🟢 TC-20.3 Normal Enemy Inspection PASSED!")
+	
+	# 4. TC-20.4: ELITE ENEMY (WITH SKILLS) INSPECTION
+	_log_test("[TC-20.4] Checking Elite Enemy (With skills) Inspection...")
+	var elite_data := EnemyData.new()
+	elite_data.name = "EliteSlime"
+	elite_data.rank = EnemyData.EnemyRank.ELITE
+	elite_data.base_hp = 200.0
+	elite_data.base_attack = 15.0
+	elite_data.base_defense = 8.0
+	elite_data.abilities = [create_slime_elite_ability()]
+	var elite_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(elite_enemy)
+	elite_enemy.initialize(elite_data, 5, EnemyData.EnemyRank.ELITE, false)
+	
+	character_stats_ui.inspect_entity(elite_enemy)
+	assert(character_stats_ui.xp_bar.visible == false, "FAIL TC-20.4: XP bar must be hidden for Elite Enemy")
+	assert(character_stats_ui.energy_bar.visible == true, "FAIL TC-20.4: Energy bar must be visible for Elite Enemy with skills")
+	assert(character_stats_ui.level_label.text.contains("[🔥 TINH ANH]"), "FAIL TC-20.4: Level badge should contain [🔥 TINH ANH]")
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(0.85, 0.35, 0.80, 1.0), "FAIL TC-20.4: Crimson Elite border color mismatch")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 8, "FAIL TC-20.4: Elite shadow size mismatch")
+	assert(character_stats_ui.avatar_initial_label.text == "🔥", "FAIL TC-20.4: Elite enemy icon should be 🔥")
+	elite_enemy.queue_free()
+	_log_test(">>> 🟢 TC-20.4 Elite Enemy Inspection PASSED!")
+	
+	# 5. TC-20.5: SOLO RAID BOSS & DAMAGE REDUCTION INSPECTION
+	_log_test("[TC-20.5] Checking Solo Raid Boss & Damage Reduction Inspection...")
+	var boss_data := EnemyData.new()
+	boss_data.name = "SoloRaidBoss"
+	boss_data.rank = EnemyData.EnemyRank.BOSS
+	boss_data.base_hp = 300.0
+	boss_data.base_attack = 25.0
+	boss_data.base_defense = 15.0
+	boss_data.abilities = [create_slime_boss_ability()]
+	var solo_boss: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(solo_boss)
+	solo_boss.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, true) # Solo boss has 30% reduction
+	
+	character_stats_ui.inspect_entity(solo_boss)
+	assert(character_stats_ui.level_label.text.contains("[👑 LÃNH CHÚA TẦNG]"), "FAIL TC-20.5: Level badge should contain [👑 LÃNH CHÚA TẦNG]")
+	assert(character_stats_ui.avatar_bg_style.border_color == Color(0.90, 0.12, 0.20, 1.0), "FAIL TC-20.5: Dark Abyss Boss border color mismatch")
+	assert(character_stats_ui.avatar_bg_style.border_width_left == 3, "FAIL TC-20.5: Boss border width should be 3")
+	assert(character_stats_ui.avatar_bg_style.shadow_size == 12, "FAIL TC-20.5: Boss shadow size should be 12")
+	assert(character_stats_ui.def_val_label.tooltip_text.contains("30%"), "FAIL TC-20.5: Defense tooltip must show 30% damage reduction")
+	assert(character_stats_ui.def_val_label.text.contains("30%"), "FAIL TC-20.5: Defense label must show 30% damage reduction")
+	assert(character_stats_ui.avatar_initial_label.text == "👑", "FAIL TC-20.5: Boss icon should be 👑")
+	
+	character_stats_ui.close()
+	assert(character_stats_ui.visible == false, "FAIL TC-20.5: Panel must hide on close")
+	solo_boss.queue_free()
+	_log_test(">>> 🟢 TC-20.5 Solo Raid Boss & Damage Reduction PASSED!")
+	
+	_log_test(">>> 🟢 TC-20 PASSED: Procedural UI & Polymorphism fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
