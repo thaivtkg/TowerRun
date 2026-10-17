@@ -235,6 +235,7 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	hero.deployed_cell = cell
 	hero.board_grid = board_grid
 	hero.board_view = board_view
+	hero.targeting_system = targeting_system
 	
 	if board_grid != null:
 		board_grid.place_entity(hero, cell)
@@ -289,6 +290,7 @@ func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd
 	add_child(enemy)
 	enemy.board_grid = board_grid
 	enemy.board_view = board_view
+	enemy.targeting_system = targeting_system
 	
 	if board_grid != null:
 		board_grid.place_entity(enemy, cell)
@@ -665,6 +667,7 @@ func _input(event: InputEvent) -> void:
 		KEY_BRACKETLEFT: _run_tc_12_combat_metrics_and_progression()
 		KEY_BRACKETRIGHT: _run_tc_13_combat_summary_ui()
 		KEY_BACKSLASH: _run_tc_14_roguelike_run_lifecycle()
+		KEY_SLASH: _run_tc_15_combat_retargeting()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -691,8 +694,9 @@ func _run_all_tests() -> void:
 	_run_tc_12_combat_metrics_and_progression()
 	_run_tc_13_combat_summary_ui()
 	_run_tc_14_roguelike_run_lifecycle()
+	_run_tc_15_combat_retargeting()
 	
-	_log_test("\n🎉 TẤT CẢ 14 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 15 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1784,6 +1788,112 @@ func _run_tc_14_roguelike_run_lifecycle() -> void:
 	_log_test(">>> 🟢 TC-14.6 Hero Perma-death Clean Reset PASSED!")
 	
 	_log_test(">>> 🟢 TC-14 PASSED: Roguelike Run Lifecycle & Economy fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-15: Smart Combat Retargeting (Ranged & Melee Anti-Kiting)
+# ------------------------------------------------------------------------------
+func _run_tc_15_combat_retargeting() -> void:
+	_log_test("\n==================== [TEST TC-15: COMBAT RETARGETING & ANTI-KITING] ====================")
+	_reset_test_battlefield()
+	
+	# Dọn bớt quái để kiểm soát tọa độ chính xác
+	while enemies.size() > 0:
+		var e = enemies.pop_back()
+		if is_instance_valid(e):
+			board_grid.remove_dead_entity(e)
+			e.queue_free()
+			
+	var robin: HeroEntity = null
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.name == "Robin":
+				robin = h
+			elif h.data.name == "Arthur":
+				arthur = h
+	assert(robin != null and arthur != null, "FAIL TC-15: Robin and Arthur must exist")
+	
+	for h in heroes.duplicate():
+		if h != arthur and h != robin:
+			heroes.erase(h)
+			if is_instance_valid(h):
+				board_grid.remove_dead_entity(h)
+				h.queue_free()
+	
+	# 1. RANGED RETARGETING (Tướng đánh xa không di chuyển nếu có địch trong tầm)
+	# Đặt Robin (range 4) tại (2, 5)
+	board_grid.move_entity(board_grid.get_cell_for_entity(robin), Vector2i(2, 5), true)
+	if board_view != null: robin.global_position = board_view.grid_to_world(Vector2i(2, 5))
+	
+	# Sinh Quái A (ngoài tầm 4) tại (2, 0) -> Hex dist = 5
+	var slime_far := _spawn_enemy_at_grid("SlimeFar", 100.0, 10.0, 5.0, 1.0, 0.0, 2.0, Vector2i(2, 0))
+	# Sinh Quái B (trong tầm 4) tại (2, 3) -> Hex dist = 2
+	var slime_near := _spawn_enemy_at_grid("SlimeNear", 100.0, 10.0, 5.0, 1.0, 0.0, 2.0, Vector2i(2, 3))
+	
+	# Khẳng định khoảng cách lục giác
+	var dist_far := board_grid.get_hex_distance(Vector2i(2, 5), Vector2i(2, 0))
+	var dist_near := board_grid.get_hex_distance(Vector2i(2, 5), Vector2i(2, 3))
+	_log_test("[TC-15.1] Robin at (2, 5) -> SlimeFar at (2, 0) Dist: %d | SlimeNear at (2, 3) Dist: %d" % [dist_far, dist_near])
+	assert(dist_far == 5, "FAIL TC-15.1: Expected dist 5 to SlimeFar")
+	assert(dist_near == 2, "FAIL TC-15.1: Expected dist 2 to SlimeNear")
+	
+	# Ban đầu ép target của Robin là SlimeFar (đã chạy ra ngoài tầm)
+	robin.target = slime_far
+	assert(not robin.is_target_in_attack_range(), "FAIL TC-15.1: SlimeFar must be out of range for Robin")
+	
+	# Kích hoạt nhịp đánh của Robin
+	robin._on_attack_timer_timeout()
+	
+	# Robin phải tự động đổi mục tiêu sang SlimeNear và ĐỨNG YÊN TẠI CHỖ (không bước đi)
+	var robin_cell := board_grid.get_cell_for_entity(robin)
+	_log_test("[TC-15.1] Post-tick Robin Target: %s | Robin Cell: %s" % [robin.target.name if robin.target else "null", str(robin_cell)])
+	assert(robin.target == slime_near, "FAIL TC-15.1: Robin must retarget to SlimeNear")
+	assert(robin_cell == Vector2i(2, 5), "FAIL TC-15.1: Robin must remain stationary at (2, 5) when in-range target exists")
+	_log_test(">>> 🟢 TC-15.1 Ranged Retargeting without Moving PASSED!")
+	
+	# 2. RANGED STEPS WHEN NO TARGETS IN RANGE (Chỉ di chuyển khi không còn ai trong tầm)
+	board_grid.remove_dead_entity(slime_near)
+	enemies.erase(slime_near)
+	slime_near.queue_free()
+	
+	robin.target = slime_far
+	robin._on_attack_timer_timeout()
+	var new_robin_cell := board_grid.get_cell_for_entity(robin)
+	_log_test("[TC-15.2] Robin stepped when no targets in range: %s -> %s" % [str(robin_cell), str(new_robin_cell)])
+	assert(new_robin_cell != Vector2i(2, 5), "FAIL TC-15.2: Robin must step towards target when no enemies in range")
+	assert(board_grid.get_hex_distance(new_robin_cell, Vector2i(2, 0)) < dist_far, "FAIL TC-15.2: Distance to SlimeFar must decrease")
+	_log_test(">>> 🟢 TC-15.2 Ranged Step Execution when No Targets in Range PASSED!")
+	
+	# 3. MELEE ANTI-KITING (Tướng cận chiến không chạy xuyên qua địch kề bên)
+	board_grid.move_entity(board_grid.get_cell_for_entity(arthur), Vector2i(3, 4), true)
+	if board_view != null: arthur.global_position = board_view.grid_to_world(Vector2i(3, 4))
+	
+	var slime_adj := _spawn_enemy_at_grid("SlimeAdj", 100.0, 10.0, 5.0, 1.0, 0.0, 2.0, Vector2i(3, 3))
+	var arthur_dist_adj := board_grid.get_hex_distance(Vector2i(3, 4), Vector2i(3, 3))
+	var arthur_dist_far := board_grid.get_hex_distance(Vector2i(3, 4), Vector2i(2, 0))
+	_log_test("[TC-15.3] Arthur at (3, 4) -> SlimeAdj Dist: %d | SlimeFar Dist: %d" % [arthur_dist_adj, arthur_dist_far])
+	assert(arthur_dist_adj == 1, "FAIL TC-15.3: SlimeAdj must be adjacent (dist 1)")
+	assert(arthur_dist_far > 1, "FAIL TC-15.3: SlimeFar must be out of melee range")
+	
+	arthur.target = slime_far
+	arthur._on_attack_timer_timeout()
+	
+	var arthur_cell := board_grid.get_cell_for_entity(arthur)
+	_log_test("[TC-15.3] Post-tick Arthur Target: %s | Arthur Cell: %s" % [arthur.target.name if arthur.target else "null", str(arthur_cell)])
+	assert(arthur.target == slime_adj, "FAIL TC-15.3: Arthur must retarget to adjacent enemy")
+	assert(arthur_cell == Vector2i(3, 4), "FAIL TC-15.3: Arthur must not leave cell when adjacent enemy exists")
+	_log_test(">>> 🟢 TC-15.3 Melee Anti-Kiting PASSED!")
+	
+	# 4. TARGETINGSYSTEM PROCESS DYNAMIC RETARGETING
+	board_grid.move_entity(board_grid.get_cell_for_entity(robin), Vector2i(2, 5), true)
+	if board_view != null: robin.global_position = board_view.grid_to_world(Vector2i(2, 5))
+	robin.target = slime_far
+	assert(not robin.is_target_in_attack_range(), "FAIL TC-15.4: SlimeFar must be out of Robin's range at (2, 5)")
+	targeting_system._assign_targets([robin], enemies)
+	assert(robin.target == slime_adj, "FAIL TC-15.4: TargetingSystem must automatically switch out-of-range target")
+	_log_test(">>> 🟢 TC-15.4 TargetingSystem dynamic retargeting PASSED!")
+	
+	_log_test(">>> 🟢 TC-15 PASSED: Smart Combat Retargeting & Anti-Kiting fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
