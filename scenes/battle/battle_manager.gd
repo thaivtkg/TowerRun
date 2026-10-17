@@ -153,6 +153,8 @@ func enter_preparation_phase() -> void:
 	print("[BattleManager] 🛡️ PHASE: PREPARATION (Kéo thả bố trí đội hình)")
 
 func start_combat_phase() -> void:
+	if current_phase == EncounterPhase.COMBAT:
+		return
 	# Lưu lại tọa độ ô cờ hiện tại của từng Hero trước khi khóa bàn cờ
 	for hero in heroes:
 		if is_instance_valid(hero) and board_grid != null:
@@ -1176,7 +1178,8 @@ func _run_tc_09_board_view_and_placement() -> void:
 func _reset_test_battlefield() -> void:
 	for h in heroes: if is_instance_valid(h): h.queue_free()
 	for e in enemies: if is_instance_valid(e): e.queue_free()
-	heroes.clear(); enemies.clear(); choice_queue.clear()
+	for c in corpses: if is_instance_valid(c): c.queue_free()
+	heroes.clear(); enemies.clear(); corpses.clear(); choice_queue.clear()
 	if board_grid != null:
 		board_grid.is_locked = false
 		board_grid.clear()

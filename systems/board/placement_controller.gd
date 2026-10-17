@@ -19,6 +19,7 @@ var is_locked: bool = false:
 	set(val):
 		set_locked(val)
 var _is_locked: bool = false
+var _snap_tweens: Dictionary = {} # CombatEntity -> Tween
 
 # Biến alias tương thích ngược
 var is_placement_locked: bool:
@@ -69,6 +70,9 @@ func _on_mouse_pressed() -> void:
 		
 	var entity: CombatEntity = board_grid.get_occupant(cell)
 	if entity != null and entity is HeroEntity:
+		if _snap_tweens.has(entity) and is_instance_valid(_snap_tweens[entity]):
+			_snap_tweens[entity].kill()
+			_snap_tweens.erase(entity)
 		dragged_entity = entity
 		original_cell = cell
 		original_z_index = entity.z_index
@@ -133,8 +137,12 @@ func _on_mouse_released() -> void:
 func _snap_to_cell(entity: CombatEntity, cell: Vector2i) -> void:
 	if not is_instance_valid(entity) or board_view == null:
 		return
+	if _snap_tweens.has(entity) and is_instance_valid(_snap_tweens[entity]):
+		_snap_tweens[entity].kill()
 	var target_pos: Vector2 = board_view.grid_to_world(cell)
 	var tween: Tween = create_tween()
+	_snap_tweens[entity] = tween
 	tween.set_ease(Tween.EASE_OUT)
 	tween.set_trans(Tween.TRANS_QUAD)
 	tween.tween_property(entity, "global_position", target_pos, 0.15)
+	tween.finished.connect(func(): _snap_tweens.erase(entity))
