@@ -1952,12 +1952,14 @@ func _run_tc_16_character_stats_ui() -> void:
 	assert(character_stats_ui.level_label.text == "Cấp 1", "FAIL TC-16.1: Initial level must be Cấp 1")
 	_log_test(">>> 🟢 TC-16.1 Hero Inspection & Header Data Binding PASSED!")
 	
-	# 2. STAT GRID BINDING (ATTACK, SPELL POWER, DEFENSE, ETC.)
+	# 2. STAT GRID BINDING & RIGHT-DOCK VERIFICATION
+	assert(character_stats_ui.panel_container.position.x >= 800, "FAIL TC-16.2: Panel must be docked on the right side (x >= 800)")
 	assert(character_stats_ui.attack_val_label.text == "%.1f" % arthur.get_attack(), "FAIL TC-16.2: Attack stat mismatch")
 	assert(character_stats_ui.spell_val_label.text == "%.1f" % arthur.get_spell_power(), "FAIL TC-16.2: Spell Power stat mismatch")
 	assert(character_stats_ui.def_val_label.text == "%.1f" % arthur.get_defense(), "FAIL TC-16.2: Defense stat mismatch")
 	assert(character_stats_ui.range_val_label.text == "%d ô" % arthur.get_attack_range(), "FAIL TC-16.2: Range stat mismatch")
-	_log_test(">>> 🟢 TC-16.2 Stat Grid Binding (Base Spell Power included) PASSED!")
+	assert(character_stats_ui.skills_container.get_child_count() > 0, "FAIL TC-16.2: Skills container must contain skill icons")
+	_log_test(">>> 🟢 TC-16.2 Right-dock, Hexagon Skills & 4x2 Stat Grid PASSED!")
 	
 	# 3. REACTIVE RESOURCE BAR UPDATES
 	var old_hp := arthur.current_hp
