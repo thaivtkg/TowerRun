@@ -99,5 +99,10 @@ func _apply_effect(effect: EffectData, source: CombatEntity, target: CombatEntit
 		
 	elif effect is HealEffectData:
 		var heal_effect = effect as HealEffectData
+		var old_hp: float = target.current_hp
 		target.heal(heal_effect.heal_amount)
-		print("[AbilitySystem] 💚 %s heals %s for %.1f HP. (New HP: %.1f)" % [source.name, target.name, heal_effect.heal_amount, target.current_hp])
+		var actual_healed: float = target.current_hp - old_hp
+		if combat_system != null and actual_healed > 0.0:
+			combat_system.entity_healed.emit(source, target, actual_healed)
+		print("[AbilitySystem] 💚 %s heals %s for %.1f HP. (New HP: %.1f)" % [source.name, target.name, actual_healed, target.current_hp])
+

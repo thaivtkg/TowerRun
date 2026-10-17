@@ -201,6 +201,8 @@ func reset_for_new_battle() -> void:
 			hero.current_energy = 0.0
 		for ab in hero.unlocked_abilities:
 			ab.current_cooldown = 0.0
+		if hero.metrics != null:
+			hero.metrics.reset()
 
 # ==========================================
 # [S2.3] MOVEMENT & PATHFINDING

@@ -7,6 +7,7 @@ signal ability_requested(ability: Ability)
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
 var progression: HeroProgression = null
+var metrics: CombatMetric = CombatMetric.new()
 
 # SPRINT 4: RUNTIME ABILITIES STATE
 var unlocked_abilities: Array[Ability] = [] 

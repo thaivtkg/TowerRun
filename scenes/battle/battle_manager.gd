@@ -179,6 +179,8 @@ func start_combat_phase() -> void:
 		
 	for hero in heroes:
 		if is_instance_valid(hero):
+			if hero.metrics != null:
+				hero.metrics.reset()
 			hero.set_combat_active(true)
 	for enemy in enemies:
 		if is_instance_valid(enemy):
@@ -596,16 +598,17 @@ func _input(event: InputEvent) -> void:
 		KEY_9: _run_tc_09_board_view_and_placement()
 		KEY_MINUS: _run_tc_10_targeting_and_spatial()
 		KEY_EQUAL: _run_tc_11_grid_movement_and_pathfinding()
+		KEY_BRACKETLEFT: _run_tc_12_combat_metrics_and_progression()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
 	if file:
-		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 2, 4 & 5 ===")
+		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 2, 3, 4 & 5 ===")
 		file.store_line("Thời gian: " + Time.get_datetime_string_from_system())
-		file.store_line("========================================\n")
+		file.store_line("==============================================\n")
 		file.close()
 	
-	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 2, 4 & 5)...")
+	_log_test("Đang chạy toàn bộ Test Suite (Sprint 1, 2, 3, 4 & 5)...")
 	_log_test("Thư mục lưu report: " + ProjectSettings.globalize_path(test_report_path))
 	
 	_run_tc_01_active_ability_xp()
@@ -619,8 +622,9 @@ func _run_all_tests() -> void:
 	_run_tc_09_board_view_and_placement()
 	_run_tc_10_targeting_and_spatial()
 	_run_tc_11_grid_movement_and_pathfinding()
+	_run_tc_12_combat_metrics_and_progression()
 	
-	_log_test("\n🎉 TẤT CẢ 11 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 12 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1430,6 +1434,97 @@ func _run_tc_11_grid_movement_and_pathfinding() -> void:
 	_log_test(">>> 🟢 TC-11.4 Assassin Blink landing PASSED!")
 	
 	_log_test(">>> 🟢 TC-11 PASSED: Grid-based Movement & Pathfinding fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-12: Combat Metrics & Hero Progression (Sprint 3)
+# ------------------------------------------------------------------------------
+func _run_tc_12_combat_metrics_and_progression() -> void:
+	_log_test("\n==================== [TEST TC-12: COMBAT METRICS & PROGRESSION] ====================")
+	_reset_test_battlefield()
+	
+	# 1. Tìm 1 Tank (Arthur), 1 Assassin (Kira) và 1 Support (Soraka)
+	var tank: HeroEntity = null
+	var assassin: HeroEntity = null
+	var support: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.data != null:
+			if h.data.hero_class == HeroData.HeroClass.TANK:
+				tank = h
+			elif h.data.hero_class == HeroData.HeroClass.ASSASSIN:
+				assassin = h
+			elif h.data.hero_class == HeroData.HeroClass.SUPPORT:
+				support = h
+				
+	assert(tank != null and assassin != null and support != null, "FAIL TC-12: Tank, Assassin, and Support must exist")
+	
+	# 2. Reset và nạp giả lập 500 damage_taken và 500 damage_dealt cho cả Tank và Assassin
+	tank.metrics.reset()
+	assassin.metrics.reset()
+	tank.progression = HeroProgression.new()
+	assassin.progression = HeroProgression.new()
+	
+	tank.metrics.damage_taken = 500.0
+	tank.metrics.damage_dealt = 500.0
+	
+	assassin.metrics.damage_taken = 500.0
+	assassin.metrics.damage_dealt = 500.0
+	
+	var tank_contrib := progression_system.calculate_hero_contribution(tank)
+	var assassin_contrib := progression_system.calculate_hero_contribution(assassin)
+	
+	# Tank raw: 500*0.2 (dealt) + 500*1.2 (taken) = 100 + 600 = 700.0
+	# Assassin raw: 500*1.5 (dealt) + 500*0.1 (taken) = 750 + 50 = 800.0
+	_log_test("[TC-12.1] Raw Contribution: Tank = %.1f | Assassin = %.1f" % [tank_contrib, assassin_contrib])
+	assert(is_equal_approx(tank_contrib, 700.0), "FAIL TC-12.1: Tank raw contribution expected 700.0")
+	assert(is_equal_approx(assassin_contrib, 800.0), "FAIL TC-12.1: Assassin raw contribution expected 800.0")
+	
+	# Kiểm tra tính phân hóa vai trò:
+	# Lượng XP Tank nhận từ chống chịu (600) > Assassin nhận từ chống chịu (50)
+	var tank_taken_xp: float = 500.0 * 1.2
+	var assassin_taken_xp: float = 500.0 * 0.1
+	assert(tank_taken_xp > assassin_taken_xp, "FAIL TC-12.1: Tank must gain more XP from damage taken than Assassin")
+	
+	# Lượng XP Assassin nhận từ sát thương gây ra (750) > Tank nhận từ sát thương (100)
+	var assassin_dealt_xp: float = 500.0 * 1.5
+	var tank_dealt_xp: float = 500.0 * 0.2
+	assert(assassin_dealt_xp > tank_dealt_xp, "FAIL TC-12.1: Assassin must gain more XP from damage dealt than Tank")
+	
+	# 3. Finalize Battle XP với win_multiplier = 1.2 (Victory)
+	progression_system.finalize_battle_xp(true, [tank, assassin])
+	# Tank final XP: 700 * 1.2 = 840.0 -> Đạt Level 6
+	# Assassin final XP: 800 * 1.2 = 960.0 -> Đạt Level 6
+	_log_test("[TC-12.1] Post-battle Level: Tank = Lv%d | Assassin = Lv%d" % [tank.progression.current_level, assassin.progression.current_level])
+	assert(tank.progression.current_level >= 5, "FAIL TC-12.1: Tank should reach at least Level 5")
+	assert(assassin.progression.current_level >= 5, "FAIL TC-12.1: Assassin should reach at least Level 5")
+	assert(tank.progression.pending_milestones.has(5), "FAIL TC-12.1: Tank should have milestone 5 registered")
+	assert(assassin.progression.pending_milestones.has(5), "FAIL TC-12.1: Assassin should have milestone 5 registered")
+	_log_test(">>> 🟢 TC-12.1 Class XP Contribution & Role Differentiation PASSED!")
+	
+	# 4. Support Healing Attribution Test
+	support.metrics.reset()
+	support.metrics.healing_done = 300.0
+	var support_contrib := progression_system.calculate_hero_contribution(support)
+	# Support healing weight = 2.0x -> 300 * 2.0 = 600.0
+	_log_test("[TC-12.2] Support Healing (300 HP) -> Raw Contrib: %.1f" % support_contrib)
+	assert(is_equal_approx(support_contrib, 600.0), "FAIL TC-12.2: Support healing should yield 600.0 raw XP")
+	_log_test(">>> 🟢 TC-12.2 Support Healing Attribution PASSED!")
+	
+	# 5. Multi-level overflow & Milestone queue test
+	var p := HeroProgression.new()
+	_log_test("[TC-12.3] Adding 2000 XP to fresh HeroProgression...")
+	p.add_xp(2000.0)
+	_log_test("[TC-12.3] Level after 2000 XP: Lv%d | Milestones: %s" % [p.current_level, str(p.pending_milestones)])
+	assert(p.current_level == 10, "FAIL TC-12.3: Expected Level 10 after 2000 XP")
+	assert(p.pending_milestones == [5, 10], "FAIL TC-12.3: Expected pending milestones [5, 10]")
+	
+	_log_test("[TC-12.3] Adding 3000 XP more (Total 5000 XP)...")
+	p.add_xp(3000.0)
+	_log_test("[TC-12.3] Level after 5000 XP: Lv%d | Milestones: %s" % [p.current_level, str(p.pending_milestones)])
+	assert(p.current_level == 16, "FAIL TC-12.3: Expected Level 16 after 5000 XP")
+	assert(p.pending_milestones == [5, 10, 15], "FAIL TC-12.3: Expected pending milestones [5, 10, 15]")
+	_log_test(">>> 🟢 TC-12.3 Multi-level overflow & Milestone queue PASSED!")
+	
+	_log_test(">>> 🟢 TC-12 PASSED: Combat Metrics & Hero Progression fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
