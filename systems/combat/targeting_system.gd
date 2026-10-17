@@ -213,12 +213,15 @@ func _find_densest_cluster_target(source: CombatEntity, targets: Array[CombatEnt
 	return best_target
 
 func _expand_aoe_hex_radius(source: CombatEntity, anchor: CombatEntity, radius: int, rule: AbilityData.TargetRule) -> Array[CombatEntity]:
-	var result: Array[CombatEntity] = [anchor]
 	var is_source_hero: bool = source in heroes
 	var is_target_ally: bool = (rule == AbilityData.TargetRule.SINGLE_ALLY or rule == AbilityData.TargetRule.LOWEST_HP_ALLY or rule == AbilityData.TargetRule.ALL_ALLIES)
 	var pool: Array[CombatEntity] = (heroes if is_source_hero else enemies) if is_target_ally else (enemies if is_source_hero else heroes)
 	pool = pool.filter(func(e): return is_instance_valid(e) and not e.is_dead and e != anchor)
 	
+	var result: Array[CombatEntity] = []
+	if rule != AbilityData.TargetRule.SELF or is_target_ally:
+		result.append(anchor)
+		
 	for other in pool:
 		if _get_hex_distance_between(anchor, other) <= radius:
 			result.append(other)

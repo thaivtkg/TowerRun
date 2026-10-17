@@ -3,6 +3,7 @@ extends CharacterBody2D
 
 signal died(entity: CombatEntity)
 signal attack_requested(event: DamageEvent)
+signal ability_requested(ability: Ability)
 signal healed(entity: CombatEntity, amount: float)
 signal hp_changed(current: float, max_val: float)
 signal energy_changed(current: float, max_val: float)
@@ -21,6 +22,26 @@ var max_hp: float = 0.0:
 		max_hp = val
 		if max_hp > 0.0 and current_hp > 0.0:
 			hp_changed.emit(current_hp, max_hp)
+
+var level: int = 1
+var current_energy: float = 0.0:
+	set(val):
+		current_energy = clampf(val, 0.0, max_energy)
+		energy_changed.emit(current_energy, max_energy)
+
+var max_energy: float = 100.0:
+	set(val):
+		max_energy = val
+		energy_changed.emit(current_energy, max_energy)
+
+var energy_per_attack: float = 25.0
+var unlocked_abilities: Array[Ability] = []
+var damage_reduction: float = 0.0 # Ví dụ: 0.30 cho Solo Raid Boss
+
+func _gain_energy(amount: float) -> void:
+	if is_dead:
+		return
+	self.current_energy += amount
 
 var is_dead: bool = false
 var target: CombatEntity = null # [FIX] Gom biến target về Base Class để TargetingSystem truy xuất an toàn
@@ -114,7 +135,7 @@ func play_cast_vfx() -> void:
 	_sprite_flash_tween.tween_property(sprite, "self_modulate", Color(2.5, 2.2, 1.2), 0.08).set_trans(Tween.TRANS_SINE)
 	_sprite_flash_tween.tween_property(sprite, "self_modulate", Color.WHITE, 0.12).set_trans(Tween.TRANS_SINE)
 
-func setup_status_bar(is_hero: bool) -> void:
+func setup_status_bar(is_hero: bool, show_energy: bool = false) -> void:
 	if status_bar != null and is_instance_valid(status_bar):
 		status_bar.queue_free()
 		
@@ -128,13 +149,13 @@ func setup_status_bar(is_hero: bool) -> void:
 			
 		var init_energy: float = 0.0
 		var init_max_energy: float = 100.0
-		if is_hero:
+		if is_hero or show_energy:
 			if not energy_changed.is_connected(status_bar.on_energy_changed):
 				energy_changed.connect(status_bar.on_energy_changed)
 			init_energy = get("current_energy") if get("current_energy") != null else 0.0
 			init_max_energy = get("max_energy") if get("max_energy") != null else 100.0
 			
-		status_bar.setup(is_hero, current_hp, max_hp, init_energy, init_max_energy)
+		status_bar.setup(is_hero, current_hp, max_hp, init_energy, init_max_energy, show_energy)
 
 func heal(amount: float) -> void:
 	if is_dead or amount <= 0.0:
@@ -284,6 +305,15 @@ func teleport_to_grid_cell(target_cell: Vector2i) -> bool:
 	return true
 
 
+func _process(delta: float) -> void:
+	if is_dead:
+		return
+	for ability in unlocked_abilities:
+		ability.process_cooldown(delta)
+		if ability.data.ability_type == AbilityData.AbilityType.ACTIVE and ability.is_ready(current_energy):
+			if ability.data.target_rule == AbilityData.TargetRule.SELF or (is_instance_valid(target) and not target.is_dead):
+				ability_requested.emit(ability)
+
 # ==========================================
 # VIRTUAL METHODS (STATS CONTRACT)
 # Các hệ thống như CombatSystem sẽ gọi các hàm này.
@@ -298,3 +328,12 @@ func get_crit_chance() -> float:
 	
 func get_crit_damage() -> float:
 	return 2.0
+
+func get_attack() -> float:
+	return 10.0
+
+func get_spell_power() -> float:
+	return 10.0
+
+func get_attack_speed() -> float:
+	return 1.0

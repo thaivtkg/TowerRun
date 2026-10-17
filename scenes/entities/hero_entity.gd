@@ -2,7 +2,6 @@ class_name HeroEntity
 extends CombatEntity
 
 signal pending_skill_choice(hero: HeroEntity, milestone: int, choices: Array[AbilityData])
-signal ability_requested(ability: Ability) 
 
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
@@ -10,25 +9,9 @@ var progression: HeroProgression = null
 var metrics: CombatMetric = CombatMetric.new()
 
 # SPRINT 4: RUNTIME ABILITIES STATE
-var unlocked_abilities: Array[Ability] = [] 
 var basic_attack_ability: Ability           
 var runtime_pools: Dictionary = {} 
 var pending_milestones: Array[int] = []
-
-# ==========================================
-# SPRINT 4: ENERGY SYSTEM (HỆ THỐNG NĂNG LƯỢNG)
-# ==========================================
-var current_energy: float = 0.0:
-	set(val):
-		current_energy = clampf(val, 0.0, max_energy)
-		energy_changed.emit(current_energy, max_energy)
-
-var max_energy: float = 100.0:
-	set(val):
-		max_energy = val
-		energy_changed.emit(current_energy, max_energy)
-
-var energy_per_attack: float = 25.0 # Đánh 4 phát là xả Ultimate
 
 # ==========================================
 # SPRINT 4: RUNTIME ABILITY CLONING (P0 ISOLATION)
@@ -150,13 +133,8 @@ func _on_attack_timer_timeout() -> void:
 		attack_requested.emit(event)
 		_gain_energy(energy_per_attack)
 
-# Hàm tăng Năng lượng công khai (để hệ thống khác có thể gọi)
-func _gain_energy(amount: float) -> void:
-	if is_dead:
-		return
-	self.current_energy += amount
-
-func _on_level_up(_new_level: int) -> void: pass
+func _on_level_up(_new_level: int) -> void:
+	level = _new_level
 
 func _on_milestone_reached(milestone: int) -> void:
 	pending_milestones.append(milestone)

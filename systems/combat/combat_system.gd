@@ -23,6 +23,10 @@ func process_attack(event: DamageEvent) -> void:
 	elif event.damage_type == DamageEvent.DamageType.TRUE:
 		pass 
 		
+	# 3. Tính toán Giảm sát thương nhận vào (ví dụ: Solo Raid Boss giảm 30%)
+	if "damage_reduction" in event.target and event.target.damage_reduction > 0.0:
+		event.final_damage *= (1.0 - clampf(event.target.damage_reduction, 0.0, 1.0))
+		
 	event.final_damage = max(1.0, event.final_damage)
 	
 	var crit_label: String = "💥 CRIT!" if event.is_crit else "Normal"
@@ -39,4 +43,3 @@ func process_attack(event: DamageEvent) -> void:
 	
 	if event.target.is_dead:
 		entity_killed.emit(event.source, event.target)
-

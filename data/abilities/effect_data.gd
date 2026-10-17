@@ -81,5 +81,38 @@ func get_formatted_description(source: CombatEntity = null) -> String:
 		
 	return _build_action_text(total_val, scale_str)
 
+func get_inline_value_bbcode(source: CombatEntity = null) -> String:
+	var total_val := calculate_total_value(source)
+	var scale_parts: Array[String] = []
+	
+	for stat_key in [STAT_AD, STAT_AP, STAT_HP, STAT_ARM]:
+		if scalings.has(stat_key):
+			var ratio: float = float(scalings[stat_key])
+			if ratio > 0.0:
+				var pct := int(round(ratio * 100.0))
+				var col: String = STAT_COLORS.get(stat_key, "#ffffff")
+				var name_str: String = STAT_NAMES.get(stat_key, stat_key)
+				scale_parts.append("[color=%s]+%d%% %s[/color]" % [col, pct, name_str])
+				
+	for stat_key in scalings.keys():
+		if not stat_key in [STAT_AD, STAT_AP, STAT_HP, STAT_ARM]:
+			var ratio: float = float(scalings[stat_key])
+			if ratio > 0.0:
+				var pct := int(round(ratio * 100.0))
+				scale_parts.append("+%d%% %s" % [pct, stat_key])
+				
+	var scale_str := ""
+	if scale_parts.size() > 0:
+		scale_str = " (" + " + ".join(scale_parts) + ")"
+		
+	var val_color: String = "#ff5555"
+	if self is DamageEffectData:
+		var dmg_eff = self as DamageEffectData
+		val_color = "#ff5555" if dmg_eff.damage_type == DamageEvent.DamageType.PHYSICAL else "#9b59b6"
+	elif self is HealEffectData:
+		val_color = "#2ecc71"
+		
+	return "[color=%s][b]%.0f[/b][/color]%s" % [val_color, total_val, scale_str]
+
 func _build_action_text(total_val: float, scale_str: String) -> String:
 	return "Tác dụng [color=#ff5555][b]%.0f[/b][/color]%s." % [total_val, scale_str]

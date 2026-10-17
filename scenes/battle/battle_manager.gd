@@ -77,6 +77,10 @@ func _init_systems() -> void:
 	if placement_controller != null:
 		placement_controller.board_grid = board_grid
 		placement_controller.board_view = board_view
+		placement_controller.entity_selected.connect(func(e):
+			if is_instance_valid(character_stats_ui):
+				character_stats_ui.inspect_hero(e)
+		)
 		placement_controller.hero_selected.connect(func(h):
 			if is_instance_valid(character_stats_ui):
 				character_stats_ui.inspect_hero(h)
@@ -289,17 +293,7 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	heroes.append(hero)
 	return hero
 
-func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, cell: Vector2i) -> EnemyEntity:
-	var data: EnemyData = EnemyData.new()
-	data.name = e_name
-	data.base_hp = hp
-	data.base_attack = atk
-	data.base_defense = def
-	data.attack_speed = spd
-	data.attack_range = 1
-	data.crit_chance = crit_c
-	data.crit_damage = crit_d
-	
+func _spawn_custom_enemy_at_grid(data: EnemyData, cell: Vector2i, spawn_level: int = 1, spawn_rank: EnemyData.EnemyRank = EnemyData.EnemyRank.NORMAL, is_solo_boss: bool = false) -> EnemyEntity:
 	var enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
 	add_child(enemy)
 	enemy.board_grid = board_grid
@@ -315,10 +309,184 @@ func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd
 	
 	enemy.died.connect(_on_entity_died.bind(false))
 	enemy.attack_requested.connect(_on_entity_attack_requested)
-	enemy.initialize(data)
+	enemy.ability_requested.connect(ability_system.execute_ability)
+	enemy.initialize(data, spawn_level, spawn_rank, is_solo_boss)
 	enemy.healed.connect(_on_entity_healed)
 	enemies.append(enemy)
 	return enemy
+
+func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd: float, crit_c: float, crit_d: float, cell: Vector2i) -> EnemyEntity:
+	var data: EnemyData = EnemyData.new()
+	data.name = e_name
+	data.base_hp = hp
+	data.base_attack = atk
+	data.base_defense = def
+	data.attack_speed = spd
+	data.attack_range = 1
+	data.crit_chance = crit_c
+	data.crit_damage = crit_d
+	return _spawn_custom_enemy_at_grid(data, cell, 1, EnemyData.EnemyRank.NORMAL, false)
+
+# ==========================================
+# SPRINT 4: ENCOUNTER DIRECTOR & MONSTER SKILLS (TASK S4.4)
+# ==========================================
+enum FloorType { NORMAL_FLOOR, ELITE_FLOOR, BOSS_FLOOR }
+
+static func create_slime_normal_ability() -> AbilityData:
+	var ab := AbilityData.new()
+	ab.name = "Phun Dịch Axit"
+	ab.ability_type = AbilityData.AbilityType.ACTIVE
+	ab.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
+	ab.cooldown = 4.0
+	ab.energy_cost = 40.0
+	var dmg := DamageEffectData.new()
+	dmg.base_amount = 25.0
+	dmg.damage_type = DamageEvent.DamageType.MAGIC
+	dmg.scalings = { EffectData.STAT_AP: 0.50 }
+	ab.effects = [dmg]
+	ab.description = "Bắn dịch axit ăn mòn vào kẻ địch, gây {0} sát thương phép."
+	return ab
+
+static func create_slime_elite_ability() -> AbilityData:
+	var ab := AbilityData.new()
+	ab.name = "Bùng Nổ Độc Tố"
+	ab.ability_type = AbilityData.AbilityType.ACTIVE
+	ab.target_rule = AbilityData.TargetRule.SELF
+	ab.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
+	ab.aoe_radius = 1
+	ab.cooldown = 5.0
+	ab.energy_cost = 60.0
+	var dmg := DamageEffectData.new()
+	dmg.base_amount = 50.0
+	dmg.damage_type = DamageEvent.DamageType.MAGIC
+	dmg.scalings = { EffectData.STAT_AP: 0.80 }
+	ab.effects = [dmg]
+	ab.description = "Bùng nổ độc tố lan tỏa bán kính 1 ô xung quanh, gây {0} sát thương phép lên kẻ địch."
+	return ab
+
+static func create_slime_boss_ability() -> AbilityData:
+	var ab := AbilityData.new()
+	ab.name = "Đại Hồng Thủy Hắc Ám"
+	ab.ability_type = AbilityData.AbilityType.ULTIMATE
+	ab.target_rule = AbilityData.TargetRule.DENSEST_ENEMY_CLUSTER
+	ab.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
+	ab.aoe_radius = 1
+	ab.cooldown = 8.0
+	ab.energy_cost = 100.0
+	var dmg := DamageEffectData.new()
+	dmg.base_amount = 120.0
+	dmg.damage_type = DamageEvent.DamageType.MAGIC
+	dmg.scalings = { EffectData.STAT_AP: 1.20 }
+	var heal := HealEffectData.new()
+	heal.base_amount = 80.0
+	heal.scalings = { EffectData.STAT_AP: 0.50 }
+	ab.effects = [dmg, heal]
+	ab.description = "Giáng thiên thạch bùn độc vào cụm tướng đông nhất gây {0} sát thương phép, đồng thời hồi {1} Máu cho bản thân."
+	return ab
+
+func get_floor_type(floor_num: int) -> FloorType:
+	if floor_num % 5 == 0:
+		return FloorType.BOSS_FLOOR
+	elif floor_num % 3 == 0:
+		return FloorType.ELITE_FLOOR
+	else:
+		return FloorType.NORMAL_FLOOR
+
+func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> void:
+	for e in enemies:
+		if is_instance_valid(e):
+			e.queue_free()
+	enemies.clear()
+	
+	var floor_type := get_floor_type(floor_num)
+	var base_floor_lv := maxi(1, (floor_num - 1) * 2 + 1)
+	
+	var max_hero_lv := 1
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and h.progression != null:
+			max_hero_lv = maxi(max_hero_lv, h.progression.current_level)
+			
+	match floor_type:
+		FloorType.NORMAL_FLOOR:
+			var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
+			for i in range(slime_coords.size()):
+				var edata := EnemyData.new()
+				edata.name = "Slime %d" % (i + 1)
+				edata.rank = EnemyData.EnemyRank.NORMAL
+				edata.base_hp = 80.0
+				edata.base_attack = 8.0
+				edata.base_defense = 5.0
+				edata.base_spell_power = 10.0
+				edata.attack_speed = 1.0
+				edata.abilities = [create_slime_normal_ability()]
+				_spawn_custom_enemy_at_grid(edata, slime_coords[i], base_floor_lv, EnemyData.EnemyRank.NORMAL)
+				
+		FloorType.ELITE_FLOOR:
+			var elite_lv: int = base_floor_lv + randi_range(2, 4)
+			var elite_edata := EnemyData.new()
+			elite_edata.name = "Slime Tinh Anh"
+			elite_edata.rank = EnemyData.EnemyRank.ELITE
+			elite_edata.base_hp = 120.0
+			elite_edata.base_attack = 14.0
+			elite_edata.base_defense = 8.0
+			elite_edata.base_spell_power = 15.0
+			elite_edata.abilities = [create_slime_elite_ability()]
+			_spawn_custom_enemy_at_grid(elite_edata, Vector2i(3, 1), elite_lv, EnemyData.EnemyRank.ELITE)
+			
+			var normal_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2)]
+			for i in range(normal_coords.size()):
+				var norm_lv := maxi(1, elite_lv - randi_range(1, 5))
+				var edata := EnemyData.new()
+				edata.name = "Slime Thường %d" % (i + 1)
+				edata.rank = EnemyData.EnemyRank.NORMAL
+				edata.base_hp = 80.0
+				edata.base_attack = 8.0
+				edata.base_defense = 5.0
+				edata.base_spell_power = 10.0
+				edata.abilities = [create_slime_normal_ability()]
+				_spawn_custom_enemy_at_grid(edata, normal_coords[i], norm_lv, EnemyData.EnemyRank.NORMAL)
+				
+		FloorType.BOSS_FLOOR:
+			var variant := force_boss_variant
+			if variant == 0:
+				variant = 1 if randf() < 0.5 else 2
+				
+			if variant == 1:
+				var boss_lv := max_hero_lv + randi_range(3, 6)
+				var boss_edata := EnemyData.new()
+				boss_edata.name = "Slime Đại Vương"
+				boss_edata.rank = EnemyData.EnemyRank.BOSS
+				boss_edata.base_hp = 250.0
+				boss_edata.base_attack = 20.0
+				boss_edata.base_defense = 12.0
+				boss_edata.base_spell_power = 25.0
+				boss_edata.abilities = [create_slime_boss_ability()]
+				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 1), boss_lv, EnemyData.EnemyRank.BOSS, false)
+				
+				var elite_count := randi_range(1, 2)
+				var elite_pos = [Vector2i(2, 2), Vector2i(4, 2)]
+				for i in range(elite_count):
+					var elite_i_lv := maxi(1, boss_lv - randi_range(1, 10))
+					var elite_edata := EnemyData.new()
+					elite_edata.name = "Hộ Vệ Tinh Anh %d" % (i + 1)
+					elite_edata.rank = EnemyData.EnemyRank.ELITE
+					elite_edata.base_hp = 120.0
+					elite_edata.base_attack = 14.0
+					elite_edata.base_defense = 8.0
+					elite_edata.base_spell_power = 15.0
+					elite_edata.abilities = [create_slime_elite_ability()]
+					_spawn_custom_enemy_at_grid(elite_edata, elite_pos[i], elite_i_lv, EnemyData.EnemyRank.ELITE)
+			else:
+				var solo_boss_lv := max_hero_lv + randi_range(10, 20)
+				var boss_edata := EnemyData.new()
+				boss_edata.name = "Slime Chúa Tể"
+				boss_edata.rank = EnemyData.EnemyRank.BOSS
+				boss_edata.base_hp = 300.0
+				boss_edata.base_attack = 25.0
+				boss_edata.base_defense = 15.0
+				boss_edata.base_spell_power = 30.0
+				boss_edata.abilities = [create_slime_boss_ability()]
+				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), solo_boss_lv, EnemyData.EnemyRank.BOSS, true)
 
 # Giữ lại các hàm spawn bằng offset cũ cho tính tương thích ngược nếu cần
 func _spawn_hero(data: HeroData, offset: Vector2) -> void:
@@ -682,12 +850,15 @@ func _log_test(msg: String) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
 		var mouse_pos: Vector2 = get_global_mouse_position()
-		for h in heroes:
-			if is_instance_valid(h) and not h.is_dead:
+		var all_entities: Array[CombatEntity] = []
+		all_entities.append_array(heroes)
+		all_entities.append_array(enemies)
+		for e in all_entities:
+			if is_instance_valid(e) and not e.is_dead:
 				var rad: float = board_config.hex_radius if board_config != null else 44.0
-				if h.global_position.distance_to(mouse_pos) <= rad:
+				if e.global_position.distance_to(mouse_pos) <= rad:
 					if is_instance_valid(character_stats_ui):
-						character_stats_ui.inspect_hero(h)
+						character_stats_ui.inspect_hero(e)
 					return
 
 func _input(event: InputEvent) -> void:
@@ -723,6 +894,7 @@ func _input(event: InputEvent) -> void:
 		KEY_PERIOD: _run_tc_16_character_stats_ui()
 		KEY_COMMA: _run_tc_17_skill_scaling_and_tooltip()
 		KEY_SEMICOLON: _run_tc_18_skill_upgrades_and_isolation()
+		KEY_APOSTROPHE: _run_tc_19_narrative_and_encounter_director()
 
 func _run_all_tests() -> void:
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
@@ -753,8 +925,9 @@ func _run_all_tests() -> void:
 	_run_tc_16_character_stats_ui()
 	_run_tc_17_skill_scaling_and_tooltip()
 	_run_tc_18_skill_upgrades_and_isolation()
+	_run_tc_19_narrative_and_encounter_director()
 	
-	_log_test("\n🎉 TẤT CẢ 18 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 19 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -2260,6 +2433,203 @@ func _run_tc_18_skill_upgrades_and_isolation() -> void:
 	_log_test(">>> 🟢 TC-18.3 Monte-Carlo Gacha Probability Distribution PASSED!")
 	
 	_log_test(">>> 🟢 TC-18 PASSED: Skill Upgrades & Resource Isolation fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-19: Narrative Tooltip, Lv99 Piecewise XP & Encounter Director (Sprint 4 Task S4.3, S4.4)
+# ------------------------------------------------------------------------------
+func _run_tc_19_narrative_and_encounter_director() -> void:
+	_log_test("\n==================== [TEST TC-19: NARRATIVE TOOLTIP, LV99 XP & ENCOUNTER DIRECTOR] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-19.1: NARRATIVE TEMPLATE INTERPOLATION & DYNAMIC BBCODE TOOLTIP
+	_log_test("[TC-19.1] Checking Narrative Template Interpolation ({0}, {1})...")
+	var test_hero_data := _create_mock_hero_data("Khadgar", HeroData.HeroClass.MAGE, 100.0, 10.0, 10.0, 1.0, 3, 40.0)
+	var caster := hero_scene.instantiate() as HeroEntity
+	add_child(caster)
+	caster.initialize(test_hero_data)
+	
+	var fireball := AbilityData.new()
+	fireball.name = "Hỏa Cầu Thuật"
+	fireball.description = "Bắn cầu lửa thiêu đốt mục tiêu, gây {0} sát thương phép."
+	var dmg := DamageEffectData.new()
+	dmg.base_amount = 100.0
+	dmg.damage_type = DamageEvent.DamageType.MAGIC
+	dmg.scalings = { EffectData.STAT_AP: 0.50 }
+	fireball.effects = [dmg]
+	
+	var tooltip_caster := fireball.get_formatted_tooltip(caster)
+	_log_test("[TC-19.1] Interpolated Tooltip (AP=40): %s" % tooltip_caster)
+	assert(not tooltip_caster.contains("{0}"), "FAIL TC-19.1: Placeholder {0} was not replaced")
+	assert(tooltip_caster.contains("120"), "FAIL TC-19.1: Value should be 100 + 40*0.5 = 120")
+	assert(tooltip_caster.contains("+50% SMPT"), "FAIL TC-19.1: Tooltip should display +50% SMPT scaling")
+	assert(tooltip_caster.begins_with("Bắn cầu lửa thiêu đốt mục tiêu, gây "), "FAIL TC-19.1: Template prefix missing")
+	
+	# Multi-effect interpolation ({0} and {1})
+	var multi_ab := create_slime_boss_ability()
+	var tooltip_multi := multi_ab.get_formatted_tooltip(caster)
+	_log_test("[TC-19.1] Multi-effect Tooltip: %s" % tooltip_multi)
+	assert(not tooltip_multi.contains("{0}") and not tooltip_multi.contains("{1}"), "FAIL TC-19.1: Multi placeholders {0}, {1} not replaced")
+	# Effect 0: 120 + 40*1.2 = 168. Effect 1: 80 + 40*0.5 = 100
+	assert(tooltip_multi.contains("168"), "FAIL TC-19.1: Multi-effect {0} value mismatch (expected 168)")
+	assert(tooltip_multi.contains("100"), "FAIL TC-19.1: Multi-effect {1} value mismatch (expected 100)")
+	
+	# Fallback backward compatibility (no template)
+	var legacy_ab := AbilityData.new()
+	legacy_ab.name = "Chém Thường"
+	legacy_ab.description = "Đòn đánh vật lý cơ bản"
+	legacy_ab.effects = [dmg]
+	var tooltip_legacy := legacy_ab.get_formatted_tooltip(caster)
+	assert(tooltip_legacy.contains("120"), "FAIL TC-19.1: Legacy tooltip should display formatted effect lines")
+	
+	# Null source safety check
+	var tooltip_null := fireball.get_formatted_tooltip(null)
+	assert(tooltip_null.contains("100"), "FAIL TC-19.1: Null source tooltip should display base amount 100")
+	caster.queue_free()
+	_log_test(">>> 🟢 TC-19.1 Narrative Template Interpolation PASSED!")
+	
+	# 2. TC-19.2: PIECEWISE XP CURVE & LEVEL 99 PROGRESSION
+	_log_test("[TC-19.2] Checking Piecewise XP Curve & Lv99 Progression...")
+	assert(HeroProgression.MAX_LEVEL == 99, "FAIL TC-19.2: MAX_LEVEL must be 99")
+	assert(HeroProgression.MILESTONES.size() == 11, "FAIL TC-19.2: MILESTONES should have 11 milestones")
+	assert(HeroProgression.MILESTONES == [5, 10, 15, 20, 25, 35, 50, 65, 75, 90, 99], "FAIL TC-19.2: Milestone array mismatch")
+	
+	var prog := HeroProgression.new()
+	# Backward compatibility: verify exact TC-12.3 values
+	prog.add_xp(2000.0)
+	assert(prog.current_level == 10, "FAIL TC-19.2: 2000 XP must result in Level 10 (TC-12.3 regression check)")
+	assert(prog.pending_milestones == [5, 10], "FAIL TC-19.2: Milestones 5 and 10 must be unlocked")
+	prog.add_xp(3000.0)
+	assert(prog.current_level == 16, "FAIL TC-19.2: 5000 XP must result in Level 16 (TC-12.3 regression check)")
+	
+	# Piecewise dampening for levels 26 - 99
+	var xp_req_25 := prog._calculate_required_xp(25)
+	var xp_req_26 := prog._calculate_required_xp(26)
+	assert(xp_req_26 > xp_req_25, "FAIL TC-19.2: Level 26 required XP must be greater than Level 25")
+	
+	var xp_req_50 := prog._calculate_required_xp(50)
+	var xp_req_99 := prog._calculate_required_xp(99)
+	_log_test("[TC-19.2] Required XP: Lv25 = %.1f | Lv26 = %.1f | Lv50 = %.1f | Lv99 = %.1f" % [xp_req_25, xp_req_26, xp_req_50, xp_req_99])
+	assert(xp_req_50 < 10000.0, "FAIL TC-19.2: Lv50 required XP must be < 10,000 (got %.1f)" % xp_req_50)
+	assert(xp_req_99 < 20000.0, "FAIL TC-19.2: Lv99 required XP must be < 20,000 without exponential explosion (got %.1f)" % xp_req_99)
+	_log_test(">>> 🟢 TC-19.2 Piecewise XP Curve & Lv99 Progression PASSED!")
+	
+	# 3. TC-19.3: MONSTER SKILLS, ENERGY GAIN, CASTING & DEAD COOLDOWN HALT
+	_log_test("[TC-19.3] Checking Enemy Skills, Energy & Polymorphic CombatEntity...")
+	var elite_data := EnemyData.new()
+	elite_data.name = "EliteSlimeTest"
+	elite_data.rank = EnemyData.EnemyRank.ELITE
+	elite_data.base_hp = 200.0
+	elite_data.base_attack = 20.0
+	elite_data.base_defense = 0.0
+	elite_data.base_spell_power = 25.0
+	elite_data.abilities = [create_slime_elite_ability()]
+	var elite_enemy: EnemyEntity = _spawn_custom_enemy_at_grid(elite_data, Vector2i(3, 2), 10, EnemyData.EnemyRank.ELITE)
+	
+	assert(elite_enemy.level == 10, "FAIL TC-19.3: Enemy level mismatch")
+	assert(elite_enemy.unlocked_abilities.size() == 1, "FAIL TC-19.3: Elite enemy should have 1 ability")
+	assert(elite_enemy.status_bar != null and is_instance_valid(elite_enemy.status_bar.energy_bar), "FAIL TC-19.3: EnergyBar must be visible for enemy with skills")
+	
+	# Energy gain test
+	elite_enemy.current_energy = 0.0
+	elite_enemy._gain_energy(35.0)
+	assert(elite_enemy.current_energy == 35.0, "FAIL TC-19.3: Enemy energy gain failed")
+	
+	# Skill execution test
+	elite_enemy.current_energy = 100.0
+	var elite_ab: Ability = elite_enemy.unlocked_abilities[0]
+	var cast_success := ability_system.execute_ability(elite_ab)
+	assert(cast_success == true, "FAIL TC-19.3: Enemy ability execution failed")
+	assert(elite_enemy.current_energy == 40.0, "FAIL TC-19.3: Enemy energy should deduct cost 60.0 (100 - 60 = 40)")
+	assert(elite_ab.current_cooldown == elite_ab.data.cooldown, "FAIL TC-19.3: Ability cooldown not started")
+	
+	# Dead cooldown halt test
+	elite_enemy.is_dead = true
+	elite_enemy._process(2.0)
+	assert(elite_ab.current_cooldown == elite_ab.data.cooldown, "FAIL TC-19.3: Cooldown must NOT tick when entity is dead")
+	
+	# Damage Reduction test
+	var mock_attacker := hero_scene.instantiate() as HeroEntity
+	add_child(mock_attacker)
+	var atk_data := _create_mock_hero_data("Attacker", HeroData.HeroClass.FIGHTER, 100.0, 100.0, 0.0, 1.0)
+	mock_attacker.initialize(atk_data)
+	
+	var norm_target: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(norm_target)
+	var t_data := EnemyData.new()
+	t_data.base_hp = 500.0; t_data.base_defense = 0.0
+	norm_target.initialize(t_data, 1, EnemyData.EnemyRank.NORMAL, false)
+	
+	var boss_target: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(boss_target)
+	boss_target.initialize(t_data, 1, EnemyData.EnemyRank.BOSS, true) # Solo boss has 30% reduction
+	assert(boss_target.damage_reduction == 0.30, "FAIL TC-19.3: Solo boss damage_reduction should be 0.30")
+	
+	var norm_hp_before := norm_target.current_hp
+	var boss_hp_before := boss_target.current_hp
+	var ev_norm := DamageEvent.new(mock_attacker, norm_target, 100.0, DamageEvent.DamageType.PHYSICAL)
+	var ev_boss := DamageEvent.new(mock_attacker, boss_target, 100.0, DamageEvent.DamageType.PHYSICAL)
+	combat_system.process_attack(ev_norm)
+	combat_system.process_attack(ev_boss)
+	
+	var norm_dmg := norm_hp_before - norm_target.current_hp
+	var boss_dmg := boss_hp_before - boss_target.current_hp
+	_log_test("[TC-19.3] Damage to Normal (0%% DR): %.1f | Damage to Solo Boss (30%% DR): %.1f" % [norm_dmg, boss_dmg])
+	assert(abs(norm_dmg - 100.0) < 0.1, "FAIL TC-19.3: Normal target damage mismatch")
+	assert(abs(boss_dmg - 70.0) < 0.1, "FAIL TC-19.3: Boss target damage should be reduced by 30%% (expected 70, got %.1f)" % boss_dmg)
+	
+	elite_enemy.queue_free()
+	mock_attacker.queue_free()
+	norm_target.queue_free()
+	boss_target.queue_free()
+	_log_test(">>> 🟢 TC-19.3 Monster Skills & Damage Reduction PASSED!")
+	
+	# 4. TC-19.4: ENCOUNTER DIRECTOR & FLOOR COMPOSITIONS
+	_log_test("[TC-19.4] Checking Encounter Director Floor Rules...")
+	assert(get_floor_type(1) == FloorType.NORMAL_FLOOR, "FAIL TC-19.4: Floor 1 must be NORMAL")
+	assert(get_floor_type(2) == FloorType.NORMAL_FLOOR, "FAIL TC-19.4: Floor 2 must be NORMAL")
+	assert(get_floor_type(3) == FloorType.ELITE_FLOOR, "FAIL TC-19.4: Floor 3 must be ELITE")
+	assert(get_floor_type(5) == FloorType.BOSS_FLOOR, "FAIL TC-19.4: Floor 5 must be BOSS")
+	assert(get_floor_type(6) == FloorType.ELITE_FLOOR, "FAIL TC-19.4: Floor 6 must be ELITE")
+	assert(get_floor_type(15) == FloorType.BOSS_FLOOR, "FAIL TC-19.4: Floor 15 must be BOSS (Priority over ELITE)")
+	
+	# Floor 1 Spawning
+	spawn_encounter_for_floor(1)
+	assert(enemies.size() == 5, "FAIL TC-19.4: Floor 1 should spawn 5 normal enemies")
+	for e in enemies:
+		assert(e.level == 1, "FAIL TC-19.4: Floor 1 enemy level should be 1")
+		assert(e.data.rank == EnemyData.EnemyRank.NORMAL, "FAIL TC-19.4: Floor 1 enemy rank should be NORMAL")
+		
+	# Floor 3 Elite Spawning
+	spawn_encounter_for_floor(3)
+	var elite_count := 0
+	for e in enemies:
+		if e.data.rank == EnemyData.EnemyRank.ELITE:
+			elite_count += 1
+			assert(e.level >= 5, "FAIL TC-19.4: Elite enemy level should be boosted (>= 5)")
+	assert(elite_count == 1, "FAIL TC-19.4: Floor 3 must have 1 Elite enemy")
+	
+	# Floor 5 Variant 1: Boss + Elites
+	spawn_encounter_for_floor(5, 1)
+	var v1_boss := 0
+	var v1_elite := 0
+	for e in enemies:
+		if e.data.rank == EnemyData.EnemyRank.BOSS:
+			v1_boss += 1
+		elif e.data.rank == EnemyData.EnemyRank.ELITE:
+			v1_elite += 1
+	assert(v1_boss == 1, "FAIL TC-19.4: Variant 1 must spawn 1 Boss")
+	assert(v1_elite >= 1, "FAIL TC-19.4: Variant 1 must spawn at least 1 Elite minion")
+	
+	# Floor 5 Variant 2: Solo Raid Boss
+	spawn_encounter_for_floor(5, 2)
+	assert(enemies.size() == 1, "FAIL TC-19.4: Solo Boss variant must spawn exactly 1 enemy")
+	var solo_boss: EnemyEntity = enemies[0]
+	assert(solo_boss.data.rank == EnemyData.EnemyRank.BOSS, "FAIL TC-19.4: Solo Boss rank mismatch")
+	assert(solo_boss.damage_reduction == 0.30, "FAIL TC-19.4: Solo Boss must have 30% damage reduction")
+	_log_test("[TC-19.4] Solo Boss HP: %.1f | DR: %.0f%%" % [solo_boss.max_hp, solo_boss.damage_reduction * 100.0])
+	_log_test(">>> 🟢 TC-19.4 Encounter Director Floor Compositions PASSED!")
+	
+	_log_test(">>> 🟢 TC-19 PASSED: Narrative Interpolation, Lv99 XP & Encounter Director fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
