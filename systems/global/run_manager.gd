@@ -2,7 +2,6 @@
 # ==========================================
 # ROGUELIKE RUN MANAGER (SPRINT 3 - TASK S3.3)
 # Quản lý vòng đời lượt chơi: Mạng sống (Lives), Vàng (Gold), Số Tầng (Floor)
-# ==========================================
 extends Node
 
 signal gold_changed(new_gold: int, delta: int)

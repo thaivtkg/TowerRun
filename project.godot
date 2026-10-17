@@ -21,7 +21,7 @@ EventBus="*uid://rmy1pkxq0y0y"
 GameManager="*uid://b5q6t1v3xhu3r"
 SaveManager="*uid://drkguelcgtghg"
 DataManager="*uid://lub4pclrj6oa"
-RunManager="*res://systems/global/run_manager.gd"
+RunManager="*uid://bt06pfyx6rpqn"
 
 [display]
 
