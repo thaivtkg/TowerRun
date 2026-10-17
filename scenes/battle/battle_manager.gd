@@ -55,6 +55,9 @@ func _start_battle() -> void:
 	_init_systems()
 	_spawn_mock_teams()
 	enter_preparation_phase()
+	for h in heroes:
+		if is_instance_valid(h) and h.name == "Kira":
+			print("[BattleManager] ⚡ Kira Energy Check: Current = %.1f / %.1f | Bar = %.1f" % [h.current_energy, h.max_energy, h.status_bar.energy_bar.value if (h.status_bar and h.status_bar.energy_bar) else -1.0])
 
 func _init_systems() -> void:
 	board_config = BoardConfig.new()
@@ -186,7 +189,7 @@ func _spawn_mock_teams() -> void:
 		board_grid.clear()
 		
 	# 1. Tướng THẬT (Kira - Assassin): Hàng đầu Hero Zone (y = 3)
-	var kira_data = load("res://data/kira_data.tres") as HeroData
+	var kira_data = load("res://data/heroes/kira_data.tres") as HeroData
 	if kira_data:
 		_spawn_hero_at_grid(kira_data, Vector2i(4, 3))
 		

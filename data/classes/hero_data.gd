@@ -15,6 +15,8 @@ enum HeroClass { TANK, FIGHTER, ASSASSIN, MAGE, MARKSMAN, SUPPORT }
 @export var crit_chance: float = 0.0
 @export var crit_damage: float = 2.0
 @export var attack_range: float = 1.0 
+@export var starting_energy: float = 0.0
+@export var max_energy: float = 100.0 
 
 @export_group("Core Abilities")
 @export var basic_attack: AbilityData 

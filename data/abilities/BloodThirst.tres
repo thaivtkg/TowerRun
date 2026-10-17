@@ -10,6 +10,8 @@ metadata/_custom_type_script = "uid://fua8wtf0i8hk"
 
 [resource]
 script = ExtResource("2_fftfc")
+id = "kira_bloodthirst"
+name = "Bloodthirst"
 ability_type = 0
 target_rule = 0
 trigger_condition = 2

@@ -12,6 +12,8 @@ metadata/_custom_type_script = "uid://ca1q8rjlmknkg"
 
 [resource]
 script = ExtResource("3_dl5bl")
+id = "kira_basic_attack"
+name = "Kira Basic Attack"
 cooldown = 1.0
 effects = Array[ExtResource("1_gskcq")]([SubResource("Resource_43fw1")])
 metadata/_custom_type_script = "uid://cekmi44787o2m"

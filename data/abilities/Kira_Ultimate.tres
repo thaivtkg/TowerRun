@@ -12,6 +12,8 @@ metadata/_custom_type_script = "uid://ca1q8rjlmknkg"
 
 [resource]
 script = ExtResource("2_u6icb")
+id = "kira_ultimate"
+name = "Kira Ultimate"
 ability_type = 2
 target_rule = 6
 cooldown = 0.0

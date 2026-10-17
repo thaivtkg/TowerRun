@@ -36,6 +36,12 @@ func initialize(initial_data: HeroData) -> void:
 	name = data.name 
 	max_hp = data.base_hp
 	current_hp = data.base_hp
+	if "max_energy" in data and data.max_energy > 0.0:
+		max_energy = data.max_energy
+	if "starting_energy" in data:
+		current_energy = data.starting_energy
+	else:
+		current_energy = 0.0
 	setup_status_bar(true)
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
