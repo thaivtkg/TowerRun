@@ -172,25 +172,31 @@ func get_effective_level() -> int:
 		return progression.current_level
 	return level
 
+var passive_stat_bonus: float = 0.0
+
+func add_milestone_compensation(count: int = 1) -> void:
+	passive_stat_bonus += 0.05 * float(count)
+	_update_scaled_max_hp()
+
 func calculate_max_hp(lvl: int) -> float:
 	var base: float = data.base_hp if data != null else 100.0
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult
+	return base * factor * t_mult * (1.0 + passive_stat_bonus)
 
 func get_attack() -> float:
 	var base: float = data.base_attack if data != null else 10.0
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult
+	return base * factor * t_mult * (1.0 + passive_stat_bonus)
 
 func get_spell_power() -> float:
 	var base: float = data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult
+	return base * factor * t_mult * (1.0 + passive_stat_bonus)
 
 func get_defense() -> float:
 	var base: float = data.base_defense if data != null else 0.0

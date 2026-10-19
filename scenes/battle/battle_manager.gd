@@ -1,6 +1,7 @@
 extends Node2D
 
 const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/FloatingText.tscn")
+const ShieldEffectData = preload("res://data/abilities/shield_effect_data.gd")
 
 @export var hero_scene: PackedScene
 @export var enemy_scene: PackedScene
@@ -615,6 +616,7 @@ func _reset_heroes_for_new_run() -> void:
 				hero.progression.current_level = 1
 				hero.progression.current_xp = 0.0
 				hero.progression.pending_milestones.clear()
+			hero.passive_stat_bonus = 0.0
 			hero.unlocked_abilities.clear()
 			if hero.data != null:
 				hero.initialize(hero.data)
@@ -645,18 +647,30 @@ func _build_post_battle_choice_queue() -> void:
 	for entity in all_heroes:
 		if entity is HeroEntity:
 			var hero = entity as HeroEntity
-			for milestone in hero.pending_milestones:
-				var choices: Array = []
-				if progression_system != null:
-					choices = progression_system.generate_upgrade_choices(hero, milestone)
-				if choices.is_empty():
-					choices = hero.pull_milestone_choices(milestone)
-				if not choices.is_empty():
-					choice_queue.append({
-						"hero": hero,
-						"milestone": milestone,
-						"choices": choices
-					})
+			if hero.pending_milestones.is_empty():
+				continue
+				
+			# SPRINT 5: ONE-CHOICE RULE & MILESTONE FUSION (GD SPEC SECTION I.2)
+			# Mỗi Hero chỉ kích hoạt DUY NHẤT 1 lần mở bảng chọn thẻ kỹ năng sau trận
+			hero.pending_milestones.sort()
+			var highest_milestone: int = hero.pending_milestones[-1]
+			var skipped_count: int = hero.pending_milestones.size() - 1
+			
+			# Đền bù mốc bị bỏ qua: +5% stats per skipped milestone
+			if skipped_count > 0:
+				hero.add_milestone_compensation(skipped_count)
+				
+			var choices: Array = []
+			if progression_system != null:
+				choices = progression_system.generate_upgrade_choices(hero, highest_milestone)
+			if choices.is_empty():
+				choices = hero.pull_milestone_choices(highest_milestone)
+			if not choices.is_empty():
+				choice_queue.append({
+					"hero": hero,
+					"milestone": highest_milestone,
+					"choices": choices
+				})
 			hero.pending_milestones.clear()
 
 func _process_next_choice() -> void:
@@ -1044,6 +1058,7 @@ func _input(event: InputEvent) -> void:
 		KEY_F2: _run_tc_22_floating_combat_text()
 		KEY_F3: _run_tc_23_tft_level_crest_and_compact_grid()
 		KEY_F4: _run_tc_24_hero_stat_progression_and_seamless_ui()
+		KEY_F5: _run_tc_25_monolithic_header_one_choice_and_scaling()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1053,9 +1068,9 @@ func _input(event: InputEvent) -> void:
 			toggle_god_mode()
 		KEY_K:
 			cheat_kill_all_enemies()
-		KEY_F5:
-			cheat_warp_floor(5)
 		KEY_F6:
+			cheat_warp_floor(5)
+		KEY_F7:
 			if RunManager != null:
 				RunManager.add_gold(50)
 				if debug_cheat_ui != null:
@@ -1099,8 +1114,9 @@ func _run_all_tests() -> void:
 	_run_tc_22_floating_combat_text()
 	_run_tc_23_tft_level_crest_and_compact_grid()
 	_run_tc_24_hero_stat_progression_and_seamless_ui()
+	_run_tc_25_monolithic_header_one_choice_and_scaling()
 	
-	_log_test("\n🎉 TẤT CẢ 24 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 25 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1367,7 +1383,8 @@ func _run_tc_05_post_battle_choice_queue() -> void:
 	assert(not skill_ui.visible, "FAIL: UI opened mid-combat")
 	
 	_end_battle(GameManager.GameState.REWARD, "Victory Test")
-	assert(choice_queue.size() == 3, "FAIL: Queue construction failed")
+	assert(choice_queue.size() == 1, "FAIL: One-Choice Rule must consolidate single hero to 1 choice")
+	assert(choice_queue[0].milestone == 15, "FAIL: Highest milestone 15 must be chosen")
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
 	if get_tree() != null:
@@ -3280,7 +3297,7 @@ func _run_tc_23_tft_level_crest_and_compact_grid() -> void:
 	
 	# 3. TC-23.3: TOP-CENTER ANCHORING & TFT COMPACT GRID LAYOUT
 	_log_test("[TC-23.3] Checking Top-Center Anchoring & Compact TFT Grid...")
-	assert(character_stats_ui.crest_panel.position.y == -14.0, "FAIL TC-23.3: Crest Y position must be -14px")
+	assert(character_stats_ui.crest_panel.position.y >= 0.0, "FAIL TC-23.3: Crest Y position must be >= 0 (Integrated in Monolithic Header)")
 	assert(character_stats_ui.crest_panel.custom_minimum_size.x >= 120.0, "FAIL TC-23.3: Crest minimum width must be >= 120px")
 	assert(character_stats_ui.crest_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER, "FAIL TC-23.3: Crest label must be centered")
 	assert(character_stats_ui.speed_val_label != null and character_stats_ui.crit_val_label != null, "FAIL TC-23.3: Compact grid labels missing")
@@ -3398,6 +3415,127 @@ func _run_tc_24_hero_stat_progression_and_seamless_ui() -> void:
 	hero_inst.queue_free()
 	_log_test(">>> 🟢 TC-24.3 Click-Outside Dismiss & Click-Inside Persistence PASSED!")
 	_log_test(">>> 🟢 TC-24 PASSED: Hero Stat Progression & Seamless UI fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-25: Monolithic Crest Header, One-Choice Gacha & Advanced Stat Scaling
+# (GD & QA Specification Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_25_monolithic_header_one_choice_and_scaling() -> void:
+	_log_test("\n==================== [TEST TC-25: MONOLITHIC HEADER, ONE-CHOICE & SCALING] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-25.1: MONOLITHIC CREST HEADER (Inside panel, Y >= 0, single outer boundary)
+	_log_test("[TC-25.1] Checking True Monolithic Header (Inside panel, Y >= 0, single outer border)...")
+	var kira_hero := heroes[0] as HeroEntity
+	character_stats_ui.inspect_hero(kira_hero)
+	assert(character_stats_ui.visible == true, "FAIL TC-25.1: CharacterStatsUI should be visible")
+	assert(character_stats_ui.crest_panel != null, "FAIL TC-25.1: crest_panel must exist")
+	assert(character_stats_ui.crest_panel.position.y >= 0.0, "FAIL TC-25.1: Crest Y position must be >= 0 (got %f)" % character_stats_ui.crest_panel.position.y)
+	assert(character_stats_ui.crest_overlay == null or character_stats_ui.crest_overlay.get_child_count() == 0, "FAIL TC-25.1: No detached crest overlay should be used")
+	var panel_style = character_stats_ui.panel_container.get_theme_stylebox("panel") as StyleBoxFlat
+	assert(panel_style != null, "FAIL TC-25.1: panel_container StyleBoxFlat missing")
+	assert(panel_style.border_width_left == 2 and panel_style.corner_radius_top_left == 12, "FAIL TC-25.1: Monolithic panel border width 2, radius 12 required")
+	character_stats_ui.close()
+	_log_test(">>> 🟢 TC-25.1 Monolithic Crest Header PASSED!")
+	
+	# 2. TC-25.2: ONE-CHOICE CONSOLIDATION & MILESTONE FUSION (+5000 XP across mốc 5, 10, 15)
+	_log_test("[TC-25.2] Checking One-Choice Rule & Milestone Fusion for 5000 XP...")
+	var test_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(_create_mock_hero_data("KiraTest", HeroData.HeroClass.ASSASSIN, 100.0, 60.0, 10.0, 1.0, 1))
+	for lvl in [5, 10, 15]:
+		var pool: Array[AbilityData] = []
+		for i in range(3):
+			var a = AbilityData.new()
+			a.name = "Skill_%d_%d" % [lvl, i + 1]
+			pool.append(a)
+		test_hero.runtime_pools[lvl] = pool
+	
+	test_hero.progression.add_xp(5000.0)
+	assert(test_hero.progression.current_level >= 15, "FAIL TC-25.2: Level should be >= 15 after 5000 XP")
+	assert(test_hero.pending_milestones.has(5) and test_hero.pending_milestones.has(10) and test_hero.pending_milestones.has(15), "FAIL TC-25.2: Pending milestones should contain 5, 10, 15")
+	
+	heroes.clear()
+	heroes.append(test_hero)
+	_build_post_battle_choice_queue()
+	
+	assert(choice_queue.size() == 1, "FAIL TC-25.2: choice_queue must contain exactly 1 entry per hero, got %d" % choice_queue.size())
+	assert(choice_queue[0].milestone == 15, "FAIL TC-25.2: Milestone fusion must pick highest milestone (15), got %d" % choice_queue[0].milestone)
+	assert(is_equal_approx(test_hero.passive_stat_bonus, 0.10), "FAIL TC-25.2: Compensation for 2 skipped milestones should be 0.10 (+10%%), got %f" % test_hero.passive_stat_bonus)
+	assert(test_hero.pending_milestones.is_empty(), "FAIL TC-25.2: pending_milestones should be cleared after building queue")
+	choice_queue.clear()
+	heroes.clear()
+	test_hero.queue_free()
+	_log_test(">>> 🟢 TC-25.2 One-Choice Consolidation & Milestone Fusion PASSED!")
+	
+	# 3. TC-25.3: TOTAL AD VS BONUS AD SCALING TOOLTIP BREAKDOWN
+	_log_test("[TC-25.3] Checking Total AD vs Bonus AD scaling and breakdown...")
+	var kira_data := HeroData.new()
+	kira_data.name = "Kira"
+	kira_data.base_attack = 60.0
+	var mock_kira: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(mock_kira)
+	mock_kira.data = kira_data
+	mock_kira.passive_stat_bonus = (100.0 / 60.0) - 1.0
+	assert(is_equal_approx(mock_kira.get_attack(), 100.0), "FAIL TC-25.3: Kira Total AD should be 100.0, got %f" % mock_kira.get_attack())
+	
+	# Test 3a: Total AD Scale (Base 70, 20% Total AD, Magic)
+	var dmg_total := DamageEffectData.new()
+	dmg_total.base_damage = 70.0
+	dmg_total.damage_type = DamageEvent.DamageType.MAGIC
+	dmg_total.scalings = { EffectData.STAT_TOTAL_AD: 0.20 }
+	var total_val := dmg_total.calculate_total_value(mock_kira)
+	assert(is_equal_approx(total_val, 90.0), "FAIL TC-25.3: 70 + 100*0.20 must equal 90.0, got %f" % total_val)
+	var tooltip_total := dmg_total.get_formatted_description(mock_kira)
+	_log_test("[TC-25.3] Tooltip Total AD: %s" % tooltip_total)
+	assert(tooltip_total.contains("90") and tooltip_total.contains("70 + ") and tooltip_total.contains("20") and tooltip_total.contains("20% Tổng SMCK"), "FAIL TC-25.3: Total AD breakdown text mismatch")
+	
+	# Test 3b: Bonus AD Scale (Base 70, 50% Bonus AD, Magic)
+	var dmg_bonus := DamageEffectData.new()
+	dmg_bonus.base_damage = 70.0
+	dmg_bonus.damage_type = DamageEvent.DamageType.MAGIC
+	dmg_bonus.scalings = { EffectData.STAT_BONUS_AD: 0.50 }
+	var bonus_val := dmg_bonus.calculate_total_value(mock_kira)
+	assert(is_equal_approx(bonus_val, 90.0), "FAIL TC-25.3: 70 + 40*0.50 must equal 90.0, got %f" % bonus_val)
+	var tooltip_bonus := dmg_bonus.get_formatted_description(mock_kira)
+	_log_test("[TC-25.3] Tooltip Bonus AD: %s" % tooltip_bonus)
+	assert(tooltip_bonus.contains("90") and tooltip_bonus.contains("70 + ") and tooltip_bonus.contains("20") and tooltip_bonus.contains("50% SMCK cộng thêm"), "FAIL TC-25.3: Bonus AD breakdown text mismatch")
+	
+	mock_kira.queue_free()
+	_log_test(">>> 🟢 TC-25.3 Total AD vs Bonus AD Scaling PASSED!")
+	
+	# 4. TC-25.4: PURE PERCENTAGE SHIELD & HEAL (BASE_AMOUNT = 0)
+	_log_test("[TC-25.4] Checking Pure Percentage Shield & Heal (base_amount = 0)...")
+	var tank_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(tank_hero)
+	tank_hero.max_hp = 400.0
+	
+	# Test 4a: Pure % Shield (25% Max HP, 4s duration)
+	var pure_shield := ShieldEffectData.new()
+	pure_shield.base_amount = 0.0
+	pure_shield.duration = 4.0
+	pure_shield.scalings = { EffectData.STAT_TOTAL_HP: 0.25 }
+	var shield_val := pure_shield.calculate_total_value(tank_hero)
+	assert(is_equal_approx(shield_val, 100.0), "FAIL TC-25.4: 25%% of 400 HP should be 100.0, got %f" % shield_val)
+	var shield_desc := pure_shield.get_formatted_description(tank_hero)
+	_log_test("[TC-25.4] Shield Description: %s" % shield_desc)
+	assert(shield_desc.contains("100") and shield_desc.contains("bằng 25% Máu tối đa") and not shield_desc.contains("0 + "), "FAIL TC-25.4: Pure shield must state 'bằng 25% Máu tối đa'")
+	assert(shield_desc.contains("4 giây"), "FAIL TC-25.4: Shield duration missing")
+	
+	# Test 4b: Pure % Heal (15% Max HP)
+	var pure_heal := HealEffectData.new()
+	pure_heal.base_amount = 0.0
+	pure_heal.scalings = { EffectData.STAT_TOTAL_HP: 0.15 }
+	var heal_val := pure_heal.calculate_total_value(tank_hero)
+	assert(is_equal_approx(heal_val, 60.0), "FAIL TC-25.4: 15%% of 400 HP should be 60.0, got %f" % heal_val)
+	var heal_desc := pure_heal.get_formatted_description(tank_hero)
+	_log_test("[TC-25.4] Heal Description: %s" % heal_desc)
+	assert(heal_desc.contains("60") and heal_desc.contains("bằng 15% Máu tối đa") and not heal_desc.contains("0 + "), "FAIL TC-25.4: Pure heal must state 'bằng 15% Máu tối đa'")
+	
+	tank_hero.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-25.4 Pure Percentage Shield & Heal PASSED!")
+	_log_test(">>> 🟢 TC-25 PASSED: Monolithic Crest Header, One-Choice Gacha & Advanced Scaling fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

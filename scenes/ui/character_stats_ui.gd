@@ -87,7 +87,7 @@ var panel_container: PanelContainer
 var main_vbox: VBoxContainer
 
 # 0. Top-Center Level Crest (TFT-Style Crest Badge)
-var crest_overlay: Control
+var crest_overlay: Control = null
 var crest_panel: PanelContainer
 var crest_style: StyleBoxFlat
 var crest_label: Label
@@ -171,43 +171,11 @@ func _build_ui() -> void:
 	panel_container.add_child(main_vbox)
 	
 	# ==========================================================================
-	# 0. TOP-CENTER LEVEL CREST (TFT-STYLE PILL BADGE)
-	# Nhô cao ở đỉnh giữa (Y = -14px), tách lớp chống vỡ viền & tràn lề
-	# ==========================================================================
-	crest_overlay = Control.new()
-	crest_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	crest_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel_container.add_child(crest_overlay)
-	
-	crest_panel = PanelContainer.new()
-	crest_panel.name = "LevelCrestBadge"
-	crest_panel.custom_minimum_size = Vector2(130, 26)
-	crest_panel.size = Vector2(130, 26)
-	crest_panel.position = Vector2((280 - 130) * 0.5, -14)
-	crest_panel.mouse_filter = Control.MOUSE_FILTER_PASS
-	
-	crest_style = StyleBoxFlat.new()
-	crest_style.set_corner_radius_all(10)
-	crest_style.content_margin_left = 12
-	crest_style.content_margin_right = 12
-	crest_style.content_margin_top = 2
-	crest_style.content_margin_bottom = 2
-	crest_panel.add_theme_stylebox_override("panel", crest_style)
-	crest_overlay.add_child(crest_panel)
-	
-	crest_label = Label.new()
-	crest_label.name = "CrestLabel"
-	crest_label.text = "• CẤP 1 •"
-	crest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	crest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	crest_label.add_theme_font_size_override("font_size", 11)
-	crest_panel.add_child(crest_label)
-	
-	# ==========================================================================
-	# 1. TOP AVATAR BANNER (SEAMLESS MONOLITHIC CARD - NO INNER BORDER)
+	# 1. TOP HEADER & AVATAR BANNER (TRUE MONOLITHIC CARD - INTEGRATED CREST)
 	# ==========================================================================
 	avatar_panel = PanelContainer.new()
-	avatar_panel.custom_minimum_size = Vector2(260, 105)
+	avatar_panel.name = "AvatarBannerPanel"
+	avatar_panel.custom_minimum_size = Vector2(260, 115)
 	avatar_bg_style = StyleBoxFlat.new()
 	avatar_bg_style.bg_color = Color(0.18, 0.24, 0.36)
 	avatar_bg_style.set_corner_radius_all(8)
@@ -224,13 +192,38 @@ func _build_ui() -> void:
 	banner_control.set_anchors_preset(Control.PRESET_FULL_RECT)
 	avatar_panel.add_child(banner_control)
 	
-	# Class / Hệ Tộc (Góc trên trái banner, chuẩn TFT - không nút [✕] thừa thãi)
+	# Class / Hệ Tộc (Góc trên trái banner, chuẩn TFT)
 	class_label = Label.new()
 	class_label.text = "[TANK]"
-	class_label.position = Vector2(8, 4)
+	class_label.position = Vector2(6, 4)
 	class_label.add_theme_font_size_override("font_size", 11)
 	class_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
 	banner_control.add_child(class_label)
+	
+	# Integrated Crest Badge (Nằm hoàn toàn bên trong đỉnh khung, Y >= 0, không nhô ra ngoài)
+	crest_panel = PanelContainer.new()
+	crest_panel.name = "LevelCrestBadge"
+	crest_panel.custom_minimum_size = Vector2(130, 24)
+	crest_panel.size = Vector2(130, 24)
+	crest_panel.position = Vector2((260 - 130) * 0.5, 2)
+	crest_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	crest_style = StyleBoxFlat.new()
+	crest_style.set_corner_radius_all(8)
+	crest_style.content_margin_left = 10
+	crest_style.content_margin_right = 10
+	crest_style.content_margin_top = 1
+	crest_style.content_margin_bottom = 1
+	crest_panel.add_theme_stylebox_override("panel", crest_style)
+	banner_control.add_child(crest_panel)
+	
+	crest_label = Label.new()
+	crest_label.name = "CrestLabel"
+	crest_label.text = "• CẤP 1 •"
+	crest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	crest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	crest_label.add_theme_font_size_override("font_size", 11)
+	crest_panel.add_child(crest_label)
 	
 	# Nút đóng [✕] bị loại bỏ hoàn toàn theo GD Spec (tự động đóng khi Click ngoài)
 	close_button = null
@@ -241,7 +234,7 @@ func _build_ui() -> void:
 	avatar_initial_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	avatar_initial_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	avatar_initial_label.size = Vector2(50, 50)
-	avatar_initial_label.position = Vector2(105, 12)
+	avatar_initial_label.position = Vector2(105, 30)
 	avatar_initial_label.add_theme_font_size_override("font_size", 28)
 	banner_control.add_child(avatar_initial_label)
 	
@@ -250,7 +243,7 @@ func _build_ui() -> void:
 	name_label.text = "Hero Name"
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.size = Vector2(240, 22)
-	name_label.position = Vector2(10, 68)
+	name_label.position = Vector2(10, 84)
 	name_label.add_theme_font_size_override("font_size", 15)
 	name_label.add_theme_color_override("font_color", Color.WHITE)
 	banner_control.add_child(name_label)
