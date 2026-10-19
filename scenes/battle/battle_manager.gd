@@ -1031,6 +1031,7 @@ func _input(event: InputEvent) -> void:
 		KEY_ENTER: _run_tc_20_procedural_ui_and_polymorphism()
 		KEY_BACKSPACE: _run_tc_21_save_resume_and_boss_balance()
 		KEY_F2: _run_tc_22_floating_combat_text()
+		KEY_F3: _run_tc_23_tft_level_crest_and_compact_grid()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1084,8 +1085,9 @@ func _run_all_tests() -> void:
 	_run_tc_20_procedural_ui_and_polymorphism()
 	_run_tc_21_save_resume_and_boss_balance()
 	_run_tc_22_floating_combat_text()
+	_run_tc_23_tft_level_crest_and_compact_grid()
 	
-	_log_test("\n🎉 TẤT CẢ 22 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 23 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3150,6 +3152,130 @@ func _run_tc_22_floating_combat_text() -> void:
 	_log_test(">>> 🟢 TC-22.3 Damage Event Processing PASSED!")
 
 	_log_test(">>> 🟢 TC-22 PASSED: Floating Combat Text & Damage Popups fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-23: TFT-Style Level Crest & Compact Stats Grid (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_23_tft_level_crest_and_compact_grid() -> void:
+	_log_test("\n==================== [TEST TC-23: TFT-STYLE LEVEL CREST & COMPACT GRID] ====================")
+	_reset_test_battlefield()
+	assert(character_stats_ui != null, "FAIL TC-23: CharacterStatsUI instance missing")
+	character_stats_ui.close()
+	
+	# 1. TC-23.1: HERO LEVEL CREST 6-TIER MATRIX (1, 15, 25, 50, 75, 99)
+	_log_test("[TC-23.1] Checking Hero Level Crest 6-Tier Matrix (1, 15, 25, 50, 75, 99)...")
+	var knight_data := _create_mock_hero_data("Lancelot", HeroData.HeroClass.TANK, 250.0, 20.0, 10.0, 1.0, 1, 0.0)
+	var hero_inst := hero_scene.instantiate() as HeroEntity
+	add_child(hero_inst)
+	hero_inst.initialize(knight_data)
+	
+	# Tier I: Bronze (Lv 1 - 9)
+	hero_inst.progression.current_level = 1
+	character_stats_ui.inspect_entity(hero_inst)
+	assert(character_stats_ui.crest_label.text == "• CẤP 1 •", "FAIL TC-23.1: Tier I Bronze text mismatch (got: %s)" % character_stats_ui.crest_label.text)
+	assert(character_stats_ui.crest_style.border_color == Color("#cd7f32"), "FAIL TC-23.1: Tier I Bronze border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#2d1a10"), "FAIL TC-23.1: Tier I Bronze bg mismatch")
+	
+	# Tier II: Silver (Lv 10 - 24)
+	hero_inst.progression.current_level = 15
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "✦ CẤP 15 ✦", "FAIL TC-23.1: Tier II Silver text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#bdc3c7"), "FAIL TC-23.1: Tier II Silver border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#1e272e"), "FAIL TC-23.1: Tier II Silver bg mismatch")
+	
+	# Tier III: Gold (Lv 25 - 49)
+	hero_inst.progression.current_level = 25
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "★ CẤP 25 ★", "FAIL TC-23.1: Tier III Gold text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#f1c40f"), "FAIL TC-23.1: Tier III Gold border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#2c2105"), "FAIL TC-23.1: Tier III Gold bg mismatch")
+	
+	# Tier IV: Diamond (Lv 50 - 74)
+	hero_inst.progression.current_level = 50
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "❖ CẤP 50 ❖", "FAIL TC-23.1: Tier IV Diamond text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#00cec9"), "FAIL TC-23.1: Tier IV Diamond border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#062024"), "FAIL TC-23.1: Tier IV Diamond bg mismatch")
+	
+	# Tier V: Legend (Lv 75 - 98)
+	hero_inst.progression.current_level = 75
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "👑 CẤP 75 👑", "FAIL TC-23.1: Tier V Legend text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#e74c3c"), "FAIL TC-23.1: Tier V Legend border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#2a0808"), "FAIL TC-23.1: Tier V Legend bg mismatch")
+	
+	# Tier VI: Mythic MAX (Lv 99)
+	hero_inst.progression.current_level = 99
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "✨ CẤP 99 MAX ✨", "FAIL TC-23.1: Tier VI Mythic text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#9b59b6"), "FAIL TC-23.1: Tier VI Mythic border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#1f0a2a"), "FAIL TC-23.1: Tier VI Mythic bg mismatch")
+	
+	hero_inst.queue_free()
+	_log_test(">>> 🟢 TC-23.1 Hero Level Crest 6-Tier Matrix PASSED!")
+	
+	# 2. TC-23.2: MONSTER RANK EMBLEMS (Normal, Elite, Boss, Solo Boss)
+	_log_test("[TC-23.2] Checking Monster Rank Crest Badges...")
+	var norm_data := EnemyData.new()
+	norm_data.name = "Slime Thường"
+	norm_data.rank = EnemyData.EnemyRank.NORMAL
+	var norm_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(norm_enemy)
+	norm_enemy.initialize(norm_data, 1, EnemyData.EnemyRank.NORMAL, false)
+	
+	character_stats_ui.inspect_entity(norm_enemy)
+	assert(character_stats_ui.crest_label.text.contains("Lv.1"), "FAIL TC-23.2: Normal enemy crest should show Lv.1")
+	assert(character_stats_ui.crest_style.border_color == Color("#7f8c8d"), "FAIL TC-23.2: Normal enemy crest border mismatch")
+	assert(character_stats_ui.xp_box.visible == false, "FAIL TC-23.2: XP box must be hidden for Normal Enemy")
+	assert(character_stats_ui.xp_bar.visible == false, "FAIL TC-23.2: XP bar must be hidden for Normal Enemy")
+	norm_enemy.queue_free()
+	
+	var elite_data := EnemyData.new()
+	elite_data.name = "EliteSlime"
+	elite_data.rank = EnemyData.EnemyRank.ELITE
+	var elite_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(elite_enemy)
+	elite_enemy.initialize(elite_data, 5, EnemyData.EnemyRank.ELITE, false)
+	
+	character_stats_ui.inspect_entity(elite_enemy)
+	assert(character_stats_ui.crest_label.text == "🔥 TINH ANH (Lv.5) 🔥", "FAIL TC-23.2: Elite crest text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#8e44ad"), "FAIL TC-23.2: Elite crest border mismatch")
+	elite_enemy.queue_free()
+	
+	var boss_data := EnemyData.new()
+	boss_data.name = "BossSlime"
+	boss_data.rank = EnemyData.EnemyRank.BOSS
+	var boss_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(boss_enemy)
+	boss_enemy.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, false)
+	
+	character_stats_ui.inspect_entity(boss_enemy)
+	assert(character_stats_ui.crest_label.text == "💀 BOSS (Lv.10) 💀", "FAIL TC-23.2: Boss crest text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#c0392b"), "FAIL TC-23.2: Boss crest border mismatch")
+	boss_enemy.queue_free()
+	
+	var solo_boss: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(solo_boss)
+	solo_boss.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, true)
+	
+	character_stats_ui.inspect_entity(solo_boss)
+	assert(character_stats_ui.crest_label.text == "👑 SOLO BOSS (Lv.10) 👑", "FAIL TC-23.2: Solo Boss crest text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#d35400"), "FAIL TC-23.2: Solo Boss crest border mismatch")
+	assert(character_stats_ui.crest_label.tooltip_text.contains("30%"), "FAIL TC-23.2: Solo Boss tooltip mismatch")
+	solo_boss.queue_free()
+	_log_test(">>> 🟢 TC-23.2 Monster Rank Crest Badges PASSED!")
+	
+	# 3. TC-23.3: TOP-CENTER ANCHORING & TFT COMPACT GRID LAYOUT
+	_log_test("[TC-23.3] Checking Top-Center Anchoring & Compact TFT Grid...")
+	assert(character_stats_ui.crest_panel.position.y == -14.0, "FAIL TC-23.3: Crest Y position must be -14px")
+	assert(character_stats_ui.crest_panel.custom_minimum_size.x >= 120.0, "FAIL TC-23.3: Crest minimum width must be >= 120px")
+	assert(character_stats_ui.crest_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER, "FAIL TC-23.3: Crest label must be centered")
+	assert(character_stats_ui.speed_val_label != null and character_stats_ui.crit_val_label != null, "FAIL TC-23.3: Compact grid labels missing")
+	character_stats_ui.close()
+	assert(character_stats_ui.visible == false, "FAIL TC-23.3: Panel must hide on close")
+	_log_test(">>> 🟢 TC-23.3 Top-Center Anchoring & Compact TFT Grid PASSED!")
+	
+	_log_test(">>> 🟢 TC-23 PASSED: TFT-Style Level Crest & Compact Stats Grid fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

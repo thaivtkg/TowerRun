@@ -86,6 +86,12 @@ class HexSkillIcon extends Control:
 var panel_container: PanelContainer
 var main_vbox: VBoxContainer
 
+# 0. Top-Center Level Crest (TFT-Style Crest Badge)
+var crest_overlay: Control
+var crest_panel: PanelContainer
+var crest_style: StyleBoxFlat
+var crest_label: Label
+
 # 1. Top Avatar & Info Banner
 var avatar_panel: PanelContainer
 var avatar_bg_style: StyleBoxFlat
@@ -100,6 +106,7 @@ var hp_label: Label
 var hp_bar: ProgressBar
 var energy_label: Label
 var energy_bar: ProgressBar
+var xp_box: HBoxContainer
 var xp_label: Label
 var xp_bar: ProgressBar
 
@@ -163,7 +170,40 @@ func _build_ui() -> void:
 	panel_container.add_child(main_vbox)
 	
 	# ==========================================================================
-	# 1. TOP AVATAR BANNER
+	# 0. TOP-CENTER LEVEL CREST (TFT-STYLE PILL BADGE)
+	# Nhô cao ở đỉnh giữa (Y = -14px), tách lớp chống vỡ viền & tràn lề
+	# ==========================================================================
+	crest_overlay = Control.new()
+	crest_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	crest_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel_container.add_child(crest_overlay)
+	
+	crest_panel = PanelContainer.new()
+	crest_panel.name = "LevelCrestBadge"
+	crest_panel.custom_minimum_size = Vector2(130, 26)
+	crest_panel.size = Vector2(130, 26)
+	crest_panel.position = Vector2((280 - 130) * 0.5, -14)
+	crest_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	crest_style = StyleBoxFlat.new()
+	crest_style.set_corner_radius_all(10)
+	crest_style.content_margin_left = 12
+	crest_style.content_margin_right = 12
+	crest_style.content_margin_top = 2
+	crest_style.content_margin_bottom = 2
+	crest_panel.add_theme_stylebox_override("panel", crest_style)
+	crest_overlay.add_child(crest_panel)
+	
+	crest_label = Label.new()
+	crest_label.name = "CrestLabel"
+	crest_label.text = "• CẤP 1 •"
+	crest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	crest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	crest_label.add_theme_font_size_override("font_size", 11)
+	crest_panel.add_child(crest_label)
+	
+	# ==========================================================================
+	# 1. TOP AVATAR BANNER (TFT-STYLE CENTERED PORTRAIT)
 	# ==========================================================================
 	avatar_panel = PanelContainer.new()
 	avatar_panel.custom_minimum_size = Vector2(260, 105)
@@ -181,20 +221,20 @@ func _build_ui() -> void:
 	banner_control.set_anchors_preset(Control.PRESET_FULL_RECT)
 	avatar_panel.add_child(banner_control)
 	
-	# Badge Cấp độ (Góc trên trái)
-	level_label = Label.new()
-	level_label.text = "Cấp 1"
-	level_label.position = Vector2(4, 2)
-	level_label.add_theme_font_size_override("font_size", 12)
-	level_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-	banner_control.add_child(level_label)
+	# Class / Hệ Tộc (Góc trên trái banner, chuẩn TFT)
+	class_label = Label.new()
+	class_label.text = "[TANK]"
+	class_label.position = Vector2(8, 4)
+	class_label.add_theme_font_size_override("font_size", 11)
+	class_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+	banner_control.add_child(class_label)
 	
 	# Nút đóng "✕" (Góc trên phải)
 	close_button = Button.new()
 	close_button.text = "✕"
 	close_button.custom_minimum_size = Vector2(22, 22)
 	close_button.size = Vector2(22, 22)
-	close_button.position = Vector2(218, 2)
+	close_button.position = Vector2(230, 4)
 	close_button.focus_mode = Control.FOCUS_NONE
 	var close_style := StyleBoxFlat.new()
 	close_style.bg_color = Color(0.25, 0.28, 0.35, 0.8)
@@ -209,25 +249,25 @@ func _build_ui() -> void:
 	avatar_initial_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	avatar_initial_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	avatar_initial_label.size = Vector2(50, 50)
-	avatar_initial_label.position = Vector2(97, 8)
+	avatar_initial_label.position = Vector2(105, 12)
 	avatar_initial_label.add_theme_font_size_override("font_size", 28)
 	banner_control.add_child(avatar_initial_label)
 	
-	# Tên Tướng (Góc dưới trái banner)
+	# Tên Tướng (Chính giữa bên dưới Avatar)
 	name_label = Label.new()
 	name_label.text = "Hero Name"
-	name_label.position = Vector2(4, 60)
-	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.size = Vector2(240, 22)
+	name_label.position = Vector2(10, 68)
+	name_label.add_theme_font_size_override("font_size", 15)
 	name_label.add_theme_color_override("font_color", Color.WHITE)
 	banner_control.add_child(name_label)
 	
-	# Class / Hệ Tộc (Góc dưới trái banner, dưới tên)
-	class_label = Label.new()
-	class_label.text = "[TANK]"
-	class_label.position = Vector2(4, 80)
-	class_label.add_theme_font_size_override("font_size", 11)
-	class_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
-	banner_control.add_child(class_label)
+	# level_label (Duy trì đồng bộ ngầm để tương thích ngược 100% với các test TC-16 & TC-20)
+	level_label = Label.new()
+	level_label.text = "Cấp 1"
+	level_label.visible = false
+	banner_control.add_child(level_label)
 	
 	# ==========================================================================
 	# 2. KHỐI SINH TỒN & TIẾN TRÌNH (HP, ENERGY, XP)
@@ -276,8 +316,8 @@ func _build_ui() -> void:
 	energy_bar.add_theme_stylebox_override("background", en_bg)
 	survival_box.add_child(energy_bar)
 	
-	# Thanh XP
-	var xp_box := HBoxContainer.new()
+	# Thanh XP (Gói trong xp_box để co lại mượt mà khi soi quái vật)
+	xp_box = HBoxContainer.new()
 	xp_label = Label.new()
 	xp_label.text = "XP: 0 / 100"
 	xp_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -305,7 +345,7 @@ func _build_ui() -> void:
 	# 3. KHỐI KỸ NĂNG HÌNH LỤC GIÁC (HEXAGON SKILLS)
 	# ==========================================================================
 	var skills_title := Label.new()
-	skills_title.text = "KỸ NĂNG & THỨC TỈNH"
+	skills_title.text = "KỸ NĂNG & VỊ TRÍ"
 	skills_title.add_theme_font_size_override("font_size", 11)
 	skills_title.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
 	main_vbox.add_child(skills_title)
@@ -319,7 +359,7 @@ func _build_ui() -> void:
 	main_vbox.add_child(_create_separator())
 	
 	# ==========================================================================
-	# 4. KHỐI CHỈ SỐ CỐT LÕI (GRID 4 CỘT X 2 HÀNG)
+	# 4. KHỐI CHỈ SỐ CỐT LÕI (TFT COMPACT GRID: 2 HÀNG X 4 CỘT)
 	# ==========================================================================
 	var stats_title := Label.new()
 	stats_title.text = "CHỈ SỐ CHI TIẾT"
@@ -333,29 +373,29 @@ func _build_ui() -> void:
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
 	
-	# Hàng 1: SMCK, SMPT, Giáp, Tầm đánh
+	# Hàng 1 (Tấn công & Phòng thủ): ⚔️ SMCK | 🔮 SMPT | 🛡️ Giáp | 🎯 Tốc đánh
 	attack_val_label = _create_stat_cell(grid, "⚔️", "SMCK")
 	spell_val_label = _create_stat_cell(grid, "🔮", "SMPT")
 	def_val_label = _create_stat_cell(grid, "🛡️", "Giáp")
-	range_val_label = _create_stat_cell(grid, "🏹", "Tầm")
+	speed_val_label = _create_stat_cell(grid, "🎯", "Tốc")
 	
-	# Hàng 2: Tốc đánh, Chí mạng, STCM, Năng lượng đầu
-	speed_val_label = _create_stat_cell(grid, "⚡", "Tốc")
-	crit_val_label = _create_stat_cell(grid, "🎯", "CM")
-	crit_dmg_val_label = _create_stat_cell(grid, "💥", "STCM")
-	start_energy_val_label = _create_stat_cell(grid, "🧪", "Khởi")
+	# Hàng 2 (Chí mạng & Đặc thù): 💥 Tỉ lệ CM | ⚡ Sát thương CM | 🏹 Tầm đánh | 🔋 Năng lượng khởi đầu
+	crit_val_label = _create_stat_cell(grid, "💥", "CM")
+	crit_dmg_val_label = _create_stat_cell(grid, "⚡", "STCM")
+	range_val_label = _create_stat_cell(grid, "🏹", "Tầm")
+	start_energy_val_label = _create_stat_cell(grid, "🔋", "Khởi")
 	
 	main_vbox.add_child(grid)
 
 func _create_stat_cell(parent: GridContainer, icon: String, stat_name: String) -> Label:
 	var cell_panel := PanelContainer.new()
-	cell_panel.custom_minimum_size = Vector2(58, 48)
+	cell_panel.custom_minimum_size = Vector2(58, 44)
 	cell_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	var cell_style := StyleBoxFlat.new()
-	cell_style.bg_color = Color(0.13, 0.16, 0.22, 0.85)
+	cell_style.bg_color = Color(0.12, 0.15, 0.20, 0.85)
 	cell_style.set_corner_radius_all(6)
-	cell_style.content_margin_top = 4
+	cell_style.content_margin_top = 3
 	cell_style.content_margin_bottom = 4
 	cell_panel.add_theme_stylebox_override("panel", cell_style)
 	parent.add_child(cell_panel)
@@ -449,8 +489,10 @@ func _render_hero_prestige_ui(hero: HeroEntity) -> void:
 		req_xp = hero.progression.required_xp
 	level_label.text = "Cấp %d" % current_lvl
 	level_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	_apply_crest_tier(hero)
 	
 	# XP Bar
+	if xp_box != null: xp_box.visible = true
 	xp_label.visible = true
 	xp_bar.visible = true
 	xp_label.text = "XP: %.0f / %.0f" % [cur_xp, req_xp]
@@ -528,8 +570,11 @@ func _render_enemy_rank_ui(enemy: EnemyEntity) -> void:
 	# Class Label is hidden for enemies
 	class_label.visible = false
 	
-	var is_boss: bool = (edata != null and edata.rank == EnemyData.EnemyRank.BOSS) or enemy.damage_reduction >= 0.30
+	var is_solo_boss: bool = enemy.damage_reduction >= 0.30
+	var is_boss: bool = (edata != null and edata.rank == EnemyData.EnemyRank.BOSS) or is_solo_boss
 	var is_elite: bool = (edata != null and edata.rank == EnemyData.EnemyRank.ELITE)
+	
+	_apply_crest_tier(enemy)
 	
 	if is_boss:
 		level_label.text = "[👑 LÃNH CHÚA TẦNG] - Cấp %d" % enemy.level
@@ -541,7 +586,8 @@ func _render_enemy_rank_ui(enemy: EnemyEntity) -> void:
 		level_label.text = "[QUÁI THƯỜNG] - Cấp %d" % enemy.level
 		level_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
 		
-	# XP bar is hidden for enemies
+	# XP bar is hidden for enemies (Guardrail 3: co lại mượt mà, không khoảng trống chết)
+	if xp_box != null: xp_box.visible = false
 	xp_label.visible = false
 	xp_bar.visible = false
 	
@@ -614,6 +660,8 @@ func _render_generic_entity_ui(entity: CombatEntity) -> void:
 	name_label.text = entity.name
 	class_label.visible = false
 	level_label.text = "Cấp %d" % entity.level
+	_apply_crest_tier(entity)
+	if xp_box != null: xp_box.visible = false
 	xp_label.visible = false
 	xp_bar.visible = false
 	hp_label.text = "HP: %.0f / %.0f" % [entity.current_hp, entity.max_hp]
@@ -630,6 +678,75 @@ func _render_generic_entity_ui(entity: CombatEntity) -> void:
 	crit_val_label.text = "%.0f%%" % (entity.get_crit_chance() * 100.0)
 	crit_dmg_val_label.text = "%.0f%%" % (entity.get_crit_damage() * 100.0)
 	start_energy_val_label.text = "0"
+
+# ==============================================================================
+# LEVEL CREST TIER MATRIX & MONSTER EMBLEMS (GD SPEC SECTION II)
+# ==============================================================================
+func _apply_crest_tier(entity: CombatEntity) -> void:
+	if crest_label == null or crest_style == null:
+		return
+	crest_label.tooltip_text = ""
+	
+	if entity is HeroEntity:
+		var hero := entity as HeroEntity
+		var lvl: int = hero.progression.current_level if hero.progression != null else hero.level
+		
+		if lvl >= 99:
+			# Tier VI: Vô Cực (Mythic MAX)
+			crest_label.text = "✨ CẤP 99 MAX ✨"
+			_set_crest_style(Color("#9b59b6"), Color("#1f0a2a"), 3.0, Color(0.61, 0.35, 0.71, 0.8), 12)
+		elif lvl >= 75:
+			# Tier V: Huyền Thoại (Legend)
+			crest_label.text = "👑 CẤP %d 👑" % lvl
+			_set_crest_style(Color("#e74c3c"), Color("#2a0808"), 3.0, Color(0.91, 0.30, 0.24, 0.7), 10)
+		elif lvl >= 50:
+			# Tier IV: Bậc Thầy (Diamond)
+			crest_label.text = "❖ CẤP %d ❖" % lvl
+			_set_crest_style(Color("#00cec9"), Color("#062024"), 2.5, Color(0.0, 0.81, 0.79, 0.6), 8)
+		elif lvl >= 25:
+			# Tier III: Dũng Sĩ (Gold)
+			crest_label.text = "★ CẤP %d ★" % lvl
+			_set_crest_style(Color("#f1c40f"), Color("#2c2105"), 2.5, Color(0.95, 0.77, 0.06, 0.5), 6)
+		elif lvl >= 10:
+			# Tier II: Tinh Anh (Silver)
+			crest_label.text = "✦ CẤP %d ✦" % lvl
+			_set_crest_style(Color("#bdc3c7"), Color("#1e272e"), 2.0, Color(0.74, 0.76, 0.78, 0.4), 4)
+		else:
+			# Tier I: Tân Binh (Bronze)
+			crest_label.text = "• CẤP %d •" % lvl
+			_set_crest_style(Color("#cd7f32"), Color("#2d1a10"), 1.5, Color(0, 0, 0, 0.4), 2)
+			
+	elif entity is EnemyEntity:
+		var enemy := entity as EnemyEntity
+		var is_solo_boss: bool = enemy.damage_reduction >= 0.30
+		var is_boss: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.BOSS) or is_solo_boss
+		var is_elite: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.ELITE)
+		
+		if is_solo_boss:
+			crest_label.text = "👑 SOLO BOSS (Lv.%d) 👑" % enemy.level
+			crest_label.tooltip_text = "Giảm 30% Sát thương nhận vào"
+			_set_crest_style(Color("#d35400"), Color("#331a00"), 3.0, Color(0.83, 0.33, 0.0, 0.8), 12)
+		elif is_boss:
+			crest_label.text = "💀 BOSS (Lv.%d) 💀" % enemy.level
+			_set_crest_style(Color("#c0392b"), Color("#330d0d"), 3.0, Color(0.75, 0.22, 0.17, 0.7), 10)
+		elif is_elite:
+			crest_label.text = "🔥 TINH ANH (Lv.%d) 🔥" % enemy.level
+			_set_crest_style(Color("#8e44ad"), Color("#251133"), 2.5, Color(0.56, 0.27, 0.68, 0.6), 8)
+		else:
+			var name_str: String = enemy.data.name if (enemy.data and enemy.data.name != "") else "QUÁI THƯỜNG"
+			crest_label.text = "• %s (Lv.%d) •" % [name_str, enemy.level]
+			_set_crest_style(Color("#7f8c8d"), Color("#1e2226"), 1.5, Color(0, 0, 0, 0), 0)
+	else:
+		crest_label.text = "• CẤP %d •" % entity.level
+		_set_crest_style(Color("#7f8c8d"), Color("#1e2226"), 1.5, Color(0, 0, 0, 0), 0)
+
+func _set_crest_style(fg: Color, bg: Color, border_w: float, shadow: Color, shadow_sz: int) -> void:
+	crest_label.add_theme_color_override("font_color", fg)
+	crest_style.border_color = fg
+	crest_style.bg_color = bg
+	crest_style.set_border_width_all(int(round(border_w)))
+	crest_style.shadow_color = shadow
+	crest_style.shadow_size = shadow_sz
 
 func _apply_prestige_style(entity: CombatEntity) -> void:
 	if entity is HeroEntity:
