@@ -1119,6 +1119,7 @@ func _input(event: InputEvent) -> void:
 		KEY_F4: _run_tc_24_hero_stat_progression_and_seamless_ui()
 		KEY_F5: _run_tc_25_monolithic_header_one_choice_and_scaling()
 		KEY_F8: _run_tc_26_model_a_tft_and_lmht_tooltips()
+		KEY_F9: _run_tc_27_dynamic_prestige_border_palette()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1176,8 +1177,9 @@ func _run_all_tests() -> void:
 	_run_tc_24_hero_stat_progression_and_seamless_ui()
 	_run_tc_25_monolithic_header_one_choice_and_scaling()
 	_run_tc_26_model_a_tft_and_lmht_tooltips()
+	_run_tc_27_dynamic_prestige_border_palette()
 	
-	_log_test("\n🎉 TẤT CẢ 26 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 27 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3719,6 +3721,109 @@ func _run_tc_26_model_a_tft_and_lmht_tooltips() -> void:
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-26.4 Bank Upgrades PASSED!")
 	_log_test(">>> 🟢 TC-26 PASSED: Model A TFT Flow, LMHT Tooltips & Monolithic Header fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-27: Dynamic Prestige Border Palette & Card Aura Sync (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_27_dynamic_prestige_border_palette() -> void:
+	_log_test("\n==================== [TEST TC-27: PRESTIGE BORDER PALETTE & AURA] ====================")
+	_reset_test_battlefield()
+	
+	var hero_data := HeroData.new()
+	hero_data.name = "Jaina"
+	hero_data.hero_class = HeroData.HeroClass.MAGE
+	var test_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(hero_data)
+	
+	# 1. Tier I: Tân Binh (Lv 1 - 9) -> Nâu Đồng #cd7f32
+	test_hero.progression.current_level = 1
+	character_stats_ui.inspect_entity(test_hero)
+	assert(character_stats_ui.panel_style.border_color == Color("#cd7f32"), "FAIL TC-27: Lv1 border_color must be #cd7f32")
+	assert(character_stats_ui.panel_style.shadow_size == 0, "FAIL TC-27: Lv1 shadow_size must be 0")
+	assert(character_stats_ui.panel_style.border_width_left == 2, "FAIL TC-27: Border width must be fixed at 2px")
+	
+	# 2. Tier II: Tinh Anh (Lv 10 - 24) -> Bạc Ánh Kim #bdc3c7
+	test_hero.progression.current_level = 10
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#bdc3c7"), "FAIL TC-27: Lv10 border_color must be #bdc3c7")
+	assert(character_stats_ui.panel_style.shadow_size == 4, "FAIL TC-27: Lv10 shadow_size must be 4")
+	
+	# 3. Tier III: Dũng Sĩ (Lv 25 - 49) -> Vàng Hoàng Kim #f1c40f (Jaina Lv31 Verification!)
+	test_hero.progression.current_level = 31
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#f1c40f"), "FAIL TC-27: Jaina Lv31 border_color must be #f1c40f")
+	assert(character_stats_ui.panel_style.shadow_size == 6, "FAIL TC-27: Lv31 shadow_size must be 6")
+	_log_test("[TC-27] Verified Jaina Lv31: Border = %s | Shadow size = %d" % [character_stats_ui.panel_style.border_color.to_html(false), character_stats_ui.panel_style.shadow_size])
+	
+	# 4. Tier IV: Bậc Thầy (Lv 50 - 74) -> Lam Ngọc #00cec9
+	test_hero.progression.current_level = 50
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#00cec9"), "FAIL TC-27: Lv50 border_color must be #00cec9")
+	assert(character_stats_ui.panel_style.shadow_size == 8, "FAIL TC-27: Lv50 shadow_size must be 8")
+	
+	# 5. Tier V: Huyền Thoại (Lv 75 - 98) -> Đỏ Huyết Ngọc #e74c3c
+	test_hero.progression.current_level = 75
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#e74c3c"), "FAIL TC-27: Lv75 border_color must be #e74c3c")
+	assert(character_stats_ui.panel_style.shadow_size == 10, "FAIL TC-27: Lv75 shadow_size must be 10")
+	
+	# 6. Tier VI: Vô Cực MAX (Lv 99) -> Tím Vũ Trụ #9b59b6
+	test_hero.progression.current_level = 99
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#9b59b6"), "FAIL TC-27: Lv99 border_color must be #9b59b6")
+	assert(character_stats_ui.panel_style.shadow_size == 14, "FAIL TC-27: Lv99 shadow_size must be 14")
+	test_hero.queue_free()
+	
+	# 7. Enemy Ranks Border Verification
+	# 7a. Normal Enemy -> #484852
+	var norm_data := EnemyData.new()
+	norm_data.name = "NormalSlime"
+	norm_data.rank = EnemyData.EnemyRank.NORMAL
+	var norm_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(norm_enemy)
+	norm_enemy.initialize(norm_data, 1, EnemyData.EnemyRank.NORMAL, false)
+	character_stats_ui.inspect_entity(norm_enemy)
+	assert(character_stats_ui.panel_style.border_color == Color("#484852"), "FAIL TC-27: Normal enemy border must be #484852")
+	assert(character_stats_ui.panel_style.shadow_size == 0, "FAIL TC-27: Normal enemy shadow_size must be 0")
+	norm_enemy.queue_free()
+	
+	# 7b. Elite Enemy -> #8e44ad
+	var elite_data := EnemyData.new()
+	elite_data.name = "EliteSlime"
+	elite_data.rank = EnemyData.EnemyRank.ELITE
+	var elite_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(elite_enemy)
+	elite_enemy.initialize(elite_data, 5, EnemyData.EnemyRank.ELITE, false)
+	character_stats_ui.inspect_entity(elite_enemy)
+	assert(character_stats_ui.panel_style.border_color == Color("#8e44ad"), "FAIL TC-27: Elite enemy border must be #8e44ad")
+	assert(character_stats_ui.panel_style.shadow_size == 6, "FAIL TC-27: Elite enemy shadow_size must be 6")
+	elite_enemy.queue_free()
+	
+	# 7c. Boss Enemy -> #c0392b
+	var boss_data := EnemyData.new()
+	boss_data.name = "BossSlime"
+	boss_data.rank = EnemyData.EnemyRank.BOSS
+	var boss_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(boss_enemy)
+	boss_enemy.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, false)
+	character_stats_ui.inspect_entity(boss_enemy)
+	assert(character_stats_ui.panel_style.border_color == Color("#c0392b"), "FAIL TC-27: Boss enemy border must be #c0392b")
+	assert(character_stats_ui.panel_style.shadow_size == 10, "FAIL TC-27: Boss enemy shadow_size must be 10")
+	boss_enemy.queue_free()
+	
+	# 7d. Solo Raid Boss -> #d35400
+	var solo_boss: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(solo_boss)
+	solo_boss.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, true) # DR >= 30%
+	character_stats_ui.inspect_entity(solo_boss)
+	assert(character_stats_ui.panel_style.border_color == Color("#d35400"), "FAIL TC-27: Solo boss border must be #d35400")
+	assert(character_stats_ui.panel_style.shadow_size == 12, "FAIL TC-27: Solo boss shadow_size must be 12")
+	solo_boss.queue_free()
+	
+	character_stats_ui.close()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-27 PASSED: Dynamic Prestige Border Palette & Card Aura fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

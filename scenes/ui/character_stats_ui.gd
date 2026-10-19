@@ -84,6 +84,7 @@ class HexSkillIcon extends Control:
 # PANEL MAIN NODES
 # ------------------------------------------------------------------------------
 var panel_container: PanelContainer
+var panel_style: StyleBoxFlat
 var main_vbox: VBoxContainer
 
 # 0. Top-Center Level Crest (TFT-Style Crest Badge)
@@ -152,7 +153,7 @@ func _build_ui() -> void:
 	panel_container.position = Vector2(856, 40)
 	panel_container.mouse_filter = Control.MOUSE_FILTER_STOP
 	
-	var panel_style := StyleBoxFlat.new()
+	panel_style = StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.08, 0.10, 0.14, 0.96)
 	panel_style.border_color = Color(0.24, 0.28, 0.38, 0.95)
 	panel_style.set_border_width_all(2)
@@ -650,6 +651,7 @@ func _render_generic_entity_ui(entity: CombatEntity) -> void:
 	class_label.visible = false
 	level_label.text = "Cấp %d" % entity.level
 	_apply_crest_tier(entity)
+	_apply_prestige_style(entity)
 	if xp_box != null: xp_box.visible = false
 	xp_label.visible = false
 	xp_bar.visible = false
@@ -743,42 +745,78 @@ func _apply_prestige_style(entity: CombatEntity) -> void:
 		var lvl: int = hero.progression.current_level if hero.progression != null else hero.level
 		
 		if lvl >= 99:
-			# Thần Thoại (Mythic Prismatic Pink)
+			# Tier VI: Vô Cực MAX (Lv 99) - Tím Vũ Trụ
+			if panel_style != null:
+				panel_style.border_color = Color("#9b59b6")
+				panel_style.shadow_color = Color(0.61, 0.35, 0.71, 0.8)
+				panel_style.shadow_size = 14
+				panel_style.set_border_width_all(2)
+			# TC-20 compatibility
 			avatar_bg_style.border_color = Color(1.0, 0.2, 0.7, 1.0)
 			avatar_bg_style.set_border_width_all(3)
 			avatar_bg_style.shadow_color = Color(1.0, 0.2, 0.7, 0.8)
 			avatar_bg_style.shadow_size = 12
 			avatar_bg_style.bg_color = Color(0.28, 0.08, 0.22)
 		elif lvl >= 75:
-			# Đỏ Hoàng Kim (Radiant Gold-Red)
+			# Tier V: Huyền Thoại (Lv 75 - 98) - Đỏ Huyết Ngọc
+			if panel_style != null:
+				panel_style.border_color = Color("#e74c3c")
+				panel_style.shadow_color = Color(0.91, 0.30, 0.24, 0.6)
+				panel_style.shadow_size = 10
+				panel_style.set_border_width_all(2)
+			# TC-20 compatibility
 			avatar_bg_style.border_color = Color(1.0, 0.35, 0.15, 1.0)
 			avatar_bg_style.set_border_width_all(3)
 			avatar_bg_style.shadow_color = Color(1.0, 0.4, 0.1, 0.7)
 			avatar_bg_style.shadow_size = 10
 			avatar_bg_style.bg_color = Color(0.32, 0.12, 0.12)
 		elif lvl >= 50:
-			# Tím Hoàng Gia (Royal Purple)
+			# Tier IV: Bậc Thầy (Lv 50 - 74) - Lam Ngọc Kim Cương
+			if panel_style != null:
+				panel_style.border_color = Color("#00cec9")
+				panel_style.shadow_color = Color(0.0, 0.81, 0.79, 0.5)
+				panel_style.shadow_size = 8
+				panel_style.set_border_width_all(2)
+			# TC-20 compatibility
 			avatar_bg_style.border_color = Color(0.70, 0.30, 0.95, 1.0)
 			avatar_bg_style.set_border_width_all(2)
 			avatar_bg_style.shadow_color = Color(0.70, 0.30, 0.95, 0.6)
 			avatar_bg_style.shadow_size = 8
 			avatar_bg_style.bg_color = Color(0.22, 0.12, 0.35)
 		elif lvl >= 25:
-			# Lam Ngọc (Sapphire Blue)
+			# Tier III: Dũng Sĩ (Lv 25 - 49) - Vàng Hoàng Kim (Mốc Jaina Cấp 31)
+			if panel_style != null:
+				panel_style.border_color = Color("#f1c40f")
+				panel_style.shadow_color = Color(0.95, 0.77, 0.06, 0.4)
+				panel_style.shadow_size = 6
+				panel_style.set_border_width_all(2)
+			# TC-20 compatibility
 			avatar_bg_style.border_color = Color(0.20, 0.65, 1.0, 1.0)
 			avatar_bg_style.set_border_width_all(2)
 			avatar_bg_style.shadow_color = Color(0.20, 0.65, 1.0, 0.5)
 			avatar_bg_style.shadow_size = 6
 			avatar_bg_style.bg_color = Color(0.12, 0.22, 0.38)
 		elif lvl >= 10:
-			# Ngọc Lục Bảo (Emerald Green)
+			# Tier II: Tinh Anh (Lv 10 - 24) - Bạc Ánh Kim
+			if panel_style != null:
+				panel_style.border_color = Color("#bdc3c7")
+				panel_style.shadow_color = Color(0.74, 0.76, 0.78, 0.3)
+				panel_style.shadow_size = 4
+				panel_style.set_border_width_all(2)
+			# TC-20 compatibility
 			avatar_bg_style.border_color = Color(0.18, 0.85, 0.45, 1.0)
 			avatar_bg_style.set_border_width_all(2)
 			avatar_bg_style.shadow_color = Color(0.18, 0.85, 0.45, 0.4)
 			avatar_bg_style.shadow_size = 4
 			avatar_bg_style.bg_color = Color(0.12, 0.30, 0.20)
 		else:
-			# Dưới cấp 10: Màu cơ bản theo Class
+			# Tier I: Tân Binh (Lv 1 - 9) - Nâu Đồng
+			if panel_style != null:
+				panel_style.border_color = Color("#cd7f32")
+				panel_style.shadow_color = Color(0, 0, 0, 0)
+				panel_style.shadow_size = 0
+				panel_style.set_border_width_all(2)
+			# TC-20 compatibility
 			avatar_bg_style.border_color = Color(0.35, 0.4, 0.5, 0.8)
 			avatar_bg_style.set_border_width_all(1)
 			avatar_bg_style.shadow_color = Color(0, 0, 0, 0)
@@ -787,11 +825,30 @@ func _apply_prestige_style(entity: CombatEntity) -> void:
 			
 	elif entity is EnemyEntity:
 		var enemy := entity as EnemyEntity
-		var is_boss: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.BOSS) or enemy.damage_reduction >= 0.30
+		var is_solo_boss: bool = enemy.damage_reduction >= 0.30
+		var is_boss: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.BOSS) or is_solo_boss
 		var is_elite: bool = (enemy.data != null and enemy.data.rank == EnemyData.EnemyRank.ELITE)
 		
-		if is_boss:
-			# Hắc Ám (Dark Abyss Boss)
+		if is_solo_boss:
+			# Solo Raid Boss - Cam Cháy
+			if panel_style != null:
+				panel_style.border_color = Color("#d35400")
+				panel_style.shadow_color = Color(0.83, 0.33, 0.0, 0.7)
+				panel_style.shadow_size = 12
+				panel_style.set_border_width_all(2)
+			avatar_bg_style.border_color = Color(0.90, 0.12, 0.20, 1.0)
+			avatar_bg_style.set_border_width_all(3)
+			avatar_bg_style.shadow_color = Color(0.90, 0.12, 0.20, 0.8)
+			avatar_bg_style.shadow_size = 12
+			avatar_bg_style.bg_color = Color(0.24, 0.05, 0.08)
+			avatar_initial_label.text = "👑"
+		elif is_boss:
+			# Boss - Đỏ Hắc Ám
+			if panel_style != null:
+				panel_style.border_color = Color("#c0392b")
+				panel_style.shadow_color = Color(0.75, 0.22, 0.17, 0.6)
+				panel_style.shadow_size = 10
+				panel_style.set_border_width_all(2)
 			avatar_bg_style.border_color = Color(0.90, 0.12, 0.20, 1.0)
 			avatar_bg_style.set_border_width_all(3)
 			avatar_bg_style.shadow_color = Color(0.90, 0.12, 0.20, 0.8)
@@ -799,7 +856,12 @@ func _apply_prestige_style(entity: CombatEntity) -> void:
 			avatar_bg_style.bg_color = Color(0.24, 0.05, 0.08)
 			avatar_initial_label.text = "👑"
 		elif is_elite:
-			# Huyết Tử (Crimson Elite)
+			# Tinh Anh - Tím Thẫm
+			if panel_style != null:
+				panel_style.border_color = Color("#8e44ad")
+				panel_style.shadow_color = Color(0.56, 0.27, 0.68, 0.5)
+				panel_style.shadow_size = 6
+				panel_style.set_border_width_all(2)
 			avatar_bg_style.border_color = Color(0.85, 0.35, 0.80, 1.0)
 			avatar_bg_style.set_border_width_all(2)
 			avatar_bg_style.shadow_color = Color(0.85, 0.35, 0.80, 0.6)
@@ -807,13 +869,24 @@ func _apply_prestige_style(entity: CombatEntity) -> void:
 			avatar_bg_style.bg_color = Color(0.25, 0.10, 0.28)
 			avatar_initial_label.text = "🔥"
 		else:
-			# Đỏ Tro (Ash Normal)
+			# Quái Thường - Xám Tro
+			if panel_style != null:
+				panel_style.border_color = Color("#484852")
+				panel_style.shadow_color = Color(0, 0, 0, 0)
+				panel_style.shadow_size = 0
+				panel_style.set_border_width_all(2)
 			avatar_bg_style.border_color = Color(0.48, 0.48, 0.52, 0.8)
 			avatar_bg_style.set_border_width_all(1)
 			avatar_bg_style.shadow_color = Color(0, 0, 0, 0)
 			avatar_bg_style.shadow_size = 0
 			avatar_bg_style.bg_color = Color(0.18, 0.18, 0.22)
 			avatar_initial_label.text = "👾"
+	else:
+		if panel_style != null:
+			panel_style.border_color = Color("#484852")
+			panel_style.shadow_color = Color(0, 0, 0, 0)
+			panel_style.shadow_size = 0
+			panel_style.set_border_width_all(2)
 
 func _apply_hero_class_bg(data: HeroData) -> void:
 	if data == null:
