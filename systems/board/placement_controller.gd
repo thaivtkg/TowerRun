@@ -6,6 +6,7 @@ extends Node
 # Quản lý tương tác kéo thả Hero và kiểm tra luật vùng
 # ==========================================
 
+signal entity_selected(entity: CombatEntity)
 signal hero_selected(hero: HeroEntity)
 signal hero_hovered(hero: HeroEntity)
 
@@ -68,21 +69,23 @@ func _on_mouse_pressed() -> void:
 	if not board_grid.is_in_bounds(cell):
 		return
 		
-	if not board_grid.config.is_hero_zone(cell):
-		return
-		
 	var entity: CombatEntity = board_grid.get_occupant(cell)
-	if entity != null and entity is HeroEntity:
-		hero_selected.emit(entity)
-		if _snap_tweens.has(entity) and is_instance_valid(_snap_tweens[entity]):
-			_snap_tweens[entity].kill()
-			_snap_tweens.erase(entity)
-		dragged_entity = entity
-		original_cell = cell
-		original_z_index = entity.z_index
-		entity.z_index = 100
-		board_view.hovered_cell = cell
-		get_viewport().set_input_as_handled()
+	if entity != null:
+		entity_selected.emit(entity)
+		if entity is HeroEntity and board_grid.config.is_hero_zone(cell):
+			hero_selected.emit(entity)
+			if _snap_tweens.has(entity) and is_instance_valid(_snap_tweens[entity]):
+				_snap_tweens[entity].kill()
+				_snap_tweens.erase(entity)
+			dragged_entity = entity
+			original_cell = cell
+			original_z_index = entity.z_index
+			entity.z_index = 100
+			board_view.hovered_cell = cell
+			get_viewport().set_input_as_handled()
+		elif entity is EnemyEntity:
+			dragged_entity = null
+			get_viewport().set_input_as_handled()
 
 func _on_mouse_moved() -> void:
 	if _is_locked or (board_grid != null and board_grid.is_locked):

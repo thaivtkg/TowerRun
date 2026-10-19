@@ -46,3 +46,27 @@ enum AbilityTag {
 
 @export_group("Effects")
 @export var effects: Array[EffectData] = []
+
+func get_formatted_tooltip(source: CombatEntity = null) -> String:
+	if description != "" and description.contains("{0}"):
+		var result: String = description
+		for i in range(effects.size()):
+			var placeholder := "{%d}" % i
+			if result.contains(placeholder):
+				var eff := effects[i]
+				var replacement := eff.get_inline_value_bbcode(source) if eff != null else ""
+				result = result.replace(placeholder, replacement)
+		return result
+		
+	# Fallback tương thích ngược (nếu không có {0} hoặc effects rỗng)
+	if effects.is_empty():
+		return description if description != "" else "Kỹ năng đặc biệt."
+		
+	var lines: Array[String] = []
+	for effect in effects:
+		if effect != null:
+			lines.append(effect.get_formatted_description(source))
+			
+	if lines.is_empty():
+		return description if description != "" else "Kỹ năng đặc biệt."
+	return "\n".join(lines)

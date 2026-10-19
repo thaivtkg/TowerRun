@@ -1,34 +1,46 @@
 class_name HeroEntity
 extends CombatEntity
 
-signal pending_skill_choice(hero: HeroEntity, milestone: int, choices: Array[AbilityData])
-signal ability_requested(ability: Ability) 
-
 @export var data: HeroData
 @onready var attack_timer: Timer = $AttackTimer
 var progression: HeroProgression = null
 var metrics: CombatMetric = CombatMetric.new()
 
 # SPRINT 4: RUNTIME ABILITIES STATE
-var unlocked_abilities: Array[Ability] = [] 
 var basic_attack_ability: Ability           
 var runtime_pools: Dictionary = {} 
 var pending_milestones: Array[int] = []
 
 # ==========================================
-# SPRINT 4: ENERGY SYSTEM (HỆ THỐNG NĂNG LƯỢNG)
+# SPRINT 4: RUNTIME ABILITY CLONING (P0 ISOLATION)
 # ==========================================
-var current_energy: float = 0.0:
-	set(val):
-		current_energy = clampf(val, 0.0, max_energy)
-		energy_changed.emit(current_energy, max_energy)
+static func clone_ability_runtime(src: AbilityData) -> AbilityData:
+	if src == null:
+		return null
+	var copy: AbilityData = src.duplicate()
+	copy.effects = []
+	for eff in src.effects:
+		if eff != null:
+			var eff_copy: EffectData = eff.duplicate()
+			eff_copy.scalings = eff.scalings.duplicate()
+			copy.effects.append(eff_copy)
+	return copy
 
-var max_energy: float = 100.0:
-	set(val):
-		max_energy = val
-		energy_changed.emit(current_energy, max_energy)
-
-var energy_per_attack: float = 25.0 # Đánh 4 phát là xả Ultimate
+func _init_runtime_pools() -> void:
+	runtime_pools.clear()
+	var raw_pools = {
+		5: data.pool_lv5_passives,
+		10: data.pool_lv10_actives,
+		15: data.pool_lv15_utilities,
+		20: data.pool_lv20_upgrades,
+		25: data.pool_lv25_signatures
+	}
+	for milestone in raw_pools.keys():
+		var arr: Array[AbilityData] = []
+		for ab in raw_pools[milestone]:
+			if ab != null:
+				arr.append(clone_ability_runtime(ab))
+		runtime_pools[milestone] = arr
 
 func initialize(initial_data: HeroData) -> void:
 	data = initial_data
@@ -47,18 +59,19 @@ func initialize(initial_data: HeroData) -> void:
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
 	
-	progression = HeroProgression.new()
-	progression.leveled_up.connect(_on_level_up)
-	progression.milestone_reached.connect(_on_milestone_reached)
+	if progression == null:
+		progression = HeroProgression.new()
+		progression.leveled_up.connect(_on_level_up)
+		progression.milestone_reached.connect(_on_milestone_reached)
+	else:
+		progression.current_level = 1
+		progression.current_xp = 0.0
+		progression.pending_milestones.clear()
 	
 	if data.basic_attack != null:
-		basic_attack_ability = Ability.new(self, data.basic_attack)
+		basic_attack_ability = Ability.new(self, clone_ability_runtime(data.basic_attack))
 	
-	runtime_pools[5] = data.pool_lv5_passives.duplicate()
-	runtime_pools[10] = data.pool_lv10_actives.duplicate()
-	runtime_pools[15] = data.pool_lv15_utilities.duplicate()
-	runtime_pools[20] = data.pool_lv20_upgrades.duplicate()
-	runtime_pools[25] = data.pool_lv25_signatures.duplicate()
+	_init_runtime_pools()
 	
 	var safe_speed: float = max(0.1, data.attack_speed)
 	attack_timer.wait_time = 1.0 / safe_speed
@@ -78,16 +91,6 @@ func set_combat_active(active: bool) -> void:
 				attack_timer.start()
 		else:
 			attack_timer.stop()
-
-func _process(delta: float) -> void:
-	if is_dead: return
-	
-	for ability in unlocked_abilities:
-		ability.process_cooldown(delta)
-		if ability.data.ability_type == AbilityData.AbilityType.ACTIVE and ability.is_ready(current_energy):
-			# [FIX P2.1] Chỉ request nếu là buff bản thân, hoặc có mục tiêu hợp lệ
-			if ability.data.target_rule == AbilityData.TargetRule.SELF or (is_instance_valid(target) and not target.is_dead):
-				ability_requested.emit(ability)
 
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return
@@ -118,13 +121,8 @@ func _on_attack_timer_timeout() -> void:
 		attack_requested.emit(event)
 		_gain_energy(energy_per_attack)
 
-# Hàm tăng Năng lượng công khai (để hệ thống khác có thể gọi)
-func _gain_energy(amount: float) -> void:
-	if is_dead:
-		return
-	self.current_energy += amount
-
-func _on_level_up(_new_level: int) -> void: pass
+func _on_level_up(_new_level: int) -> void:
+	level = _new_level
 
 func _on_milestone_reached(milestone: int) -> void:
 	pending_milestones.append(milestone)
@@ -147,7 +145,8 @@ func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[Abi
 		printerr("[HeroEntity] Invalid skill choice. Rejected.")
 		return
 		
-	var runtime_ability = Ability.new(self, chosen)
+	var cloned := clone_ability_runtime(chosen)
+	var runtime_ability = Ability.new(self, cloned)
 	unlocked_abilities.append(runtime_ability)
 	
 	print("[HeroEntity] %s unlocked ability: [%s] %s" % [name, AbilityData.AbilityType.keys()[chosen.ability_type], chosen.name])
@@ -162,3 +161,102 @@ func get_crit_damage() -> float: return data.crit_damage if data != null else 2.
 func get_attack() -> float: return data.base_attack if data != null else 10.0
 func get_spell_power() -> float: return data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
+
+# ==========================================
+# FULL PROGRESSION & ABILITIES PERSISTENCE (S4.6+)
+# ==========================================
+func serialize() -> Dictionary:
+	var hero_dict := {
+		"name": name,
+		"level": progression.current_level if progression != null else 1,
+		"xp": progression.current_xp if progression != null else 0.0,
+		"deployed_cell": [deployed_cell.x, deployed_cell.y],
+		"unlocked_abilities": []
+	}
+	if basic_attack_ability != null and basic_attack_ability.data != null:
+		hero_dict["basic_attack_effects"] = _serialize_effects(basic_attack_ability.data.effects)
+		
+	for ab in unlocked_abilities:
+		if ab != null and ab.data != null:
+			hero_dict["unlocked_abilities"].append({
+				"id": ab.data.id,
+				"name": ab.data.name,
+				"description": ab.data.description,
+				"ability_type": int(ab.data.ability_type),
+				"target_rule": int(ab.data.target_rule),
+				"cooldown": ab.data.cooldown,
+				"effects": _serialize_effects(ab.data.effects)
+			})
+	return hero_dict
+
+func deserialize(saved: Dictionary) -> void:
+	if saved.has("level") and progression != null:
+		progression.current_level = int(saved["level"])
+		level = progression.current_level
+	if saved.has("xp") and progression != null:
+		progression.current_xp = float(saved["xp"])
+	if saved.has("deployed_cell"):
+		var cell_arr: Array = saved["deployed_cell"]
+		if cell_arr.size() == 2:
+			deployed_cell = Vector2i(int(cell_arr[0]), int(cell_arr[1]))
+			
+	if saved.has("basic_attack_effects") and basic_attack_ability != null and basic_attack_ability.data != null:
+		_deserialize_effects(basic_attack_ability.data.effects, saved["basic_attack_effects"])
+		
+	if saved.has("unlocked_abilities"):
+		unlocked_abilities.clear()
+		for ab_dict in saved["unlocked_abilities"]:
+			var ab_data := AbilityData.new()
+			ab_data.id = ab_dict.get("id", "")
+			ab_data.name = ab_dict.get("name", "Ability")
+			ab_data.description = ab_dict.get("description", "")
+			ab_data.ability_type = ab_dict.get("ability_type", AbilityData.AbilityType.ACTIVE)
+			ab_data.target_rule = ab_dict.get("target_rule", AbilityData.TargetRule.SINGLE_ENEMY)
+			ab_data.cooldown = float(ab_dict.get("cooldown", 1.0))
+			
+			ab_data.effects = []
+			if ab_dict.has("effects"):
+				for eff_dict in ab_dict["effects"]:
+					var eff: EffectData
+					if eff_dict.get("is_heal", false):
+						eff = HealEffectData.new()
+						eff.heal_amount = float(eff_dict.get("base_amount", 0.0))
+					else:
+						eff = DamageEffectData.new()
+						eff.base_damage = float(eff_dict.get("base_amount", 0.0))
+					eff.base_amount = float(eff_dict.get("base_amount", 0.0))
+					eff.scalings = eff_dict.get("scalings", {}).duplicate()
+					ab_data.effects.append(eff)
+			unlocked_abilities.append(Ability.new(self, ab_data))
+			
+			# Remove from runtime pools if matches so it won't be rolled again
+			for milestone in runtime_pools.keys():
+				var pool: Array = runtime_pools[milestone]
+				for item in pool:
+					if item != null and item.name == ab_data.name:
+						pool.erase(item)
+						break
+
+static func _serialize_effects(effects: Array[EffectData]) -> Array:
+	var res := []
+	for eff in effects:
+		if eff != null:
+			res.append({
+				"is_heal": (eff is HealEffectData),
+				"base_amount": eff.base_amount,
+				"scalings": eff.scalings.duplicate()
+			})
+	return res
+
+static func _deserialize_effects(target_effects: Array[EffectData], saved_effects: Array) -> void:
+	for i in range(mini(target_effects.size(), saved_effects.size())):
+		var eff := target_effects[i]
+		var s_eff: Dictionary = saved_effects[i]
+		if eff != null and s_eff != null:
+			eff.base_amount = float(s_eff.get("base_amount", eff.base_amount))
+			if eff is DamageEffectData:
+				eff.base_damage = eff.base_amount
+			elif eff is HealEffectData:
+				eff.heal_amount = eff.base_amount
+			if s_eff.has("scalings") and typeof(s_eff["scalings"]) == TYPE_DICTIONARY:
+				eff.scalings = s_eff["scalings"].duplicate()

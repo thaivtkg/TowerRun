@@ -99,3 +99,110 @@ func finalize_battle_xp(is_victory: bool, target_heroes: Array = []) -> void:
 		
 	tracked_heroes.clear()
 	print("----------------------------\n")
+
+# ==========================================
+# SPRINT 4: WEIGHTED GACHA SKILL UPGRADES (TASK S4.2)
+# ==========================================
+static func sample_weighted_card(cards: Array[SkillUpgradeCard]) -> SkillUpgradeCard:
+	if cards.is_empty():
+		return null
+	var total_weight: float = 0.0
+	for c in cards:
+		if c != null:
+			total_weight += float(c.weight)
+	if total_weight <= 0.0:
+		return cards[0]
+	var roll := randf() * total_weight
+	var cumulative: float = 0.0
+	for c in cards:
+		if c != null:
+			cumulative += float(c.weight)
+			if roll <= cumulative:
+				return c
+	return cards.back()
+
+func generate_upgrade_choices(hero: HeroEntity, milestone: int) -> Array[SkillUpgradeCard]:
+	var candidates: Array[SkillUpgradeCard] = []
+	if hero == null:
+		return candidates
+
+	# 1. NEW_ABILITY (Trọng số: 40, Hiếm) từ runtime_pools[milestone]
+	var pool: Array = hero.runtime_pools.get(milestone, [])
+	for ab in pool:
+		if ab is AbilityData:
+			var card := SkillUpgradeCard.new()
+			card.upgrade_type = SkillUpgradeCard.UpgradeType.NEW_ABILITY
+			card.rarity_tier = "RARE"
+			card.weight = 40
+			card.title = ab.name
+			card.new_ability_data = ab
+			card.milestone = milestone
+			candidates.append(card)
+
+	# 2. Existing abilities (unlocked + basic attack)
+	var existing_abilities: Array[AbilityData] = []
+	if hero.basic_attack_ability != null and hero.basic_attack_ability.data != null:
+		existing_abilities.append(hero.basic_attack_ability.data)
+	for ab in hero.unlocked_abilities:
+		if ab != null and ab.data != null and not existing_abilities.has(ab.data):
+			existing_abilities.append(ab.data)
+
+	# Determine primary stat key based on class
+	var pref_stat := EffectData.STAT_AD
+	if hero.data != null:
+		match hero.data.hero_class:
+			HeroData.HeroClass.MAGE, HeroData.HeroClass.SUPPORT:
+				pref_stat = EffectData.STAT_AP
+			HeroData.HeroClass.TANK:
+				pref_stat = EffectData.STAT_HP
+			_:
+				pref_stat = EffectData.STAT_AD
+
+	for ab_data in existing_abilities:
+		if ab_data.effects.is_empty():
+			continue
+
+		# FLAT_BOOST (Trọng số: 75, Phổ biến)
+		var flat_card := SkillUpgradeCard.new()
+		flat_card.upgrade_type = SkillUpgradeCard.UpgradeType.FLAT_BOOST
+		flat_card.rarity_tier = "COMMON"
+		flat_card.weight = 75
+		flat_card.target_ability = ab_data
+		flat_card.bonus_value = 25.0
+		flat_card.title = "[CƯỜNG HÓA] " + ab_data.name
+		candidates.append(flat_card)
+
+		# SCALE_BOOST (Trọng số: 20, Hiếm)
+		var scale_card := SkillUpgradeCard.new()
+		scale_card.upgrade_type = SkillUpgradeCard.UpgradeType.SCALE_BOOST
+		scale_card.rarity_tier = "RARE"
+		scale_card.weight = 20
+		scale_card.target_ability = ab_data
+		scale_card.stat_key = pref_stat
+		scale_card.bonus_value = 0.20
+		scale_card.title = "[ĐỘT PHÁ] " + ab_data.name
+		candidates.append(scale_card)
+
+		# ULTIMATE_EVOLVE (Trọng số: 5, Huyền thoại)
+		if ab_data.ability_type == AbilityData.AbilityType.ULTIMATE:
+			var ult_card := SkillUpgradeCard.new()
+			ult_card.upgrade_type = SkillUpgradeCard.UpgradeType.ULTIMATE_EVOLVE
+			ult_card.rarity_tier = "EPIC"
+			ult_card.weight = 5
+			ult_card.target_ability = ab_data
+			ult_card.bonus_value = 50.0
+			ult_card.title = "[TIẾN HÓA] " + ab_data.name
+			candidates.append(ult_card)
+
+	# Rút tối đa 3 thẻ không trùng lặp
+	var chosen: Array[SkillUpgradeCard] = []
+	var pool_copy := candidates.duplicate()
+	var pick_count := mini(3, pool_copy.size())
+
+	for _i in range(pick_count):
+		var picked = sample_weighted_card(pool_copy)
+		if picked != null:
+			chosen.append(picked)
+			pool_copy.erase(picked)
+
+	return chosen

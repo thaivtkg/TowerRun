@@ -17,7 +17,6 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-EventBus="*uid://rmy1pkxq0y0y"
 GameManager="*uid://b5q6t1v3xhu3r"
 SaveManager="*uid://drkguelcgtghg"
 DataManager="*uid://lub4pclrj6oa"

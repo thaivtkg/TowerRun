@@ -15,11 +15,11 @@ func _ready() -> void:
 	if energy_bar != null:
 		energy_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-func setup(is_hero: bool, init_hp: float, init_max_hp: float, init_energy: float = 0.0, init_max_energy: float = 100.0) -> void:
+func setup(is_hero: bool, init_hp: float, init_max_hp: float, init_energy: float = 0.0, init_max_energy: float = 100.0, show_energy: bool = false) -> void:
 	if not is_node_ready():
 		await ready
 		
-	_is_hero = is_hero
+	_is_hero = is_hero or show_energy
 	
 	# Health Bar Styling
 	_apply_bar_style(health_bar, Color(0.2, 0.85, 0.3) if is_hero else Color(0.9, 0.2, 0.2))
@@ -27,7 +27,7 @@ func setup(is_hero: bool, init_hp: float, init_max_hp: float, init_energy: float
 	health_bar.value = init_hp
 	
 	# Energy Bar Styling
-	if is_hero:
+	if is_hero or show_energy:
 		energy_bar.visible = true
 		_apply_bar_style(energy_bar, Color(1.0, 0.85, 0.2)) # Màu vàng kim báo hiệu Ultimate
 		energy_bar.max_value = max(1.0, init_max_energy)
