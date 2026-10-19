@@ -99,16 +99,11 @@ func _init_systems() -> void:
 		placement_controller.board_grid = board_grid
 		placement_controller.board_view = board_view
 		placement_controller.entity_selected.connect(func(e):
-			if e is HeroEntity and (e as HeroEntity).has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
-				open_hero_skill_choice(e as HeroEntity)
-			elif is_instance_valid(character_stats_ui):
+			if e is EnemyEntity and is_instance_valid(character_stats_ui):
 				character_stats_ui.inspect_hero(e)
 		)
 		placement_controller.hero_selected.connect(func(h):
-			if h is HeroEntity and (h as HeroEntity).has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
-				open_hero_skill_choice(h as HeroEntity)
-			elif is_instance_valid(character_stats_ui):
-				character_stats_ui.inspect_hero(h)
+			handle_hero_clicked(h)
 		)
 		placement_controller.hero_hovered.connect(func(h):
 			if is_instance_valid(character_stats_ui) and not character_stats_ui.visible:
@@ -697,6 +692,10 @@ func open_hero_skill_choice(hero: HeroEntity) -> void:
 	if not hero.has_pending_milestone:
 		return
 		
+	# Khóa PlacementController và ngắt kéo dở ngay lập tức
+	if placement_controller != null:
+		placement_controller.set_locked(true)
+		
 	var milestone_to_use: int = hero.pending_upgrade_milestone
 	if milestone_to_use <= 0 and not hero.pending_milestones.is_empty():
 		hero.pending_milestones.sort()
@@ -752,6 +751,10 @@ func _on_skill_chosen(chosen: Variant, all_choices: Array) -> void:
 	
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
+		
+	# Mở khóa PlacementController khi thoát modal nếu đang ở Preparation Phase
+	if placement_controller != null and current_phase == EncounterPhase.PREPARATION:
+		placement_controller.set_locked(false)
 		
 	# Only continue queue in legacy sequential mode (TC-07.4)
 	if from_queue and choice_queue.size() > 0:
@@ -1069,8 +1072,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		for e in all_entities:
 			if is_instance_valid(e) and not e.is_dead:
 				var rad: float = board_config.hex_radius if board_config != null else 44.0
-				if e.global_position.distance_to(mouse_pos) <= rad:
-					if is_instance_valid(character_stats_ui):
+				var is_clicked: bool = (e.global_position.distance_to(mouse_pos) <= rad)
+				if not is_clicked and e is HeroEntity and (e as HeroEntity).has_pending_milestone:
+					var badge_pos: Vector2 = e.global_position + Vector2(0, -56)
+					if mouse_pos.distance_to(badge_pos) <= 32.0:
+						is_clicked = true
+						
+				if is_clicked:
+					if e is HeroEntity:
+						handle_hero_clicked(e as HeroEntity)
+					elif is_instance_valid(character_stats_ui):
 						character_stats_ui.inspect_hero(e)
 					return
 					
@@ -1178,8 +1189,9 @@ func _run_all_tests() -> void:
 	_run_tc_25_monolithic_header_one_choice_and_scaling()
 	_run_tc_26_model_a_tft_and_lmht_tooltips()
 	_run_tc_27_dynamic_prestige_border_palette()
+	_run_tc_28_hero_upgrade_anti_displacement()
 	
-	_log_test("\n🎉 TẤT CẢ 27 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 28 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3824,6 +3836,83 @@ func _run_tc_27_dynamic_prestige_border_palette() -> void:
 	character_stats_ui.close()
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-27 PASSED: Dynamic Prestige Border Palette & Card Aura fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-28: Hero Upgrade Input Isolation & Anti-Displacement Verification (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_28_hero_upgrade_anti_displacement() -> void:
+	_log_test("\n==================== [TEST TC-28: HERO UPGRADE ANTI-DISPLACEMENT] ====================")
+	_reset_test_battlefield()
+	
+	# Chuyển sang Preparation Phase để test kéo thả và nâng cấp Tướng
+	enter_preparation_phase()
+	assert(current_phase == EncounterPhase.PREPARATION, "FAIL TC-28: Must be in PREPARATION phase")
+	
+	var hero: HeroEntity = heroes[0] as HeroEntity
+	assert(hero != null, "FAIL TC-28: Hero 0 must exist")
+	var initial_cell: Vector2i = board_grid.get_cell_for_entity(hero)
+	assert(initial_cell != Vector2i(-1, -1), "FAIL TC-28: Hero must be deployed on grid")
+	var initial_world_pos: Vector2 = hero.global_position
+	
+	# 1. TC-28.1: Hero Upgrade Selection keeps hero position completely unchanged
+	_log_test("[TC-28.1] Verifying upgrade selection maintains exact hero position...")
+	hero.progression.milestone_reached.emit(5)
+	assert(hero.has_pending_milestone == true, "FAIL TC-28.1: Hero must have pending milestone")
+	
+	# Simulate clicking the hero to open upgrade
+	handle_hero_clicked(hero)
+	assert(skill_ui.visible == true, "FAIL TC-28.1: SkillChoiceUI must open")
+	assert(placement_controller.is_locked == true, "FAIL TC-28.1: PlacementController must be locked while SkillChoiceUI is open")
+	assert(hero.global_position == initial_world_pos, "FAIL TC-28.1: Hero position must not drift on UI open")
+	assert(board_grid.get_cell_for_entity(hero) == initial_cell, "FAIL TC-28.1: Hero cell must not change on UI open")
+	
+	# Choose skill upgrade
+	var choice = AbilityData.new()
+	choice.name = "AntiDisplacementSkill"
+	_on_skill_chosen(choice, [choice])
+	assert(not skill_ui.visible, "FAIL TC-28.1: SkillChoiceUI must close")
+	assert(placement_controller.is_locked == false, "FAIL TC-28.1: PlacementController unlocked after skill chosen")
+	assert(hero.global_position == initial_world_pos, "FAIL TC-28.1: Hero position must remain exact after skill chosen")
+	assert(board_grid.get_cell_for_entity(hero) == initial_cell, "FAIL TC-28.1: Hero cell must remain exact after skill chosen")
+	_log_test(">>> 🟢 TC-28.1 Upgrade Selection Anti-Displacement PASSED!")
+	
+	# 2. TC-28.2: PlacementController cancel_drag resets entity to original_cell
+	_log_test("[TC-28.2] Verifying cancel_drag and lock rollback...")
+	placement_controller.dragged_entity = hero
+	placement_controller.original_cell = initial_cell
+	placement_controller.original_z_index = 0
+	hero.global_position = Vector2(999, 999) # Displace temporarily
+	
+	placement_controller.set_locked(true)
+	assert(placement_controller.dragged_entity == null, "FAIL TC-28.2: dragged_entity must be cleared")
+	assert(hero.global_position == initial_world_pos, "FAIL TC-28.2: Hero must be rolled back to original cell position")
+	placement_controller.set_locked(false)
+	_log_test(">>> 🟢 TC-28.2 cancel_drag and lock rollback PASSED!")
+	
+	# 3. TC-28.3: Floating Badge Click Area Detection
+	_log_test("[TC-28.3] Verifying upgrade badge detection area...")
+	hero.progression.milestone_reached.emit(10)
+	assert(hero.has_pending_milestone == true)
+	
+	var badge_pos: Vector2 = hero.global_position + Vector2(0, -56)
+	var detected_hero := placement_controller._find_badge_hero_at(badge_pos)
+	assert(detected_hero == hero, "FAIL TC-28.3: Direct click on badge must detect hero")
+	
+	var near_badge_pos: Vector2 = badge_pos + Vector2(15, -10)
+	var detected_near := placement_controller._find_badge_hero_at(near_badge_pos)
+	assert(detected_near == hero, "FAIL TC-28.3: Click within badge radius must detect hero")
+	
+	var far_pos: Vector2 = badge_pos + Vector2(100, 100)
+	var detected_far := placement_controller._find_badge_hero_at(far_pos)
+	assert(detected_far == null, "FAIL TC-28.3: Click far from badge must return null")
+	_log_test(">>> 🟢 TC-28.3 Floating Badge Click Area PASSED!")
+	
+	# Clean up for next tests
+	var choice2 = AbilityData.new()
+	choice2.name = "Skill2"
+	_on_skill_chosen(choice2, [choice2])
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-28 PASSED: Hero Upgrade Input Isolation & Anti-Displacement fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
