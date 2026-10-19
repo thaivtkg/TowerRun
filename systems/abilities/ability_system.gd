@@ -70,7 +70,7 @@ func trigger_passives(source: CombatEntity, condition: AbilityData.TriggerCondit
 						
 				_executing_passives.erase(ability) # Mở khóa
 
-func _on_damage_dealt(source: CombatEntity, target: CombatEntity, _amount: float, is_crit: bool) -> void:
+func _on_damage_dealt(source: CombatEntity, target: CombatEntity, _amount: float, is_crit: bool, _damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
 	trigger_passives(source, AbilityData.TriggerCondition.ON_ATTACK)
 	if is_crit:
 		trigger_passives(source, AbilityData.TriggerCondition.ON_CRIT)

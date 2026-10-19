@@ -31,7 +31,7 @@ func _track_hero(hero: HeroEntity) -> void:
 	if is_instance_valid(hero) and not tracked_heroes.has(hero):
 		tracked_heroes.append(hero)
 
-func _on_damage_dealt(source: CombatEntity, target: CombatEntity, amount: float, _is_crit: bool) -> void:
+func _on_damage_dealt(source: CombatEntity, target: CombatEntity, amount: float, _is_crit: bool, _damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
 	if source is HeroEntity and is_instance_valid(source):
 		var hero := source as HeroEntity
 		if hero.metrics != null:

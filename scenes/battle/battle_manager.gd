@@ -876,7 +876,7 @@ func _on_entity_attack_requested(event: DamageEvent) -> void:
 		event.source.play_lunge_vfx(event.target.global_position)
 	combat_system.process_attack(event)
 
-func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool) -> void:
+func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool, damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
 	if not is_instance_valid(target):
 		return
 	target.play_hit_vfx()
@@ -885,7 +885,13 @@ func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount
 		_shake_camera(4.0, 0.18)
 		_spawn_floating_text(target.global_position, "%d!" % dmg_val, FloatingText.Type.CRIT)
 	else:
-		_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE)
+		match damage_type:
+			DamageEvent.DamageType.MAGIC:
+				_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE_MAGIC)
+			DamageEvent.DamageType.TRUE:
+				_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE_TRUE)
+			_:
+				_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE_PHYSICAL)
 
 func _on_ability_executed(source: CombatEntity, ability: Ability) -> void:
 	if not is_instance_valid(source) or ability == null or ability.data == null:
@@ -1024,6 +1030,7 @@ func _input(event: InputEvent) -> void:
 		KEY_APOSTROPHE: _run_tc_19_narrative_and_encounter_director()
 		KEY_ENTER: _run_tc_20_procedural_ui_and_polymorphism()
 		KEY_BACKSPACE: _run_tc_21_save_resume_and_boss_balance()
+		KEY_F2: _run_tc_22_floating_combat_text()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1076,8 +1083,9 @@ func _run_all_tests() -> void:
 	_run_tc_19_narrative_and_encounter_director()
 	_run_tc_20_procedural_ui_and_polymorphism()
 	_run_tc_21_save_resume_and_boss_balance()
+	_run_tc_22_floating_combat_text()
 	
-	_log_test("\n🎉 TẤT CẢ 21 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 22 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3063,6 +3071,85 @@ func _run_tc_21_save_resume_and_boss_balance() -> void:
 	_log_test(">>> 🟢 TC-21.4 QA Cheat Tools PASSED!")
 	
 	_log_test(">>> 🟢 TC-21 PASSED: Full Persistence, Hero State, Boss Balance & QA Cheats fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-22: Floating Combat Text & Damage Popups (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_22_floating_combat_text() -> void:
+	_log_test("\n==================== [TEST TC-22: FLOATING COMBAT TEXT & POPUPS] ====================")
+	_reset_test_battlefield()
+
+	# 1. TC-22.1: Palette Matrix & Typography Rule Check
+	_log_test("[TC-22.1] Checking FloatingText GD Palette Matrix & Typography Rules...")
+	var test_ft = FLOATING_TEXT_SCENE.instantiate() as FloatingText
+	add_child(test_ft)
+
+	# Check Physical Damage
+	test_ft.setup("100", FloatingText.Type.DAMAGE_PHYSICAL)
+	var label = test_ft.label
+	assert(label != null, "FAIL TC-22.1: Label is null")
+	assert(label.get_theme_color("font_outline_color") == Color("#11141a"), "FAIL TC-22.1: Font outline color must be #11141a")
+	assert(label.get_theme_constant("outline_size") == 3, "FAIL TC-22.1: Font outline size must be 3px")
+	assert(label.modulate == Color("#ff7675"), "FAIL TC-22.1: Physical damage modulate mismatch")
+
+	# Check Magic Damage
+	test_ft.setup("75", FloatingText.Type.DAMAGE_MAGIC)
+	assert(label.modulate == Color("#a29bfe"), "FAIL TC-22.1: Magic damage modulate mismatch")
+
+	# Check True Damage
+	test_ft.setup("50", FloatingText.Type.DAMAGE_TRUE)
+	assert(label.modulate == Color("#ffffff"), "FAIL TC-22.1: True damage modulate mismatch")
+
+	# Check Crit Damage & Format Suffix
+	test_ft.setup("180", FloatingText.Type.CRIT)
+	assert(label.modulate == Color("#fdcb6e"), "FAIL TC-22.1: Crit modulate mismatch")
+	assert(label.text == "180!", "FAIL TC-22.1: Crit must format with ! suffix")
+
+	# Check Heal & Format Prefix
+	test_ft.setup("35", FloatingText.Type.HEAL)
+	assert(label.modulate == Color("#2ecc71"), "FAIL TC-22.1: Heal modulate mismatch")
+	assert(label.text == "+35", "FAIL TC-22.1: Heal must format with + prefix")
+
+	# Check XP & Format Suffix
+	test_ft.setup("+120", FloatingText.Type.XP)
+	assert(label.modulate == Color("#fd79a8"), "FAIL TC-22.1: XP modulate mismatch")
+	assert(label.text == "+120 XP", "FAIL TC-22.1: XP must format with XP suffix")
+
+	# Check System
+	test_ft.setup("[ULTIMATE]", FloatingText.Type.SYSTEM)
+	assert(label.modulate == Color("#f1c40f"), "FAIL TC-22.1: System modulate mismatch")
+
+	test_ft.queue_free()
+	_log_test(">>> 🟢 TC-22.1 FloatingText GD Palette Matrix & Typography Rules PASSED!")
+
+	# 2. TC-22.2: Signal Arity Compatibility Check
+	_log_test("[TC-22.2] Checking Signal Arity Compatibility (5 params) across all systems...")
+	var hero = heroes[0] as HeroEntity
+	var enemy = enemies[0] as EnemyEntity
+	var initial_hero_dmg = hero.metrics.damage_dealt
+
+	# Emit 5 arguments via combat_system.damage_dealt
+	combat_system.damage_dealt.emit(hero, enemy, 42.0, false, DamageEvent.DamageType.MAGIC)
+	assert(hero.metrics.damage_dealt == initial_hero_dmg + 42.0, "FAIL TC-22.2: ProgressionSystem failed to update metric from 5-arg damage_dealt")
+
+	# Emit with Physical crit
+	combat_system.damage_dealt.emit(hero, enemy, 20.0, true, DamageEvent.DamageType.PHYSICAL)
+	assert(hero.metrics.damage_dealt == initial_hero_dmg + 62.0, "FAIL TC-22.2: ProgressionSystem failed on crit damage_dealt")
+	_log_test(">>> 🟢 TC-22.2 Signal Arity Compatibility PASSED!")
+
+	# 3. TC-22.3: Damage Routing for Physical, Magic, True, and Crit
+	_log_test("[TC-22.3] Checking DamageEvent processing for Physical, Magic, and True damage...")
+	var initial_hp = enemy.current_hp
+	var magic_event = DamageEvent.new(hero, enemy, 30.0, DamageEvent.DamageType.MAGIC)
+	combat_system.process_attack(magic_event)
+	assert(enemy.current_hp < initial_hp, "FAIL TC-22.3: Magic attack did not deal damage")
+
+	var true_event = DamageEvent.new(hero, enemy, 20.0, DamageEvent.DamageType.TRUE)
+	combat_system.process_attack(true_event)
+	assert(true_event.final_damage == 20.0, "FAIL TC-22.3: True damage should bypass defense")
+	_log_test(">>> 🟢 TC-22.3 Damage Event Processing PASSED!")
+
+	_log_test(">>> 🟢 TC-22 PASSED: Floating Combat Text & Damage Popups fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
