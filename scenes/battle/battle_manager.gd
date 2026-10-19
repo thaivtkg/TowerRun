@@ -982,6 +982,13 @@ func _log_test(msg: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		var screen_pos: Vector2 = event.position
+		# 1. Nếu click vào panel hoặc crest badge -> Bỏ qua, giữ nguyên mở
+		if is_instance_valid(character_stats_ui) and character_stats_ui.visible:
+			if character_stats_ui.is_click_inside(screen_pos):
+				return
+				
+		# 2. Kiểm tra click vào Tướng hoặc Quái trên sàn đấu
 		var mouse_pos: Vector2 = get_global_mouse_position()
 		var all_entities: Array[CombatEntity] = []
 		all_entities.append_array(heroes)
@@ -993,6 +1000,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					if is_instance_valid(character_stats_ui):
 						character_stats_ui.inspect_hero(e)
 					return
+					
+		# 3. Click ngoài khoảng trống hoặc ô cờ trống -> Tự động đóng bảng stat
+		if is_instance_valid(character_stats_ui) and character_stats_ui.visible:
+			character_stats_ui.close()
 
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed): return
@@ -1032,6 +1043,7 @@ func _input(event: InputEvent) -> void:
 		KEY_BACKSPACE: _run_tc_21_save_resume_and_boss_balance()
 		KEY_F2: _run_tc_22_floating_combat_text()
 		KEY_F3: _run_tc_23_tft_level_crest_and_compact_grid()
+		KEY_F4: _run_tc_24_hero_stat_progression_and_seamless_ui()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1086,8 +1098,9 @@ func _run_all_tests() -> void:
 	_run_tc_21_save_resume_and_boss_balance()
 	_run_tc_22_floating_combat_text()
 	_run_tc_23_tft_level_crest_and_compact_grid()
+	_run_tc_24_hero_stat_progression_and_seamless_ui()
 	
-	_log_test("\n🎉 TẤT CẢ 23 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 24 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3276,6 +3289,115 @@ func _run_tc_23_tft_level_crest_and_compact_grid() -> void:
 	_log_test(">>> 🟢 TC-23.3 Top-Center Anchoring & Compact TFT Grid PASSED!")
 	
 	_log_test(">>> 🟢 TC-23 PASSED: TFT-Style Level Crest & Compact Stats Grid fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-24: Hero Stat Progression Formula & Seamless Monolithic UI with Click-Outside
+# (GD & QA Specification Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_24_hero_stat_progression_and_seamless_ui() -> void:
+	_log_test("\n==================== [TEST TC-24: HERO STAT PROGRESSION & SEAMLESS UI] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-24.1: HERO STAT PROGRESSION FORMULA VERIFICATION (Soraka at Lv 1, 10, 25, 27, 99)
+	_log_test("[TC-24.1] Checking Hero Stat Progression formula for Soraka (Lv 1, 10, 25, 27, 99)...")
+	var soraka_data: HeroData = _create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6, 3, 10.0)
+	var hero_inst: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(hero_inst)
+	hero_inst.initialize(soraka_data)
+	hero_inst.progression = HeroProgression.new()
+	
+	# Level 1 (Tier I: Tân Binh, mult = 1.0)
+	hero_inst.progression.current_level = 1
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 120.0), "FAIL TC-24.1: Lv1 Max HP should be 120.0, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 3.0), "FAIL TC-24.1: Lv1 ATK should be 3.0, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 10.0), "FAIL TC-24.1: Lv1 AP should be 10.0, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 10.0), "FAIL TC-24.1: Lv1 DEF should be 10.0, got %f" % hero_inst.get_defense())
+	
+	# Level 10 (Tier II: Tinh Anh, mult = 1.05)
+	hero_inst.progression.current_level = 10
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 216.72), "FAIL TC-24.1: Lv10 Max HP should be 216.72, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 5.418), "FAIL TC-24.1: Lv10 ATK should be 5.418, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 18.06), "FAIL TC-24.1: Lv10 AP should be 18.06, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 15.225), "FAIL TC-24.1: Lv10 DEF should be 15.225, got %f" % hero_inst.get_defense())
+	
+	# Level 25 (Tier III: Dũng Sĩ, mult = 1.10)
+	hero_inst.progression.current_level = 25
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 385.44), "FAIL TC-24.1: Lv25 Max HP should be 385.44, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 9.636), "FAIL TC-24.1: Lv25 ATK should be 9.636, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 32.12), "FAIL TC-24.1: Lv25 AP should be 32.12, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 24.2), "FAIL TC-24.1: Lv25 DEF should be 24.2, got %f" % hero_inst.get_defense())
+	
+	# Level 27 (Tier III: Dũng Sĩ, mult = 1.10 - GD Spec Table)
+	hero_inst.progression.current_level = 27
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 406.56), "FAIL TC-24.1: Lv27 Max HP should be 406.56, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 10.164), "FAIL TC-24.1: Lv27 ATK should be 10.164, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 33.88), "FAIL TC-24.1: Lv27 AP should be 33.88, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 25.3), "FAIL TC-24.1: Lv27 DEF should be 25.3, got %f" % hero_inst.get_defense())
+	
+	# Level 99 (Tier VI: Vô Cực MAX, mult = 1.30)
+	hero_inst.progression.current_level = 99
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 1379.04), "FAIL TC-24.1: Lv99 Max HP should be 1379.04, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 34.476), "FAIL TC-24.1: Lv99 ATK should be 34.476, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 114.92), "FAIL TC-24.1: Lv99 AP should be 114.92, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 76.7), "FAIL TC-24.1: Lv99 DEF should be 76.7, got %f" % hero_inst.get_defense())
+	_log_test(">>> 🟢 TC-24.1 Hero Stat Progression Formula PASSED!")
+	
+	# 2. TC-24.2: SEAMLESS MONOLITHIC CARD & NO CLOSE_BUTTON IN TREE
+	_log_test("[TC-24.2] Checking Seamless Monolithic Card & absence of close_button...")
+	hero_inst.progression.current_level = 27
+	hero_inst._update_scaled_max_hp()
+	character_stats_ui.inspect_hero(hero_inst)
+	assert(character_stats_ui.visible, "FAIL TC-24.2: CharacterStatsUI should be visible")
+	assert(character_stats_ui.close_button == null, "FAIL TC-24.2: close_button variable must be null")
+	var found_btn = character_stats_ui.find_child("close_button", true, false)
+	assert(found_btn == null, "FAIL TC-24.2: No node named 'close_button' must exist in tree")
+	var avatar_panel = character_stats_ui.avatar_panel
+	assert(avatar_panel != null, "FAIL TC-24.2: avatar_panel must exist")
+	for child in avatar_panel.find_children("*", "Button", true, false):
+		assert(false, "FAIL TC-24.2: Found unexpected button in avatar_panel: %s" % child.name)
+	# Verify UI values match Lv 27
+	assert(character_stats_ui.hp_label.text.contains("407"), "FAIL TC-24.2: HP label must show 407, got %s" % character_stats_ui.hp_label.text)
+	assert(character_stats_ui.attack_val_label.text == "10.2", "FAIL TC-24.2: Attack label must show 10.2, got %s" % character_stats_ui.attack_val_label.text)
+	assert(character_stats_ui.spell_val_label.text == "33.9", "FAIL TC-24.2: Spell label must show 33.9, got %s" % character_stats_ui.spell_val_label.text)
+	assert(character_stats_ui.def_val_label.text == "25.3", "FAIL TC-24.2: Defense label must show 25.3, got %s" % character_stats_ui.def_val_label.text)
+	_log_test(">>> 🟢 TC-24.2 Seamless Monolithic Card & No Close Button PASSED!")
+	
+	# 3. TC-24.3: CLICK-OUTSIDE DISMISS & CLICK-INSIDE PERSISTENCE
+	_log_test("[TC-24.3] Checking Click-Outside Dismiss and Click-Inside Persistence...")
+	# Simulated click INSIDE panel (e.g., Vector2(900, 100))
+	var click_inside := InputEventMouseButton.new()
+	click_inside.button_index = MOUSE_BUTTON_LEFT
+	click_inside.pressed = true
+	click_inside.position = Vector2(900, 100)
+	_unhandled_input(click_inside)
+	assert(character_stats_ui.visible == true, "FAIL TC-24.3: Clicking inside panel must keep UI open")
+	
+	# Simulated click on Top-Center Crest (using crest_panel global rect)
+	var crest_global_pos: Vector2 = character_stats_ui.crest_panel.get_global_rect().position + Vector2(10, 10)
+	var click_crest := InputEventMouseButton.new()
+	click_crest.button_index = MOUSE_BUTTON_LEFT
+	click_crest.pressed = true
+	click_crest.position = crest_global_pos
+	_unhandled_input(click_crest)
+	assert(character_stats_ui.visible == true, "FAIL TC-24.3: Clicking inside crest badge must keep UI open")
+	
+	# Simulated click OUTSIDE on empty space (e.g., Vector2(50, 50))
+	var click_outside := InputEventMouseButton.new()
+	click_outside.button_index = MOUSE_BUTTON_LEFT
+	click_outside.pressed = true
+	click_outside.position = Vector2(50, 50)
+	_unhandled_input(click_outside)
+	assert(character_stats_ui.visible == false, "FAIL TC-24.3: Clicking outside must dismiss CharacterStatsUI")
+	
+	# Clean up
+	hero_inst.queue_free()
+	_log_test(">>> 🟢 TC-24.3 Click-Outside Dismiss & Click-Inside Persistence PASSED!")
+	_log_test(">>> 🟢 TC-24 PASSED: Hero Stat Progression & Seamless UI fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

@@ -47,8 +47,9 @@ func initialize(initial_data: HeroData) -> void:
 	if data == null: return
 		
 	name = data.name 
-	max_hp = data.base_hp
-	current_hp = data.base_hp
+	var init_lvl: int = progression.current_level if progression != null else 1
+	max_hp = calculate_max_hp(init_lvl)
+	current_hp = max_hp
 	if "max_energy" in data and data.max_energy > 0.0:
 		max_energy = data.max_energy
 	if "starting_energy" in data:
@@ -123,6 +124,7 @@ func _on_attack_timer_timeout() -> void:
 
 func _on_level_up(_new_level: int) -> void:
 	level = _new_level
+	_update_scaled_max_hp()
 
 func _on_milestone_reached(milestone: int) -> void:
 	pending_milestones.append(milestone)
@@ -154,12 +156,67 @@ func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[Abi
 	var pool: Array = runtime_pools.get(milestone, [])
 	for ability in revealed: pool.erase(ability)
 
+# ==========================================
+# SPRINT 5: HERO STAT PROGRESSION (GD SPEC SECTION I.2)
+# ==========================================
+static func get_tier_multiplier(lvl: int) -> float:
+	if lvl >= 99: return 1.30
+	if lvl >= 75: return 1.20
+	if lvl >= 50: return 1.15
+	if lvl >= 25: return 1.10
+	if lvl >= 10: return 1.05
+	return 1.00
+
+func get_effective_level() -> int:
+	if progression != null:
+		return progression.current_level
+	return level
+
+func calculate_max_hp(lvl: int) -> float:
+	var base: float = data.base_hp if data != null else 100.0
+	var factor: float = 1.0 + float(lvl - 1) * 0.08
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult
+
+func get_attack() -> float:
+	var base: float = data.base_attack if data != null else 10.0
+	var lvl: int = get_effective_level()
+	var factor: float = 1.0 + float(lvl - 1) * 0.08
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult
+
+func get_spell_power() -> float:
+	var base: float = data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
+	var lvl: int = get_effective_level()
+	var factor: float = 1.0 + float(lvl - 1) * 0.08
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult
+
+func get_defense() -> float:
+	var base: float = data.base_defense if data != null else 0.0
+	var lvl: int = get_effective_level()
+	var factor: float = 1.0 + float(lvl - 1) * 0.05
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult
+
+func _update_scaled_max_hp() -> void:
+	if data == null: return
+	var old_max := max_hp
+	var new_max := calculate_max_hp(get_effective_level())
+	if is_equal_approx(old_max, new_max):
+		return
+	if old_max > 0.0 and new_max > 0.0:
+		var ratio := current_hp / old_max
+		max_hp = new_max
+		current_hp = clampf(new_max * ratio, 1.0, new_max)
+	else:
+		max_hp = new_max
+		current_hp = new_max
+	hp_changed.emit(current_hp, max_hp)
+
 func get_attack_range() -> int: return int(data.attack_range) if data != null else 1
-func get_defense() -> float: return data.base_defense if data != null else 0.0
 func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
-func get_attack() -> float: return data.base_attack if data != null else 10.0
-func get_spell_power() -> float: return data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
 
 # ==========================================

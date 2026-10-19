@@ -99,7 +99,7 @@ var avatar_initial_label: Label
 var name_label: Label
 var class_label: Label
 var level_label: Label
-var close_button: Button
+var close_button: Button = null
 
 # 2. Survival & Progression Bars
 var hp_label: Label
@@ -135,6 +135,7 @@ var _on_hp_changed_callable: Callable
 var _on_energy_changed_callable: Callable
 var _on_died_callable: Callable
 var _on_exiting_callable: Callable
+var _on_leveled_up_callable: Callable
 
 func _init() -> void:
 	layer = 50
@@ -203,7 +204,7 @@ func _build_ui() -> void:
 	crest_panel.add_child(crest_label)
 	
 	# ==========================================================================
-	# 1. TOP AVATAR BANNER (TFT-STYLE CENTERED PORTRAIT)
+	# 1. TOP AVATAR BANNER (SEAMLESS MONOLITHIC CARD - NO INNER BORDER)
 	# ==========================================================================
 	avatar_panel = PanelContainer.new()
 	avatar_panel.custom_minimum_size = Vector2(260, 105)
@@ -214,14 +215,16 @@ func _build_ui() -> void:
 	avatar_bg_style.content_margin_right = 8
 	avatar_bg_style.content_margin_top = 6
 	avatar_bg_style.content_margin_bottom = 6
-	avatar_panel.add_theme_stylebox_override("panel", avatar_bg_style)
+	# Seamless Monolithic: panel_container is sole bounding frame; no inner border
+	var empty_avatar_style := StyleBoxEmpty.new()
+	avatar_panel.add_theme_stylebox_override("panel", empty_avatar_style)
 	main_vbox.add_child(avatar_panel)
 	
 	var banner_control := Control.new()
 	banner_control.set_anchors_preset(Control.PRESET_FULL_RECT)
 	avatar_panel.add_child(banner_control)
 	
-	# Class / Hệ Tộc (Góc trên trái banner, chuẩn TFT)
+	# Class / Hệ Tộc (Góc trên trái banner, chuẩn TFT - không nút [✕] thừa thãi)
 	class_label = Label.new()
 	class_label.text = "[TANK]"
 	class_label.position = Vector2(8, 4)
@@ -229,19 +232,8 @@ func _build_ui() -> void:
 	class_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
 	banner_control.add_child(class_label)
 	
-	# Nút đóng "✕" (Góc trên phải)
-	close_button = Button.new()
-	close_button.text = "✕"
-	close_button.custom_minimum_size = Vector2(22, 22)
-	close_button.size = Vector2(22, 22)
-	close_button.position = Vector2(230, 4)
-	close_button.focus_mode = Control.FOCUS_NONE
-	var close_style := StyleBoxFlat.new()
-	close_style.bg_color = Color(0.25, 0.28, 0.35, 0.8)
-	close_style.set_corner_radius_all(4)
-	close_button.add_theme_stylebox_override("normal", close_style)
-	close_button.pressed.connect(close)
-	banner_control.add_child(close_button)
+	# Nút đóng [✕] bị loại bỏ hoàn toàn theo GD Spec (tự động đóng khi Click ngoài)
+	close_button = null
 	
 	# Icon Avatar Placeholder ở giữa banner
 	avatar_initial_label = Label.new()
@@ -863,6 +855,13 @@ func _connect_inspected_entity() -> void:
 	inspected_entity.died.connect(_on_died_callable)
 	inspected_entity.tree_exiting.connect(_on_exiting_callable)
 
+	if inspected_entity is HeroEntity:
+		var hero := inspected_entity as HeroEntity
+		if hero.progression != null:
+			_on_leveled_up_callable = func(_lvl): update_stats()
+			if not hero.progression.leveled_up.is_connected(_on_leveled_up_callable):
+				hero.progression.leveled_up.connect(_on_leveled_up_callable)
+
 func _disconnect_inspected_entity() -> void:
 	if inspected_entity != null and is_instance_valid(inspected_entity):
 		if _on_hp_changed_callable.is_valid() and inspected_entity.hp_changed.is_connected(_on_hp_changed_callable):
@@ -873,4 +872,30 @@ func _disconnect_inspected_entity() -> void:
 			inspected_entity.died.disconnect(_on_died_callable)
 		if _on_exiting_callable.is_valid() and inspected_entity.tree_exiting.is_connected(_on_exiting_callable):
 			inspected_entity.tree_exiting.disconnect(_on_exiting_callable)
+		if inspected_entity is HeroEntity:
+			var hero := inspected_entity as HeroEntity
+			if hero.progression != null and _on_leveled_up_callable.is_valid():
+				if hero.progression.leveled_up.is_connected(_on_leveled_up_callable):
+					hero.progression.leveled_up.disconnect(_on_leveled_up_callable)
+
+# ==============================================================================
+# SPRINT 5: CLICK-OUTSIDE DISMISS DETECTION (GD & QA SPEC)
+# ==============================================================================
+func is_click_inside(screen_pos: Vector2) -> bool:
+	if not visible:
+		return false
+	if panel_container != null and is_instance_valid(panel_container):
+		if panel_container.get_global_rect().has_point(screen_pos):
+			return true
+	if crest_panel != null and is_instance_valid(crest_panel):
+		if crest_panel.get_global_rect().has_point(screen_pos):
+			return true
+	return false
+
+func handle_click_outside(screen_pos: Vector2) -> bool:
+	if visible and not is_click_inside(screen_pos):
+		close()
+		return true
+	return false
+
 
