@@ -15,5 +15,6 @@ func _init() -> void:
 
 func _build_action_text(total_val: float, scale_str: String) -> String:
 	var type_name := "phép" if damage_type == DamageEvent.DamageType.MAGIC else "vật lý"
-	var type_color := "#ff5555" if damage_type == DamageEvent.DamageType.PHYSICAL else "#9b59b6"
-	return "Gây [color=%s][b]%.0f[/b][/color]%s sát thương %s." % [type_color, total_val, scale_str, type_name]
+	var type_color := "#ff7675" if damage_type == DamageEvent.DamageType.PHYSICAL else "#a29bfe"
+	var num_str := fmt_val(total_val)
+	return "Gây [color=%s][b]%s[/b][/color]%s sát thương %s." % [type_color, num_str, scale_str, type_name]

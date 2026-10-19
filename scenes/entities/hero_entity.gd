@@ -10,6 +10,49 @@ var metrics: CombatMetric = CombatMetric.new()
 var basic_attack_ability: Ability           
 var runtime_pools: Dictionary = {} 
 var pending_milestones: Array[int] = []
+var pending_upgrade_milestone: int = 0
+var _has_pending_milestone: bool = false
+var has_pending_milestone: bool:
+	get:
+		return _has_pending_milestone or (not pending_milestones.is_empty())
+	set(val):
+		_has_pending_milestone = val
+		if not val:
+			pending_milestones.clear()
+			pending_upgrade_milestone = 0
+		_update_upgrade_badge()
+
+var upgrade_badge: Node2D = null
+
+func _setup_upgrade_badge() -> void:
+	if upgrade_badge != null and is_instance_valid(upgrade_badge):
+		return
+	upgrade_badge = Node2D.new()
+	upgrade_badge.name = "UpgradeBadge"
+	# Placed safely above status_bar at Vector2(0, -35), preventing overlap
+	upgrade_badge.position = Vector2(0, -56)
+	
+	var badge_label := Label.new()
+	badge_label.name = "BadgeLabel"
+	badge_label.text = "⬆️ NÂNG CẤP"
+	badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_label.position = Vector2(-40, -10)
+	badge_label.size = Vector2(80, 20)
+	badge_label.add_theme_font_size_override("font_size", 10)
+	badge_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	badge_label.add_theme_constant_override("outline_size", 2)
+	badge_label.add_theme_color_override("font_outline_color", Color(0.1, 0.1, 0.1, 0.9))
+	upgrade_badge.add_child(badge_label)
+	
+	add_child(upgrade_badge)
+	upgrade_badge.visible = has_pending_milestone
+
+func _update_upgrade_badge() -> void:
+	if upgrade_badge == null:
+		_setup_upgrade_badge()
+	if upgrade_badge != null:
+		upgrade_badge.visible = has_pending_milestone
 
 # ==========================================
 # SPRINT 4: RUNTIME ABILITY CLONING (P0 ISOLATION)
@@ -57,6 +100,7 @@ func initialize(initial_data: HeroData) -> void:
 	else:
 		current_energy = 0.0
 	setup_status_bar(true)
+	_setup_upgrade_badge()
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
 	
@@ -128,6 +172,8 @@ func _on_level_up(_new_level: int) -> void:
 
 func _on_milestone_reached(milestone: int) -> void:
 	pending_milestones.append(milestone)
+	_has_pending_milestone = true
+	_update_upgrade_badge()
 	print("[HeroEntity] %s reached Milestone Lv%d. Choice pending." % [name, milestone])
 
 func pull_milestone_choices(milestone: int) -> Array[AbilityData]:
@@ -155,6 +201,11 @@ func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[Abi
 	
 	var pool: Array = runtime_pools.get(milestone, [])
 	for ability in revealed: pool.erase(ability)
+	
+	has_pending_milestone = false
+	pending_milestones.clear()
+	pending_upgrade_milestone = 0
+	_update_upgrade_badge()
 
 # ==========================================
 # SPRINT 5: HERO STAT PROGRESSION (GD SPEC SECTION I.2)

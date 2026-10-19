@@ -214,7 +214,9 @@ func _build_ui() -> void:
 	crest_style.content_margin_right = 10
 	crest_style.content_margin_top = 1
 	crest_style.content_margin_bottom = 1
-	crest_panel.add_theme_stylebox_override("panel", crest_style)
+	crest_style.set_border_width_all(0)
+	# SPRINT 5: Khử triệt để viền con - crest_panel dùng StyleBoxEmpty theo GD Spec
+	crest_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	banner_control.add_child(crest_panel)
 	
 	crest_label = Label.new()
@@ -223,6 +225,8 @@ func _build_ui() -> void:
 	crest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	crest_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	crest_label.add_theme_font_size_override("font_size", 11)
+	crest_label.add_theme_constant_override("outline_size", 3)
+	crest_label.add_theme_color_override("font_outline_color", Color(0.07, 0.08, 0.1, 1.0))
 	crest_panel.add_child(crest_label)
 	
 	# Nút đóng [✕] bị loại bỏ hoàn toàn theo GD Spec (tự động đóng khi Click ngoài)
@@ -725,11 +729,11 @@ func _apply_crest_tier(entity: CombatEntity) -> void:
 		crest_label.text = "• CẤP %d •" % entity.level
 		_set_crest_style(Color("#7f8c8d"), Color("#1e2226"), 1.5, Color(0, 0, 0, 0), 0)
 
-func _set_crest_style(fg: Color, bg: Color, border_w: float, shadow: Color, shadow_sz: int) -> void:
+func _set_crest_style(fg: Color, bg: Color, _border_w: float, shadow: Color, shadow_sz: int) -> void:
 	crest_label.add_theme_color_override("font_color", fg)
 	crest_style.border_color = fg
 	crest_style.bg_color = bg
-	crest_style.set_border_width_all(int(round(border_w)))
+	crest_style.set_border_width_all(0)
 	crest_style.shadow_color = shadow
 	crest_style.shadow_size = shadow_sz
 

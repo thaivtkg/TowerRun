@@ -29,9 +29,9 @@ const STAT_NAMES: Dictionary = {
 	STAT_AP: "SMPT",
 	STAT_HP: "Máu tối đa",
 	STAT_ARM: "Giáp",
-	STAT_TOTAL_AD: "Tổng SMCK",
+	STAT_TOTAL_AD: "SMCK",
 	STAT_BONUS_AD: "SMCK cộng thêm",
-	STAT_TOTAL_AP: "Tổng SMPT",
+	STAT_TOTAL_AP: "SMPT",
 	STAT_BONUS_AP: "SMPT cộng thêm",
 	STAT_TOTAL_HP: "Máu tối đa",
 	STAT_BONUS_ARM: "Giáp cộng thêm"
@@ -79,6 +79,11 @@ func _get_stat_value(source: CombatEntity, stat_key: String) -> float:
 		_:
 			return 0.0
 
+static func fmt_val(val: float) -> String:
+	if is_equal_approx(val, roundf(val)):
+		return "%.0f" % val
+	return "%.1f" % val
+
 func calculate_total_value(source: CombatEntity = null) -> float:
 	var total: float = base_amount
 	if source == null:
@@ -93,14 +98,67 @@ func _build_scale_string(source: CombatEntity = null) -> String:
 	if scalings.is_empty():
 		return ""
 		
-	var scale_parts: Array[String] = []
 	var standard_keys = [
-		STAT_AD, STAT_TOTAL_AD, STAT_BONUS_AD,
-		STAT_AP, STAT_TOTAL_AP, STAT_BONUS_AP,
-		STAT_HP, STAT_TOTAL_HP,
-		STAT_ARM, STAT_BONUS_ARM
+		STAT_TOTAL_AD, STAT_BONUS_AD, STAT_AD,
+		STAT_TOTAL_AP, STAT_BONUS_AP, STAT_AP,
+		STAT_TOTAL_HP, STAT_HP,
+		STAT_BONUS_ARM, STAT_ARM
 	]
 	
+	# 1. Pure % Skill (Base Amount == 0): " = (X% ...)"
+	if base_amount == 0.0:
+		var parts: Array[String] = []
+		for stat_key in standard_keys:
+			if scalings.has(stat_key):
+				var ratio: float = float(scalings[stat_key])
+				if ratio > 0.0:
+					var pct := int(round(ratio * 100.0))
+					var name_str: String = STAT_NAMES.get(stat_key, stat_key)
+					parts.append("%d%% %s" % [pct, name_str])
+		for stat_key in scalings.keys():
+			if not stat_key in standard_keys:
+				var ratio: float = float(scalings[stat_key])
+				if ratio > 0.0:
+					var pct := int(round(ratio * 100.0))
+					parts.append("%d%% %s" % [pct, stat_key])
+		if parts.is_empty():
+			return ""
+		return " = (" + " + ".join(parts) + ")"
+		
+	var has_advanced: bool = false
+	for k in [STAT_TOTAL_AD, STAT_BONUS_AD, STAT_TOTAL_AP, STAT_BONUS_AP, STAT_TOTAL_HP, STAT_BONUS_ARM]:
+		if scalings.has(k):
+			has_advanced = true
+			break
+			
+	# 2. LMHT Breakdown Syntax: " = ([Base] + [Bonus] [Ratio% Stat])"
+	if has_advanced and source != null:
+		var base_str := "[color=#bdc3c7]%s[/color]" % fmt_val(base_amount)
+		var bonus_parts: Array[String] = []
+		for stat_key in standard_keys:
+			if scalings.has(stat_key):
+				var ratio: float = float(scalings[stat_key])
+				if ratio > 0.0:
+					var pct := int(round(ratio * 100.0))
+					var col: String = STAT_COLORS.get(stat_key, "#ffffff")
+					var name_str: String = STAT_NAMES.get(stat_key, stat_key)
+					var scale_val: float = _get_stat_value(source, stat_key) * ratio
+					var bonus_str := "[color=%s]%s[/color] [%d%% %s]" % [col, fmt_val(scale_val), pct, name_str]
+					bonus_parts.append(bonus_str)
+		for stat_key in scalings.keys():
+			if not stat_key in standard_keys:
+				var ratio: float = float(scalings[stat_key])
+				if ratio > 0.0:
+					var pct := int(round(ratio * 100.0))
+					var scale_val: float = _get_stat_value(source, stat_key) * ratio
+					var bonus_str := "%.1f [%d%% %s]" % [scale_val, pct, stat_key]
+					bonus_parts.append(bonus_str)
+		if bonus_parts.is_empty():
+			return ""
+		return " = (%s + %s)" % [base_str, " + ".join(bonus_parts)]
+		
+	# 3. Legacy Keys (AD, AP, HP, ARM) - Maintains 100% TC-17 exact syntax
+	var scale_parts: Array[String] = []
 	for stat_key in standard_keys:
 		if scalings.has(stat_key):
 			var ratio: float = float(scalings[stat_key])
@@ -108,21 +166,8 @@ func _build_scale_string(source: CombatEntity = null) -> String:
 				var pct := int(round(ratio * 100.0))
 				var col: String = STAT_COLORS.get(stat_key, "#ffffff")
 				var name_str: String = STAT_NAMES.get(stat_key, stat_key)
+				scale_parts.append("[color=%s]+%d%% %s[/color]" % [col, pct, name_str])
 				
-				# 1. Pure % Skill (Base Amount == 0): " (bằng X% ...)"
-				if base_amount == 0.0:
-					scale_parts.append("bằng %d%% %s" % [pct, name_str])
-				# 2. Detailed Total/Bonus Stat formatting: "70 + 20 từ 20% Tổng SMCK"
-				elif stat_key in [STAT_TOTAL_AD, STAT_BONUS_AD, STAT_TOTAL_AP, STAT_BONUS_AP, STAT_TOTAL_HP, STAT_BONUS_ARM]:
-					if source != null:
-						var scale_val: float = _get_stat_value(source, stat_key) * ratio
-						scale_parts.append("%.0f + [color=%s]%.0f[/color] từ %d%% %s" % [base_amount, col, scale_val, pct, name_str])
-					else:
-						scale_parts.append("[color=%s]+%d%% %s[/color]" % [col, pct, name_str])
-				# 3. Legacy Keys (AD, AP, HP, ARM) - Maintains 100% TC-17 exact syntax
-				else:
-					scale_parts.append("[color=%s]+%d%% %s[/color]" % [col, pct, name_str])
-					
 	for stat_key in scalings.keys():
 		if not stat_key in standard_keys:
 			var ratio: float = float(scalings[stat_key])

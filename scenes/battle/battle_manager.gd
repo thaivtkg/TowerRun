@@ -27,6 +27,8 @@ var skill_ui: SkillChoiceUI
 var combat_summary_ui: CombatSummaryUI
 var character_stats_ui: CharacterStatsUI
 var choice_queue: Array[Dictionary] = []
+var _active_choice_hero: HeroEntity = null
+var _active_choice_milestone: int = 0
 var current_floor: int = 1
 
 var board_config: BoardConfig
@@ -97,15 +99,19 @@ func _init_systems() -> void:
 		placement_controller.board_grid = board_grid
 		placement_controller.board_view = board_view
 		placement_controller.entity_selected.connect(func(e):
-			if is_instance_valid(character_stats_ui):
+			if e is HeroEntity and (e as HeroEntity).has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
+				open_hero_skill_choice(e as HeroEntity)
+			elif is_instance_valid(character_stats_ui):
 				character_stats_ui.inspect_hero(e)
 		)
 		placement_controller.hero_selected.connect(func(h):
-			if is_instance_valid(character_stats_ui):
+			if h is HeroEntity and (h as HeroEntity).has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
+				open_hero_skill_choice(h as HeroEntity)
+			elif is_instance_valid(character_stats_ui):
 				character_stats_ui.inspect_hero(h)
 		)
 		placement_controller.hero_hovered.connect(func(h):
-			if is_instance_valid(character_stats_ui):
+			if is_instance_valid(character_stats_ui) and not character_stats_ui.visible:
 				character_stats_ui.inspect_hero(h)
 		)
 
@@ -597,9 +603,9 @@ func _on_summary_continued() -> void:
 			SaveManager.delete_save()
 		GameManager.change_state(GameManager.GameState.GAME_OVER)
 		print("[BattleManager] 🛑 PERMA-DEATH: Đã reset toàn bộ Hero về Level 1.")
-	elif not choice_queue.is_empty():
-		_process_next_choice()
 	else:
+		# SPRINT 5 (MODEL A): NON-BLOCKING PREPARATION
+		# Không tự động bật skill_ui đè màn hình. Chuyển thẳng sang phase Chuẩn bị!
 		_finish_battle_cleanup()
 
 func _reset_heroes_for_new_run() -> void:
@@ -616,6 +622,8 @@ func _reset_heroes_for_new_run() -> void:
 				hero.progression.current_level = 1
 				hero.progression.current_xp = 0.0
 				hero.progression.pending_milestones.clear()
+			hero.has_pending_milestone = false
+			hero.pending_upgrade_milestone = 0
 			hero.passive_stat_bonus = 0.0
 			hero.unlocked_abilities.clear()
 			if hero.data != null:
@@ -671,7 +679,44 @@ func _build_post_battle_choice_queue() -> void:
 					"milestone": highest_milestone,
 					"choices": choices
 				})
+			hero.pending_upgrade_milestone = highest_milestone
+			hero.has_pending_milestone = true
 			hero.pending_milestones.clear()
+
+func handle_hero_clicked(hero: HeroEntity) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if hero.has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
+		open_hero_skill_choice(hero)
+	elif is_instance_valid(character_stats_ui):
+		character_stats_ui.inspect_hero(hero)
+
+func open_hero_skill_choice(hero: HeroEntity) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if not hero.has_pending_milestone:
+		return
+		
+	var milestone_to_use: int = hero.pending_upgrade_milestone
+	if milestone_to_use <= 0 and not hero.pending_milestones.is_empty():
+		hero.pending_milestones.sort()
+		milestone_to_use = hero.pending_milestones[-1]
+		var skipped_count: int = hero.pending_milestones.size() - 1
+		if skipped_count > 0:
+			hero.add_milestone_compensation(skipped_count)
+	if milestone_to_use <= 0:
+		milestone_to_use = 5
+		
+	var choices: Array = []
+	if progression_system != null:
+		choices = progression_system.generate_upgrade_choices(hero, milestone_to_use)
+	if choices.is_empty():
+		choices = hero.pull_milestone_choices(milestone_to_use)
+		
+	_active_choice_hero = hero
+	_active_choice_milestone = milestone_to_use
+	if is_instance_valid(skill_ui):
+		skill_ui.show_choices(hero.name, milestone_to_use, choices)
 
 func _process_next_choice() -> void:
 	if choice_queue.is_empty(): return
@@ -679,24 +724,38 @@ func _process_next_choice() -> void:
 	skill_ui.show_choices(next.hero.name, next.milestone, next.choices)
 
 func _on_skill_chosen(chosen: Variant, all_choices: Array) -> void:
-	if choice_queue.is_empty():
-		return
-	var current = choice_queue.pop_front()
-	if current == null or not current.has("hero") or not is_instance_valid(current.hero):
-		return
-	if chosen is SkillUpgradeCard:
-		chosen.apply_to_hero(current.hero)
-	elif chosen is AbilityData:
-		var all_ab: Array[AbilityData] = []
-		for c in all_choices:
-			if c is AbilityData:
-				all_ab.append(c as AbilityData)
-		current.hero.apply_skill_choice(current.milestone, chosen, all_ab)
+	var hero_to_apply: HeroEntity = _active_choice_hero
+	var milestone_to_apply: int = _active_choice_milestone
+	var from_queue: bool = false
 	
-	if choice_queue.size() > 0:
+	if (hero_to_apply == null or not is_instance_valid(hero_to_apply)) and not choice_queue.is_empty():
+		var current = choice_queue.pop_front()
+		if current != null and current.has("hero") and is_instance_valid(current.hero):
+			hero_to_apply = current.hero
+			milestone_to_apply = current.milestone
+			from_queue = true
+			
+	if hero_to_apply != null and is_instance_valid(hero_to_apply):
+		if chosen is SkillUpgradeCard:
+			chosen.apply_to_hero(hero_to_apply)
+		elif chosen is AbilityData:
+			var all_ab: Array[AbilityData] = []
+			for c in all_choices:
+				if c is AbilityData:
+					all_ab.append(c as AbilityData)
+			hero_to_apply.apply_skill_choice(milestone_to_apply, chosen, all_ab)
+		hero_to_apply.has_pending_milestone = false
+		hero_to_apply.pending_milestones.clear()
+		hero_to_apply.pending_upgrade_milestone = 0
+		_active_choice_hero = null
+		_active_choice_milestone = 0
+	
+	if is_instance_valid(skill_ui):
+		skill_ui.hide()
+		
+	# Only continue queue in legacy sequential mode (TC-07.4)
+	if from_queue and choice_queue.size() > 0:
 		_process_next_choice()
-	else:
-		_finish_battle_cleanup()
 
 func _finish_battle_cleanup() -> void:
 	var surviving_hero_corpses: Array[CombatEntity] = []
@@ -1059,6 +1118,7 @@ func _input(event: InputEvent) -> void:
 		KEY_F3: _run_tc_23_tft_level_crest_and_compact_grid()
 		KEY_F4: _run_tc_24_hero_stat_progression_and_seamless_ui()
 		KEY_F5: _run_tc_25_monolithic_header_one_choice_and_scaling()
+		KEY_F8: _run_tc_26_model_a_tft_and_lmht_tooltips()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1115,8 +1175,9 @@ func _run_all_tests() -> void:
 	_run_tc_23_tft_level_crest_and_compact_grid()
 	_run_tc_24_hero_stat_progression_and_seamless_ui()
 	_run_tc_25_monolithic_header_one_choice_and_scaling()
+	_run_tc_26_model_a_tft_and_lmht_tooltips()
 	
-	_log_test("\n🎉 TẤT CẢ 25 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 26 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3488,7 +3549,7 @@ func _run_tc_25_monolithic_header_one_choice_and_scaling() -> void:
 	assert(is_equal_approx(total_val, 90.0), "FAIL TC-25.3: 70 + 100*0.20 must equal 90.0, got %f" % total_val)
 	var tooltip_total := dmg_total.get_formatted_description(mock_kira)
 	_log_test("[TC-25.3] Tooltip Total AD: %s" % tooltip_total)
-	assert(tooltip_total.contains("90") and tooltip_total.contains("70 + ") and tooltip_total.contains("20") and tooltip_total.contains("20% Tổng SMCK"), "FAIL TC-25.3: Total AD breakdown text mismatch")
+	assert(tooltip_total.contains("90") and tooltip_total.contains("70") and tooltip_total.contains("20") and tooltip_total.contains("20% SMCK"), "FAIL TC-25.3: Total AD breakdown text mismatch")
 	
 	# Test 3b: Bonus AD Scale (Base 70, 50% Bonus AD, Magic)
 	var dmg_bonus := DamageEffectData.new()
@@ -3499,7 +3560,7 @@ func _run_tc_25_monolithic_header_one_choice_and_scaling() -> void:
 	assert(is_equal_approx(bonus_val, 90.0), "FAIL TC-25.3: 70 + 40*0.50 must equal 90.0, got %f" % bonus_val)
 	var tooltip_bonus := dmg_bonus.get_formatted_description(mock_kira)
 	_log_test("[TC-25.3] Tooltip Bonus AD: %s" % tooltip_bonus)
-	assert(tooltip_bonus.contains("90") and tooltip_bonus.contains("70 + ") and tooltip_bonus.contains("20") and tooltip_bonus.contains("50% SMCK cộng thêm"), "FAIL TC-25.3: Bonus AD breakdown text mismatch")
+	assert(tooltip_bonus.contains("90") and tooltip_bonus.contains("70") and tooltip_bonus.contains("20") and tooltip_bonus.contains("50% SMCK cộng thêm"), "FAIL TC-25.3: Bonus AD breakdown text mismatch")
 	
 	mock_kira.queue_free()
 	_log_test(">>> 🟢 TC-25.3 Total AD vs Bonus AD Scaling PASSED!")
@@ -3519,7 +3580,7 @@ func _run_tc_25_monolithic_header_one_choice_and_scaling() -> void:
 	assert(is_equal_approx(shield_val, 100.0), "FAIL TC-25.4: 25%% of 400 HP should be 100.0, got %f" % shield_val)
 	var shield_desc := pure_shield.get_formatted_description(tank_hero)
 	_log_test("[TC-25.4] Shield Description: %s" % shield_desc)
-	assert(shield_desc.contains("100") and shield_desc.contains("bằng 25% Máu tối đa") and not shield_desc.contains("0 + "), "FAIL TC-25.4: Pure shield must state 'bằng 25% Máu tối đa'")
+	assert(shield_desc.contains("100") and shield_desc.contains("25% Máu tối đa") and not shield_desc.contains("0 + "), "FAIL TC-25.4: Pure shield must state '25% Máu tối đa'")
 	assert(shield_desc.contains("4 giây"), "FAIL TC-25.4: Shield duration missing")
 	
 	# Test 4b: Pure % Heal (15% Max HP)
@@ -3530,12 +3591,134 @@ func _run_tc_25_monolithic_header_one_choice_and_scaling() -> void:
 	assert(is_equal_approx(heal_val, 60.0), "FAIL TC-25.4: 15%% of 400 HP should be 60.0, got %f" % heal_val)
 	var heal_desc := pure_heal.get_formatted_description(tank_hero)
 	_log_test("[TC-25.4] Heal Description: %s" % heal_desc)
-	assert(heal_desc.contains("60") and heal_desc.contains("bằng 15% Máu tối đa") and not heal_desc.contains("0 + "), "FAIL TC-25.4: Pure heal must state 'bằng 15% Máu tối đa'")
+	assert(heal_desc.contains("60") and heal_desc.contains("15% Máu tối đa") and not heal_desc.contains("0 + "), "FAIL TC-25.4: Pure heal must state '15% Máu tối đa'")
 	
 	tank_hero.queue_free()
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-25.4 Pure Percentage Shield & Heal PASSED!")
 	_log_test(">>> 🟢 TC-25 PASSED: Monolithic Crest Header, One-Choice Gacha & Advanced Scaling fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-26: Monolithic Header, LMHT Tooltip & Model A TFT Flow (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_26_model_a_tft_and_lmht_tooltips() -> void:
+	_log_test("\n==================== [TEST TC-26: MODEL A TFT & LMHT TOOLTIPS] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-26.1: KIỂM CHỨNG HEADER LIỀN MỘT KHỐI
+	_log_test("[TC-26.1] Checking True Monolithic Header (No inner sub-border)...")
+	var knight_data := HeroData.new()
+	knight_data.name = "Knight"
+	knight_data.hero_class = HeroData.HeroClass.TANK
+	var test_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(knight_data)
+	character_stats_ui.inspect_entity(test_hero)
+	
+	var crest_sb = character_stats_ui.crest_panel.get_theme_stylebox("panel")
+	assert(crest_sb is StyleBoxEmpty or (crest_sb is StyleBoxFlat and crest_sb.border_width_left == 0), "FAIL TC-26.1: crest_panel must not have border_width > 0")
+	var panel_sb = character_stats_ui.panel_container.get_theme_stylebox("panel") as StyleBoxFlat
+	assert(panel_sb != null and panel_sb.border_width_left == 2 and panel_sb.corner_radius_top_left == 12, "FAIL TC-26.1: Card must have single outer border 2px and radius 12")
+	character_stats_ui.close()
+	test_hero.queue_free()
+	_log_test(">>> 🟢 TC-26.1 Monolithic Header PASSED!")
+	
+	# 2. TC-26.2: KIỂM CHỨNG TOOLTIP THEO CHUẨN LMHT
+	_log_test("[TC-26.2] Checking Tooltips according to LMHT standard (Azir Q style)...")
+	var kira_data := HeroData.new()
+	kira_data.name = "Kira"
+	kira_data.base_attack = 60.0
+	var mock_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(mock_hero)
+	mock_hero.data = kira_data
+	mock_hero.passive_stat_bonus = (100.0 / 60.0) - 1.0 # Total AD = 100.0
+	
+	var dmg_lmht := DamageEffectData.new()
+	dmg_lmht.base_damage = 70.0
+	dmg_lmht.damage_type = DamageEvent.DamageType.MAGIC
+	dmg_lmht.scalings = { EffectData.STAT_TOTAL_AD: 0.20 }
+	var desc_lmht := dmg_lmht.get_formatted_description(mock_hero)
+	_log_test("[TC-26.2] LMHT Tooltip: %s" % desc_lmht)
+	assert(not desc_lmht.contains("gốc") and not desc_lmht.contains("cơ bản"), "FAIL TC-26.2: Tooltip must not contain 'gốc' or 'cơ bản'")
+	assert(desc_lmht.contains("[color=#bdc3c7]70[/color]"), "FAIL TC-26.2: Base value must be silver #bdc3c7")
+	assert(desc_lmht.contains("90") and desc_lmht.contains("="), "FAIL TC-26.2: Syntax must match [Total] = ([Base] + [Bonus] [Ratio% Stat])")
+	mock_hero.queue_free()
+	_log_test(">>> 🟢 TC-26.2 LMHT Tooltips PASSED!")
+	
+	# 3. TC-26.3: KIỂM CHỨNG LUỒNG MÔ HÌNH A (NON-BLOCKING PREPARATION)
+	_log_test("[TC-26.3] Checking Model A Non-blocking Preparation Flow...")
+	# 3a. Giả lập 3 Hero cùng vượt Milestone sau trận đấu
+	var h1: HeroEntity = heroes[0] as HeroEntity
+	var h2: HeroEntity = heroes[1] as HeroEntity
+	var h3: HeroEntity = heroes[2] as HeroEntity
+	h1.progression.milestone_reached.emit(5)
+	h2.progression.milestone_reached.emit(5)
+	h3.progression.milestone_reached.emit(5)
+	
+	assert(h1.has_pending_milestone and h2.has_pending_milestone and h3.has_pending_milestone, "FAIL TC-26.3: All 3 heroes must have has_pending_milestone == true")
+	assert(h1.upgrade_badge.visible and h2.upgrade_badge.visible and h3.upgrade_badge.visible, "FAIL TC-26.3: All 3 heroes must display visual upgrade badge")
+	
+	# Kết thúc trận và đóng Summary UI
+	_end_battle(GameManager.GameState.REWARD, "Victory Test")
+	_on_summary_continued()
+	_start_next_floor()
+	
+	# Game phải vào thẳng Preparation Phase mà KHÔNG tự bật SkillChoiceUI đè màn hình
+	assert(current_phase == EncounterPhase.PREPARATION, "FAIL TC-26.3: Must transition to PREPARATION phase")
+	assert(not skill_ui.visible, "FAIL TC-26.3: SkillChoiceUI must NOT automatically pop up")
+	assert(h1.has_pending_milestone and h2.has_pending_milestone and h3.has_pending_milestone, "FAIL TC-26.3: Milestones must be retained in PREPARATION")
+	
+	# Click vào Hero 1 để mở bảng chọn 3 thẻ
+	handle_hero_clicked(h1)
+	assert(skill_ui.visible, "FAIL TC-26.3: Clicking Hero 1 must open SkillChoiceUI")
+	var p_choice = AbilityData.new()
+	p_choice.name = "Hero1_Skill"
+	_on_skill_chosen(p_choice, [p_choice])
+	assert(not skill_ui.visible, "FAIL TC-26.3: Choosing skill must hide modal")
+	assert(not h1.has_pending_milestone, "FAIL TC-26.3: Hero 1 milestone flag must be cleared")
+	assert(not h1.upgrade_badge.visible, "FAIL TC-26.3: Hero 1 badge must disappear")
+	
+	# Click vào Hero 2 để chọn thẻ
+	handle_hero_clicked(h2)
+	assert(skill_ui.visible, "FAIL TC-26.3: Clicking Hero 2 must open SkillChoiceUI")
+	var p_choice2 = AbilityData.new()
+	p_choice2.name = "Hero2_Skill"
+	_on_skill_chosen(p_choice2, [p_choice2])
+	assert(not h2.has_pending_milestone, "FAIL TC-26.3: Hero 2 milestone flag must be cleared")
+	assert(not h2.upgrade_badge.visible, "FAIL TC-26.3: Hero 2 badge must disappear")
+	_log_test(">>> 🟢 TC-26.3 Model A Non-blocking Preparation Flow PASSED!")
+	
+	# 4. TC-26.4: KIỂM CHỨNG BẢO LƯU LƯỢT NÂNG CẤP (BANK UPGRADES)
+	_log_test("[TC-26.4] Checking Bank Upgrades across floors...")
+	# Hero 3 vẫn chưa chọn chiêu
+	assert(h3.has_pending_milestone == true, "FAIL TC-26.4: Hero 3 should still have pending milestone")
+	assert(h3.upgrade_badge.visible == true, "FAIL TC-26.4: Hero 3 badge should still be visible")
+	
+	# Bắt đầu trận chiến mới mà không chọn chiêu cho Hero 3
+	start_combat_phase()
+	assert(current_phase == EncounterPhase.COMBAT, "FAIL TC-26.4: Should enter combat without crash")
+	
+	# Kết thúc trận chiến và sang tầng mới
+	_end_battle(GameManager.GameState.REWARD, "Floor Cleared")
+	_finish_battle_cleanup()
+	_start_next_floor()
+	
+	# Ở tầng mới (Preparation Phase), Hero 3 vẫn bảo lưu lượt nâng cấp
+	assert(h3.has_pending_milestone == true, "FAIL TC-26.4: Hero 3 pending milestone must persist to next floor")
+	assert(h3.upgrade_badge.visible == true, "FAIL TC-26.4: Hero 3 visual badge must persist to next floor")
+	
+	# Chọn chiêu an toàn ở tầng mới
+	handle_hero_clicked(h3)
+	assert(skill_ui.visible, "FAIL TC-26.4: Clicking Hero 3 at next floor must open SkillChoiceUI")
+	var p_choice3 = AbilityData.new()
+	p_choice3.name = "Hero3_Skill"
+	_on_skill_chosen(p_choice3, [p_choice3])
+	assert(not h3.has_pending_milestone, "FAIL TC-26.4: Hero 3 milestone flag cleared after choice")
+	assert(not h3.upgrade_badge.visible, "FAIL TC-26.4: Hero 3 badge disappeared")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-26.4 Bank Upgrades PASSED!")
+	_log_test(">>> 🟢 TC-26 PASSED: Model A TFT Flow, LMHT Tooltips & Monolithic Header fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
