@@ -21,7 +21,7 @@ func initialize(initial_data: EnemyData, spawn_level: int = 1, spawn_rank: Enemy
 	var level_hp_factor: float = 1.0 + (level - 1) * 0.10
 	var rank_mult: float = 1.0
 	if is_solo_boss:
-		rank_mult = 6.0
+		rank_mult = 4.0
 		damage_reduction = 0.30
 	else:
 		match effective_rank:
@@ -128,9 +128,9 @@ func get_attack() -> float:
 	var level_factor: float = 1.0 + (level - 1) * 0.06
 	var rank_mult: float = 1.0
 	if damage_reduction > 0.0:
-		rank_mult = 6.0
+		rank_mult = 1.6
 	elif "rank" in data and data.rank == EnemyData.EnemyRank.BOSS:
-		rank_mult = 3.5
+		rank_mult = 1.5
 	elif "rank" in data and data.rank == EnemyData.EnemyRank.ELITE:
 		rank_mult = 1.8
 	return data.base_attack * level_factor * rank_mult

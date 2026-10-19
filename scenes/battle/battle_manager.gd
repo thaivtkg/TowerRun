@@ -39,12 +39,30 @@ var start_combat_button: Button = null
 var battle_ended: bool = false
 var next_game_state: GameManager.GameState
 
+# SPRINT 4 SIGN-OFF / SPRINT 5: QA CHEAT & DEBUG
+var is_god_mode: bool = false
+var debug_cheat_ui: DebugCheatPanel = null
+
 func _ready() -> void:
 	GameManager.change_state(GameManager.GameState.BATTLE)
-	if RunManager != null:
+	var has_save: bool = false
+	if SaveManager != null:
+		var save_data := SaveManager.load_game()
+		if not save_data.is_empty() and int(save_data.get("floor", 0)) >= 1:
+			has_save = true
+			
+	if not has_save and RunManager != null:
 		RunManager.start_new_run()
 		current_floor = RunManager.current_floor
+		
 	_start_battle()
+	
+	if has_save:
+		_try_resume_saved_run()
+		
+	debug_cheat_ui = DebugCheatPanel.new(self)
+	add_child(debug_cheat_ui)
+	
 	if "--run-tests" in OS.get_cmdline_user_args():
 		_run_all_tests()
 		get_tree().quit()
@@ -179,12 +197,17 @@ func enter_preparation_phase() -> void:
 			enemy.set_combat_active(false)
 			
 	if start_combat_button != null:
+		start_combat_button.disabled = false
 		start_combat_button.show()
 	print("[BattleManager] 🛡️ PHASE: PREPARATION (Kéo thả bố trí đội hình)")
 
 func start_combat_phase() -> void:
 	if current_phase == EncounterPhase.COMBAT:
 		return
+	if start_combat_button != null:
+		start_combat_button.disabled = true
+		start_combat_button.hide()
+
 	# Lưu lại tọa độ ô cờ hiện tại của từng Hero trước khi khóa bàn cờ
 	for hero in heroes:
 		if is_instance_valid(hero) and board_grid != null:
@@ -197,14 +220,13 @@ func start_combat_phase() -> void:
 		board_grid.is_locked = true
 	if placement_controller != null:
 		placement_controller.set_locked(true)
-	if start_combat_button != null:
-		start_combat_button.hide()
 		
 	if targeting_system != null:
 		targeting_system.set_process(true)
 		
 	for hero in heroes:
 		if is_instance_valid(hero):
+			hero.is_invulnerable = is_god_mode
 			if hero.metrics != null:
 				hero.metrics.reset()
 			hero.set_combat_active(true)
@@ -229,10 +251,8 @@ func _spawn_mock_teams() -> void:
 	_spawn_hero_at_grid(_create_mock_hero_data("Robin", HeroData.HeroClass.MARKSMAN, 90.0, 15.0, 5.0, 1.5, 4), Vector2i(3, 4))
 	_spawn_hero_at_grid(_create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6, 3), Vector2i(4, 4))
 	
-	# 3. Quái vật (Nửa trên bàn cờ: Hàng 1 & 2)
-	var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
-	for i in range(slime_coords.size()):
-		_spawn_enemy_at_grid("Slime " + str(i+1), 80.0, 8.0, 5.0, 1.0, 0.0, 2.0, slime_coords[i])
+	# 3. Quái vật: Gọi trực tiếp Encounter Director cho Tầng hiện tại (FTUE đồng nhất)
+	spawn_encounter_for_floor(current_floor)
 
 # Hàm hỗ trợ sinh Data nhanh bằng code
 func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: float, atk: float, def: float, spd: float, atk_range: int = 1, spell_pow: float = 10.0) -> HeroData:
@@ -395,6 +415,9 @@ func get_floor_type(floor_num: int) -> FloorType:
 func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> void:
 	for e in enemies:
 		if is_instance_valid(e):
+			if board_grid != null:
+				board_grid.remove_dead_entity(e)
+			e.set_combat_active(false)
 			e.queue_free()
 	enemies.clear()
 	
@@ -452,7 +475,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				variant = 1 if randf() < 0.5 else 2
 				
 			if variant == 1:
-				var boss_lv := max_hero_lv + randi_range(3, 6)
+				var boss_lv := max_hero_lv + randi_range(2, 3)
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Đại Vương"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
@@ -466,7 +489,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				var elite_count := randi_range(1, 2)
 				var elite_pos = [Vector2i(2, 2), Vector2i(4, 2)]
 				for i in range(elite_count):
-					var elite_i_lv := maxi(1, boss_lv - randi_range(1, 10))
+					var elite_i_lv := maxi(1, boss_lv - randi_range(1, 2))
 					var elite_edata := EnemyData.new()
 					elite_edata.name = "Hộ Vệ Tinh Anh %d" % (i + 1)
 					elite_edata.rank = EnemyData.EnemyRank.ELITE
@@ -477,7 +500,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 					elite_edata.abilities = [create_slime_elite_ability()]
 					_spawn_custom_enemy_at_grid(elite_edata, elite_pos[i], elite_i_lv, EnemyData.EnemyRank.ELITE)
 			else:
-				var solo_boss_lv := max_hero_lv + randi_range(10, 20)
+				var solo_boss_lv := max_hero_lv + randi_range(2, 3)
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Chúa Tể"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
@@ -679,13 +702,7 @@ func _finish_battle_cleanup() -> void:
 		print("[BattleManager] 🛑 GAME OVER - Stopping floor progression.")
 		return
 
-	if SaveManager != null and RunManager != null:
-		SaveManager.save_game({
-			"floor": current_floor,
-			"gold": RunManager.current_gold,
-			"lives": RunManager.current_lives,
-			"max_lives": RunManager.max_lives
-		})
+	_save_current_run()
 
 	get_tree().create_timer(1.0).timeout.connect(_start_next_floor)
 
@@ -722,11 +739,125 @@ func _start_next_floor() -> void:
 						target_cell = empty_hero_cells[0]
 						hero.deployed_cell = target_cell
 						placed = board_grid.place_entity(hero, target_cell)
+					else:
+						for col in range(board_config.cols):
+							for row in range(board_config.rows):
+								var fb_cell := Vector2i(col, row)
+								if board_grid.is_cell_empty(fb_cell):
+									target_cell = fb_cell
+									hero.deployed_cell = target_cell
+									placed = board_grid.place_entity(hero, target_cell)
+									break
+							if placed: break
 			if board_view != null and placed:
 				hero.global_position = board_view.grid_to_world(target_cell)
 				
 	spawn_encounter_for_floor(current_floor)
 	enter_preparation_phase()
+
+# ==========================================
+# FULL SAVE & RESUME RUNTIME (SPRINT 4 SIGN-OFF)
+# ==========================================
+func _save_current_run() -> void:
+	if SaveManager == null or RunManager == null:
+		return
+	var hero_list: Array = []
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			hero_list.append(h.serialize())
+	for c in corpses:
+		if is_instance_valid(c) and c is HeroEntity:
+			var already_saved := false
+			for saved_h in hero_list:
+				if saved_h.get("name") == c.name:
+					already_saved = true
+					break
+			if not already_saved:
+				hero_list.append(c.serialize())
+				
+	SaveManager.save_game({
+		"floor": current_floor,
+		"gold": RunManager.current_gold,
+		"lives": RunManager.current_lives,
+		"max_lives": RunManager.max_lives,
+		"heroes": hero_list
+	})
+
+func _try_resume_saved_run() -> bool:
+	if SaveManager == null:
+		return false
+	var data := SaveManager.load_game()
+	if data.is_empty():
+		return false
+	if RunManager != null:
+		RunManager.current_floor = int(data.get("floor", 1))
+		RunManager.current_gold = int(data.get("gold", 10))
+		RunManager.current_lives = int(data.get("lives", 2))
+		RunManager.max_lives = int(data.get("max_lives", 2))
+		current_floor = RunManager.current_floor
+		
+	if data.has("heroes") and typeof(data["heroes"]) == TYPE_ARRAY:
+		var saved_heroes: Array = data["heroes"]
+		for s_hero in saved_heroes:
+			var h_name: String = s_hero.get("name", "")
+			for h in heroes:
+				if is_instance_valid(h) and h is HeroEntity and (h.name == h_name or (h.data != null and h.data.name == h_name)):
+					h.deserialize(s_hero)
+					if board_grid != null and board_view != null:
+						board_grid.place_entity(h, h.deployed_cell)
+						h.global_position = board_view.grid_to_world(h.deployed_cell)
+					break
+	spawn_encounter_for_floor(current_floor)
+	print("[BattleManager] 💾 RUN RESUMED! Floor: %d | Gold: %d | Lives: %d" % [
+		current_floor,
+		RunManager.current_gold if RunManager else 0,
+		RunManager.current_lives if RunManager else 0
+	])
+	return true
+
+# ==========================================
+# QA & DEV CHEAT HELPERS (SPRINT 4 SIGN-OFF / SPRINT 5)
+# ==========================================
+func toggle_god_mode() -> bool:
+	is_god_mode = not is_god_mode
+	for h in heroes:
+		if is_instance_valid(h):
+			h.is_invulnerable = is_god_mode
+	print("[CHEAT] 🛡️ God Mode: ", "BẬT" if is_god_mode else "TẮT")
+	if debug_cheat_ui != null:
+		debug_cheat_ui.update_info()
+	return is_god_mode
+
+func cheat_kill_all_enemies() -> void:
+	print("[CHEAT] ⚡ KILL ALL ENEMIES!")
+	var living_enemies: Array[CombatEntity] = []
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			living_enemies.append(e)
+	for e in living_enemies:
+		e.take_damage(999999.0)
+	if debug_cheat_ui != null:
+		debug_cheat_ui.update_info()
+
+func cheat_warp_floor(target_floor: int) -> void:
+	print("[CHEAT] 🌀 WARP TO FLOOR %d!" % target_floor)
+	current_floor = target_floor
+	if RunManager != null:
+		RunManager.current_floor = target_floor
+	_start_next_floor()
+	if debug_cheat_ui != null:
+		debug_cheat_ui.update_info()
+
+func cheat_cycle_speed() -> float:
+	match Engine.time_scale:
+		1.0: Engine.time_scale = 2.0
+		2.0: Engine.time_scale = 5.0
+		5.0: Engine.time_scale = 0.5
+		_: Engine.time_scale = 1.0
+	print("[CHEAT] ⏩ Game Speed: %.1fx" % Engine.time_scale)
+	if debug_cheat_ui != null:
+		debug_cheat_ui.update_info()
+	return Engine.time_scale
 
 # ==========================================
 # FLOATING TEXT SPAWNER (SPRINT 5 VFX)
@@ -892,8 +1023,28 @@ func _input(event: InputEvent) -> void:
 		KEY_SEMICOLON: _run_tc_18_skill_upgrades_and_isolation()
 		KEY_APOSTROPHE: _run_tc_19_narrative_and_encounter_director()
 		KEY_ENTER: _run_tc_20_procedural_ui_and_polymorphism()
+		KEY_BACKSPACE: _run_tc_21_save_resume_and_boss_balance()
+		
+		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
+		KEY_F1, KEY_QUOTELEFT:
+			if debug_cheat_ui != null:
+				debug_cheat_ui.toggle_visibility()
+		KEY_G:
+			toggle_god_mode()
+		KEY_K:
+			cheat_kill_all_enemies()
+		KEY_F5:
+			cheat_warp_floor(5)
+		KEY_F6:
+			if RunManager != null:
+				RunManager.add_gold(50)
+				if debug_cheat_ui != null:
+					debug_cheat_ui.update_info()
 
 func _run_all_tests() -> void:
+	if SaveManager != null:
+		SaveManager.delete_save()
+		
 	var file = FileAccess.open(test_report_path, FileAccess.WRITE)
 	if file:
 		file.store_line("=== BÁO CÁO KIỂM THỬ SPRINT 1, 2, 3, 4 & 5 ===")
@@ -924,8 +1075,9 @@ func _run_all_tests() -> void:
 	_run_tc_18_skill_upgrades_and_isolation()
 	_run_tc_19_narrative_and_encounter_director()
 	_run_tc_20_procedural_ui_and_polymorphism()
+	_run_tc_21_save_resume_and_boss_balance()
 	
-	_log_test("\n🎉 TẤT CẢ 20 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 21 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -2769,12 +2921,165 @@ func _run_tc_20_procedural_ui_and_polymorphism() -> void:
 	_log_test(">>> 🟢 TC-20 PASSED: Procedural UI & Polymorphism fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-21: Full Save/Load Persistence, Hero Progression & Solo Boss Balance
+# (GD & QA Sign-off Requirements)
+# ------------------------------------------------------------------------------
+func _run_tc_21_save_resume_and_boss_balance() -> void:
+	_log_test("\n==================== [TEST TC-21: PERSISTENCE, HERO STATE & BOSS BALANCE] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-21.1: SOLO RAID BOSS BALANCE VERIFICATION (GD Spec)
+	_log_test("[TC-21.1] Checking Solo Raid Boss balance at Floor 5...")
+	spawn_encounter_for_floor(5, 2)
+	assert(enemies.size() == 1, "FAIL TC-21.1: Solo Boss must spawn 1 enemy")
+	var solo_boss: EnemyEntity = enemies[0]
+	assert(solo_boss.data.rank == EnemyData.EnemyRank.BOSS, "FAIL TC-21.1: Solo Boss rank mismatch")
+	assert(solo_boss.damage_reduction == 0.30, "FAIL TC-21.1: Solo Boss DR must be 30%")
+	assert(solo_boss.level <= 4, "FAIL TC-21.1: Solo Boss level (%d) exceeded Hero Lv1 + 3" % solo_boss.level)
+	var boss_atk := solo_boss.get_attack()
+	_log_test("[TC-21.1] Solo Boss Lv: %d | Base ATK: %.1f | Actual ATK: %.1f | DR: 30%%" % [solo_boss.level, solo_boss.data.base_attack, boss_atk])
+	assert(boss_atk <= 75.0, "FAIL TC-21.1: Solo Boss ATK (%.1f) exceeds GD upper bound of 75.0" % boss_atk)
+	
+	# Simulate Tank Arthur (250 HP, 30 DEF -> 23% DR) being attacked
+	var arthur_def := 30.0
+	var arthur_hp := 250.0
+	var arthur_dr := arthur_def / (100.0 + arthur_def)
+	var hit_on_arthur := boss_atk * (1.0 - arthur_dr)
+	var hits_survived: float = arthur_hp / hit_on_arthur
+	_log_test("[TC-21.1] Tank Arthur (250 HP, 30 DEF) takes %.1f dmg/hit -> Survives %.1f hits (GD Spec: >= 5.0)" % [hit_on_arthur, hits_survived])
+	assert(hits_survived >= 5.0, "FAIL TC-21.1: Tank Arthur must survive at least 5 hits (got %.1f)" % hits_survived)
+	_log_test(">>> 🟢 TC-21.1 Solo Raid Boss Balance PASSED!")
+	
+	# 2. TC-21.2: FLOOR 1 ENCOUNTER DIRECTOR INTEGRITY (GD Spec)
+	_log_test("[TC-21.2] Checking Floor 1 Encounter Director abilities...")
+	spawn_encounter_for_floor(1)
+	assert(enemies.size() == 5, "FAIL TC-21.2: Floor 1 must spawn 5 enemies")
+	for e in enemies:
+		assert(not e.unlocked_abilities.is_empty(), "FAIL TC-21.2: Floor 1 enemies must have abilities from Encounter Director")
+		assert(e.unlocked_abilities[0].data.name == "Phun Dịch Axit", "FAIL TC-21.2: Ability name mismatch")
+	_log_test(">>> 🟢 TC-21.2 Floor 1 Encounter Director Integrity PASSED!")
+	
+	# 3. TC-21.3: FULL SAVE & RESUME WITH HERO PROGRESSION & ABILITIES (QA BUG-CRIT-01 & BUG-HIGH-02)
+	_log_test("[TC-21.3] Checking Save/Resume of Floor, Gold, Lives & Hero Progression...")
+	if SaveManager != null and RunManager != null:
+		RunManager.current_floor = 5
+		RunManager.current_gold = 150
+		RunManager.current_lives = 2
+		current_floor = 5
+		
+		# Setup Hero Kira with Lv5 progression and an unlocked ability
+		_spawn_mock_teams()
+		var test_hero: HeroEntity = null
+		for h in heroes:
+			if is_instance_valid(h) and h is HeroEntity and (h.name == "Kira" or (h.data != null and h.data.name == "Kira")):
+				test_hero = h
+				break
+		assert(test_hero != null, "FAIL TC-21.3: Kira not found")
+		test_hero.progression.current_level = 5
+		test_hero.level = 5
+		test_hero.progression.current_xp = 175.0
+		
+		var bonus_ab := AbilityData.new()
+		bonus_ab.name = "Bão Dao Độc"
+		bonus_ab.ability_type = AbilityData.AbilityType.ACTIVE
+		bonus_ab.cooldown = 4.0
+		var dmg_eff := DamageEffectData.new()
+		dmg_eff.base_amount = 80.0
+		dmg_eff.base_damage = 80.0
+		dmg_eff.scalings = { "AD": 1.5 }
+		bonus_ab.effects = [dmg_eff]
+		test_hero.unlocked_abilities.append(Ability.new(test_hero, bonus_ab))
+		
+		# Save game
+		_save_current_run()
+		assert(FileAccess.file_exists(SaveManager.SAVE_PATH), "FAIL TC-21.3: Save file must exist")
+		
+		# Reset all game state in memory
+		RunManager.current_floor = 1
+		RunManager.current_gold = 0
+		RunManager.current_lives = 1
+		current_floor = 1
+		test_hero.progression.current_level = 1
+		test_hero.level = 1
+		test_hero.progression.current_xp = 0.0
+		test_hero.unlocked_abilities.clear()
+		
+		# Resume from save
+		var resumed := _try_resume_saved_run()
+		assert(resumed == true, "FAIL TC-21.3: Resume must succeed")
+		assert(current_floor == 5, "FAIL TC-21.3: Floor must be restored to 5")
+		assert(RunManager.current_gold == 150, "FAIL TC-21.3: Gold must be restored to 150")
+		assert(RunManager.current_lives == 2, "FAIL TC-21.3: Lives must be restored to 2")
+		assert(test_hero.progression.current_level == 5, "FAIL TC-21.3: Kira level must be restored to 5")
+		assert(test_hero.progression.current_xp == 175.0, "FAIL TC-21.3: Kira XP must be restored to 175.0")
+		assert(test_hero.unlocked_abilities.size() >= 1, "FAIL TC-21.3: Unlocked abilities must be restored")
+		
+		var restored_ab_found := false
+		for ab in test_hero.unlocked_abilities:
+			if ab.data.name == "Bão Dao Độc":
+				restored_ab_found = true
+				assert(ab.data.effects.size() == 1, "FAIL TC-21.3: Effect count mismatch")
+				assert(ab.data.effects[0].base_amount == 80.0, "FAIL TC-21.3: Base amount mismatch")
+				assert(float(ab.data.effects[0].scalings.get("AD", 0.0)) == 1.5, "FAIL TC-21.3: AD scaling mismatch")
+				break
+		assert(restored_ab_found == true, "FAIL TC-21.3: Custom ability 'Bão Dao Độc' was not restored")
+		
+		# Cleanup save
+		SaveManager.delete_save()
+		assert(not FileAccess.file_exists(SaveManager.SAVE_PATH), "FAIL TC-21.3: Save file should be deleted")
+	_log_test(">>> 🟢 TC-21.3 Full Save & Resume With Hero State PASSED!")
+	
+	# 4. TC-21.4: QA CHEAT TOOLS (GOD MODE, ADD GOLD, KILL ALL, WARP)
+	_log_test("[TC-21.4] Checking QA Cheat Tools (God Mode, Add Gold, Kill All)...")
+	var kira: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity and (h.name == "Kira" or (h.data != null and h.data.name == "Kira")):
+			kira = h; break
+	assert(kira != null, "FAIL TC-21.4: Kira not found")
+	
+	# God Mode test
+	assert(is_god_mode == false, "FAIL TC-21.4: God mode should default to false")
+	toggle_god_mode()
+	assert(is_god_mode == true, "FAIL TC-21.4: God mode should be true after toggle")
+	assert(kira.is_invulnerable == true, "FAIL TC-21.4: Hero invulnerable flag should match god mode")
+	kira.current_hp = 100.0
+	kira.take_damage(99999.0)
+	assert(kira.current_hp >= 1.0, "FAIL TC-21.4: In God Mode, HP must not drop below 1.0 (got %.1f)" % kira.current_hp)
+	assert(kira.is_dead == false, "FAIL TC-21.4: Hero must not die in God Mode")
+	toggle_god_mode()
+	assert(is_god_mode == false, "FAIL TC-21.4: God mode should toggle off")
+	
+	# Add Gold test
+	var gold_before: int = RunManager.current_gold
+	RunManager.add_gold(50)
+	assert(RunManager.current_gold == gold_before + 50, "FAIL TC-21.4: Add gold failed")
+	
+	# Kill All Enemies test
+	spawn_encounter_for_floor(1)
+	assert(enemies.size() == 5, "FAIL TC-21.4: 5 enemies spawned")
+	cheat_kill_all_enemies()
+	for e in enemies:
+		assert(e.is_dead == true, "FAIL TC-21.4: All enemies should be dead after Kill All")
+	_log_test(">>> 🟢 TC-21.4 QA Cheat Tools PASSED!")
+	
+	_log_test(">>> 🟢 TC-21 PASSED: Full Persistence, Hero State, Boss Balance & QA Cheats fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
-	for h in heroes: if is_instance_valid(h): h.queue_free()
-	for e in enemies: if is_instance_valid(e): e.queue_free()
-	for c in corpses: if is_instance_valid(c): c.queue_free()
+	for h in heroes:
+		if is_instance_valid(h):
+			if h.get_parent(): h.get_parent().remove_child(h)
+			h.queue_free()
+	for e in enemies:
+		if is_instance_valid(e):
+			if e.get_parent(): e.get_parent().remove_child(e)
+			e.queue_free()
+	for c in corpses:
+		if is_instance_valid(c):
+			if c.get_parent(): c.get_parent().remove_child(c)
+			c.queue_free()
 	heroes.clear(); enemies.clear(); corpses.clear(); choice_queue.clear()
 	if board_grid != null:
 		board_grid.is_locked = false

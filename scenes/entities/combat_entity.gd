@@ -24,6 +24,7 @@ var max_hp: float = 0.0:
 			hp_changed.emit(current_hp, max_hp)
 
 var level: int = 1
+var is_invulnerable: bool = false
 var current_energy: float = 0.0:
 	set(val):
 		current_energy = clampf(val, 0.0, max_energy)
@@ -174,6 +175,12 @@ func take_damage(amount: float) -> void:
 		printerr("[CombatEntity] WARNING: Invalid damage amount: ", amount)
 		return
 		
+	if is_invulnerable:
+		current_hp = max(1.0, current_hp - amount)
+		print("[Combat] %s [GOD MODE] takes %.1f damage! (HP locked: %.1f)" % [name, amount, current_hp])
+		hp_changed.emit(current_hp, max_hp)
+		return
+
 	current_hp -= amount
 	print("[Combat] %s takes %.1f damage! (HP: %.1f)" % [name, amount, current_hp])
 	

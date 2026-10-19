@@ -161,3 +161,102 @@ func get_crit_damage() -> float: return data.crit_damage if data != null else 2.
 func get_attack() -> float: return data.base_attack if data != null else 10.0
 func get_spell_power() -> float: return data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
+
+# ==========================================
+# FULL PROGRESSION & ABILITIES PERSISTENCE (S4.6+)
+# ==========================================
+func serialize() -> Dictionary:
+	var hero_dict := {
+		"name": name,
+		"level": progression.current_level if progression != null else 1,
+		"xp": progression.current_xp if progression != null else 0.0,
+		"deployed_cell": [deployed_cell.x, deployed_cell.y],
+		"unlocked_abilities": []
+	}
+	if basic_attack_ability != null and basic_attack_ability.data != null:
+		hero_dict["basic_attack_effects"] = _serialize_effects(basic_attack_ability.data.effects)
+		
+	for ab in unlocked_abilities:
+		if ab != null and ab.data != null:
+			hero_dict["unlocked_abilities"].append({
+				"id": ab.data.id,
+				"name": ab.data.name,
+				"description": ab.data.description,
+				"ability_type": int(ab.data.ability_type),
+				"target_rule": int(ab.data.target_rule),
+				"cooldown": ab.data.cooldown,
+				"effects": _serialize_effects(ab.data.effects)
+			})
+	return hero_dict
+
+func deserialize(saved: Dictionary) -> void:
+	if saved.has("level") and progression != null:
+		progression.current_level = int(saved["level"])
+		level = progression.current_level
+	if saved.has("xp") and progression != null:
+		progression.current_xp = float(saved["xp"])
+	if saved.has("deployed_cell"):
+		var cell_arr: Array = saved["deployed_cell"]
+		if cell_arr.size() == 2:
+			deployed_cell = Vector2i(int(cell_arr[0]), int(cell_arr[1]))
+			
+	if saved.has("basic_attack_effects") and basic_attack_ability != null and basic_attack_ability.data != null:
+		_deserialize_effects(basic_attack_ability.data.effects, saved["basic_attack_effects"])
+		
+	if saved.has("unlocked_abilities"):
+		unlocked_abilities.clear()
+		for ab_dict in saved["unlocked_abilities"]:
+			var ab_data := AbilityData.new()
+			ab_data.id = ab_dict.get("id", "")
+			ab_data.name = ab_dict.get("name", "Ability")
+			ab_data.description = ab_dict.get("description", "")
+			ab_data.ability_type = ab_dict.get("ability_type", AbilityData.AbilityType.ACTIVE)
+			ab_data.target_rule = ab_dict.get("target_rule", AbilityData.TargetRule.SINGLE_ENEMY)
+			ab_data.cooldown = float(ab_dict.get("cooldown", 1.0))
+			
+			ab_data.effects = []
+			if ab_dict.has("effects"):
+				for eff_dict in ab_dict["effects"]:
+					var eff: EffectData
+					if eff_dict.get("is_heal", false):
+						eff = HealEffectData.new()
+						eff.heal_amount = float(eff_dict.get("base_amount", 0.0))
+					else:
+						eff = DamageEffectData.new()
+						eff.base_damage = float(eff_dict.get("base_amount", 0.0))
+					eff.base_amount = float(eff_dict.get("base_amount", 0.0))
+					eff.scalings = eff_dict.get("scalings", {}).duplicate()
+					ab_data.effects.append(eff)
+			unlocked_abilities.append(Ability.new(self, ab_data))
+			
+			# Remove from runtime pools if matches so it won't be rolled again
+			for milestone in runtime_pools.keys():
+				var pool: Array = runtime_pools[milestone]
+				for item in pool:
+					if item != null and item.name == ab_data.name:
+						pool.erase(item)
+						break
+
+static func _serialize_effects(effects: Array[EffectData]) -> Array:
+	var res := []
+	for eff in effects:
+		if eff != null:
+			res.append({
+				"is_heal": (eff is HealEffectData),
+				"base_amount": eff.base_amount,
+				"scalings": eff.scalings.duplicate()
+			})
+	return res
+
+static func _deserialize_effects(target_effects: Array[EffectData], saved_effects: Array) -> void:
+	for i in range(mini(target_effects.size(), saved_effects.size())):
+		var eff := target_effects[i]
+		var s_eff: Dictionary = saved_effects[i]
+		if eff != null and s_eff != null:
+			eff.base_amount = float(s_eff.get("base_amount", eff.base_amount))
+			if eff is DamageEffectData:
+				eff.base_damage = eff.base_amount
+			elif eff is HealEffectData:
+				eff.heal_amount = eff.base_amount
+			if s_eff.has("scalings") and typeof(s_eff["scalings"]) == TYPE_DICTIONARY:
+				eff.scalings = s_eff["scalings"].duplicate()

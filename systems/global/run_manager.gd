@@ -24,10 +24,15 @@ func start_new_run(starting_gold: int = 10, starting_lives: int = 2) -> void:
 	current_floor = 1
 	print("[RunManager] 🌟 KHỞI TẠO RUN MỚI! Tầng: 1 | Vàng: %d | Mạng: %d/%d" % [current_gold, current_lives, max_lives])
 
+func add_gold(amount: int) -> void:
+	current_gold += amount
+	gold_changed.emit(current_gold, amount)
+	print("[RunManager] 💰 Vàng thay đổi: %+d -> Tổng: %d" % [amount, current_gold])
+
 func on_battle_won() -> Dictionary:
 	var old_floor := current_floor
 	# Lãi suất vàng: 10% số vàng hiện có, tối đa +5 vàng lãi (chuẩn Auto Chess)
-	var interest: int = mini(5, current_gold / 10)
+	var interest: int = mini(5, maxi(0, current_gold) / 10)
 	var base_reward: int = 5 + old_floor
 	var total_reward: int = base_reward + interest
 	
