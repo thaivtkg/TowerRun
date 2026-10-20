@@ -81,7 +81,7 @@ var max_energy: float = 100.0:
 		max_energy = val
 		energy_changed.emit(current_energy, max_energy)
 
-var energy_per_attack: float = 25.0
+var energy_per_attack: float = 15.0
 var unlocked_abilities: Array[Ability] = []
 var damage_reduction: float = 0.0 # Ví dụ: 0.30 cho Solo Raid Boss
 

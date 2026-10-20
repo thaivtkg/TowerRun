@@ -14,6 +14,8 @@ const ShieldEffectData = preload("res://data/abilities/shield_effect_data.gd")
 
 var _shake_tween: Tween = null
 var _current_shake_strength: float = 0.0
+var _is_hit_stop_active: bool = false
+var _normal_game_speed: float = 1.0
 
 var heroes: Array[CombatEntity] = []
 var enemies: Array[CombatEntity] = []
@@ -419,7 +421,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				var edata := EnemyData.new()
 				edata.name = "Slime %d" % (i + 1)
 				edata.rank = EnemyData.EnemyRank.NORMAL
-				edata.base_hp = 80.0
+				edata.base_hp = 150.0
 				edata.base_attack = 8.0
 				edata.base_defense = 5.0
 				edata.base_spell_power = 10.0
@@ -432,7 +434,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 			var elite_edata := EnemyData.new()
 			elite_edata.name = "Slime Tinh Anh"
 			elite_edata.rank = EnemyData.EnemyRank.ELITE
-			elite_edata.base_hp = 120.0
+			elite_edata.base_hp = 200.0
 			elite_edata.base_attack = 14.0
 			elite_edata.base_defense = 8.0
 			elite_edata.base_spell_power = 15.0
@@ -445,7 +447,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				var edata := EnemyData.new()
 				edata.name = "Slime Thường %d" % (i + 1)
 				edata.rank = EnemyData.EnemyRank.NORMAL
-				edata.base_hp = 80.0
+				edata.base_hp = 150.0
 				edata.base_attack = 8.0
 				edata.base_defense = 5.0
 				edata.base_spell_power = 10.0
@@ -462,7 +464,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Đại Vương"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
-				boss_edata.base_hp = 250.0
+				boss_edata.base_hp = 450.0
 				boss_edata.base_attack = 20.0
 				boss_edata.base_defense = 12.0
 				boss_edata.base_spell_power = 25.0
@@ -476,7 +478,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 					var elite_edata := EnemyData.new()
 					elite_edata.name = "Hộ Vệ Tinh Anh %d" % (i + 1)
 					elite_edata.rank = EnemyData.EnemyRank.ELITE
-					elite_edata.base_hp = 120.0
+					elite_edata.base_hp = 200.0
 					elite_edata.base_attack = 14.0
 					elite_edata.base_defense = 8.0
 					elite_edata.base_spell_power = 15.0
@@ -487,7 +489,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Chúa Tể"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
-				boss_edata.base_hp = 300.0
+				boss_edata.base_hp = 450.0
 				boss_edata.base_attack = 25.0
 				boss_edata.base_defense = 15.0
 				boss_edata.base_spell_power = 30.0
@@ -982,10 +984,15 @@ func trigger_hit_stop(duration: float = 0.05, is_global: bool = false, source: C
 	if duration <= 0.0:
 		return
 	if is_global:
-		var prev_scale: float = Engine.time_scale
+		if _is_hit_stop_active:
+			# Anti-Stacking Lock: Bỏ qua lệnh giảm time_scale mới nếu đã có hit-stop đang chạy!
+			return
+		_is_hit_stop_active = true
+		_normal_game_speed = 1.0
 		Engine.time_scale = 0.05
 		get_tree().create_timer(duration, true, false, true).timeout.connect(func():
-			Engine.time_scale = prev_scale
+			_is_hit_stop_active = false
+			Engine.time_scale = _normal_game_speed
 		)
 	else:
 		if is_instance_valid(source):
@@ -1213,8 +1220,9 @@ func _run_all_tests() -> void:
 	_run_tc_30_comprehensive_narrative_and_tri_shield()
 	await _run_tc_31_monster_skills_and_shield_decay()
 	await _run_tc_32_combat_juice_and_camera_trauma()
+	await _run_tc_33_safe_hit_stop_and_combat_pacing()
 	
-	_log_test("\n🎉 TẤT CẢ 32 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 33 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4396,6 +4404,75 @@ func _run_tc_32_combat_juice_and_camera_trauma() -> void:
 	_log_test(">>> 🟢 TC-32 PASSED: Combat Juice, Hit Stop & Camera Trauma fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-33: Safe Hit Stop Anti-Lock & Combat Pacing & Energy Gating
+# ------------------------------------------------------------------------------
+func _run_tc_33_safe_hit_stop_and_combat_pacing() -> void:
+	_log_test("\n==================== [TEST TC-33: SAFE HIT STOP & PACING] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-33.1: Safe Hit Stop Anti-Stacking Concurrency (4 Ultimates simultaneously)
+	_log_test("[TC-33.1] Verifying 4 Simultaneous Ultimates do NOT freeze time_scale at 0.05x...")
+	assert(Engine.time_scale >= 0.99, "FAIL TC-33.1: Initial time_scale must be 1.0")
+	assert(_is_hit_stop_active == false, "FAIL TC-33.1: _is_hit_stop_active must be false initially")
+	
+	# Ultimate 1 triggers hit stop
+	trigger_hit_stop(0.05, true)
+	assert(_is_hit_stop_active == true, "FAIL TC-33.1: Hit stop must be active after Ult 1")
+	assert(is_equal_approx(Engine.time_scale, 0.05), "FAIL TC-33.1: time_scale must be 0.05 during hit stop")
+	
+	# Ultimates 2, 3, 4 trigger in rapid succession while Ult 1 is running
+	trigger_hit_stop(0.05, true)
+	trigger_hit_stop(0.05, true)
+	trigger_hit_stop(0.05, true)
+	
+	# Await timer expiration (0.07s gives buffer for 0.05s timer)
+	await get_tree().create_timer(0.07, true, false, true).timeout
+	
+	assert(_is_hit_stop_active == false, "FAIL TC-33.1: Hit stop must be inactive after timer expiration")
+	assert(is_equal_approx(Engine.time_scale, 1.0), "FAIL TC-33.1: time_scale must be restored to 1.0x (NOT stuck in 0.05x)!")
+	_log_test(">>> 🟢 TC-33.1 Safe Hit Stop Anti-Lock PASSED!")
+	
+	# 2. TC-33.2: Pacing & Energy Gating Integrity (starting_energy = 0, energy_per_attack = 15.0)
+	_log_test("[TC-33.2] Verifying Energy Gating (starting_energy=0, energy_per_attack=15)...")
+	var kira_res: HeroData = load("res://data/heroes/kira_data.tres") as HeroData
+	assert(kira_res != null, "FAIL TC-33.2: Kira data must load")
+	assert(kira_res.starting_energy == 0.0, "FAIL TC-33.2: Kira starting_energy must be 0.0 per GD spec")
+	
+	var test_combatant := CombatEntity.new()
+	assert(test_combatant.energy_per_attack == 15.0, "FAIL TC-33.2: energy_per_attack must be 15.0")
+	var attacks_needed: int = ceili(100.0 / test_combatant.energy_per_attack)
+	assert(attacks_needed == 7, "FAIL TC-33.2: Attacks needed for 100 MP must be 7 attacks (approx 5-6s)")
+	test_combatant.queue_free()
+	
+	# Verify spawned heroes have 0 energy at battle start
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			assert(h.current_energy == 0.0, "FAIL TC-33.2: Hero %s must start with 0 energy" % h.name)
+	_log_test(">>> 🟢 TC-33.2 Energy Gating & Starting Energy PASSED!")
+	
+	# 3. TC-33.3: Floor 1 Monster Base HP & Survivability (Base HP: 150 HP, Boss: 450 HP)
+	_log_test("[TC-33.3] Verifying Monster Base HP (Floor 1 Slimes: 150 HP, Boss: 450 HP)...")
+	spawn_encounter_for_floor(1)
+	assert(not enemies.is_empty(), "FAIL TC-33.3: Floor 1 enemies must spawn")
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity:
+			assert(e.data.base_hp >= 150.0, "FAIL TC-33.3: Floor 1 slime base_hp must be >= 150.0 (got %.1f)" % e.data.base_hp)
+			assert(e.max_hp >= 150.0, "FAIL TC-33.3: Floor 1 slime max_hp must be >= 150.0")
+	
+	spawn_encounter_for_floor(5, 2) # Force solo boss on floor 5
+	assert(not enemies.is_empty(), "FAIL TC-33.3: Boss must spawn on floor 5")
+	var boss_found: bool = false
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity and e.data.rank == EnemyData.EnemyRank.BOSS:
+			boss_found = true
+			assert(e.data.base_hp >= 450.0, "FAIL TC-33.3: Boss base_hp must be >= 450.0 (got %.1f)" % e.data.base_hp)
+	assert(boss_found, "FAIL TC-33.3: Boss enemy was not found on floor 5")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-33.3 Monster Base HP & Pacing PASSED!")
+	_log_test(">>> 🟢 TC-33 PASSED: Safe Hit Stop Anti-Lock & Combat Pacing fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -4432,6 +4509,8 @@ func _reset_test_battlefield() -> void:
 	_current_shake_strength = 0.0
 	if camera != null:
 		camera.offset = Vector2.ZERO
+	_is_hit_stop_active = false
+	Engine.time_scale = _normal_game_speed
 	battle_ended = false
 	if RunManager != null:
 		RunManager.start_new_run(10, 2)
