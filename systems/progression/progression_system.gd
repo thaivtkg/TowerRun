@@ -76,24 +76,56 @@ func calculate_hero_contribution(hero: HeroEntity) -> float:
 # Quy đổi toàn bộ metrics thành XP và cộng vào HeroProgression
 # ==========================================
 func finalize_battle_xp(is_victory: bool, target_heroes: Array = []) -> void:
-	print("\n--- BATTLE XP CONVERSION ---")
+	print("\n--- BATTLE XP CONVERSION (70/30 TEAM POOL) ---")
 	var win_multiplier: float = 1.2 if is_victory else 0.5
 	
-	var heroes_to_process: Array = target_heroes if not target_heroes.is_empty() else tracked_heroes
+	var raw_heroes: Array = target_heroes if not target_heroes.is_empty() else tracked_heroes
+	var valid_heroes: Array[HeroEntity] = []
+	var total_contrib: float = 0.0
+	var hero_contribs: Dictionary = {}
+	var total_level: int = 0
 	
-	for hero_item in heroes_to_process:
+	for hero_item in raw_heroes:
 		var hero := hero_item as HeroEntity
-		if not is_instance_valid(hero) or hero.progression == null:
-			continue
+		if is_instance_valid(hero) and hero.progression != null:
+			valid_heroes.append(hero)
+			var contrib: float = calculate_hero_contribution(hero)
+			hero_contribs[hero] = contrib
+			total_contrib += contrib
+			total_level += hero.progression.current_level
 			
-		var raw_contribution: float = calculate_hero_contribution(hero)
-		var final_xp: float = raw_contribution * win_multiplier
+	if valid_heroes.is_empty():
+		tracked_heroes.clear()
+		print("----------------------------\n")
+		return
 		
-		hero.progression.add_xp(final_xp)
+	var avg_level: int = maxi(1, int(round(float(total_level) / float(valid_heroes.size()))))
+	var total_team_xp: float = total_contrib * win_multiplier
+	
+	# Quy tắc 70/30:
+	# 70% Tổng XP: Chia đều cho toàn bộ Tướng tham chiến (chống bỏ đói Tanker & Support)
+	var shared_pool: float = total_team_xp * 0.70
+	var shared_xp_per_hero: float = shared_pool / float(valid_heroes.size())
+	
+	# 30% Tổng XP: Thưởng hiệu suất cá nhân (MVP bonus)
+	var individual_pool: float = total_team_xp * 0.30
+	
+	for hero in valid_heroes:
+		var contrib: float = hero_contribs.get(hero, 0.0)
+		var hero_ratio: float = (contrib / total_contrib) if total_contrib > 0.0 else (1.0 / float(valid_heroes.size()))
+		var individual_xp: float = individual_pool * hero_ratio
+		var hero_xp: float = shared_xp_per_hero + individual_xp
+		
+		# Cơ chế Bắt kịp (Catch-up Mechanism):
+		# Nếu cấp Tướng thấp hơn cấp trung bình đội từ 2 cấp trở lên -> Nhận thêm +50% XP
+		if (avg_level - hero.progression.current_level) >= 2:
+			hero_xp *= 1.50
+			
+		hero.progression.add_xp(hero_xp)
 		
 		var class_str: String = HeroData.HeroClass.keys()[hero.data.hero_class] if hero.data != null else "UNKNOWN"
-		print("> %s (%s) | Raw Contrib: %.1f | Final XP (+%.1f) | Current: Lv%d (%.1f/%.1f)" % [
-			hero.name, class_str, raw_contribution, final_xp, 
+		print("> %s (%s) | Contrib: %.1f | Final XP (+%.1f) [Shared: %.1f, MVP: %.1f] | Lv%d (%.1f/%.1f)" % [
+			hero.name, class_str, contrib, hero_xp, shared_xp_per_hero, individual_xp,
 			hero.progression.current_level, hero.progression.current_xp, hero.progression.required_xp
 		])
 		

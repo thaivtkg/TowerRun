@@ -407,13 +407,26 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 	enemies.clear()
 	
 	var floor_type := get_floor_type(floor_num)
-	var base_floor_lv := maxi(1, (floor_num - 1) * 2 + 1)
 	
-	var max_hero_lv := 1
+	# MỐC NEO QUÁI ĐA BIẾN (WEIGHTED ANCHOR)
+	# 1. Bỏ hoàn toàn max_hero_lv để chống Kira snowball kéo lệch cấp độ
+	var total_hero_lv: int = 0
+	var hero_count: int = 0
 	for h in heroes:
 		if is_instance_valid(h) and h is HeroEntity and h.progression != null:
-			max_hero_lv = maxi(max_hero_lv, h.progression.current_level)
-			
+			total_hero_lv += h.progression.current_level
+			hero_count += 1
+	var avg_hero_lv: int = maxi(1, int(round(float(total_hero_lv) / maxf(1.0, float(hero_count)))))
+	
+	# 2. Neo theo Floor Baseline: Base Lv = floor_num * 1.2
+	var floor_baseline_lv: int = maxi(1, int(round(float(floor_num) * 1.2)))
+	
+	# 3. Cộng hưởng Trung bình Đội hình: Level Quái = clampi(floor_base, avg_lv - 1, avg_lv + 2)
+	var enemy_target_lv: int = clampi(floor_baseline_lv, maxi(1, avg_hero_lv - 1), avg_hero_lv + 2)
+	var normal_spawn_lv: int = enemy_target_lv
+	var elite_spawn_lv: int = clampi(enemy_target_lv + 1, 1, enemy_target_lv + 2)
+	var boss_spawn_lv: int = clampi(enemy_target_lv + 2, 2, enemy_target_lv + 3)
+	
 	match floor_type:
 		FloorType.NORMAL_FLOOR:
 			var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
@@ -427,10 +440,9 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				edata.base_spell_power = 10.0
 				edata.attack_speed = 1.0
 				edata.abilities = [create_slime_normal_ability()]
-				_spawn_custom_enemy_at_grid(edata, slime_coords[i], base_floor_lv, EnemyData.EnemyRank.NORMAL)
+				_spawn_custom_enemy_at_grid(edata, slime_coords[i], normal_spawn_lv, EnemyData.EnemyRank.NORMAL)
 				
 		FloorType.ELITE_FLOOR:
-			var elite_lv: int = base_floor_lv + randi_range(2, 4)
 			var elite_edata := EnemyData.new()
 			elite_edata.name = "Slime Tinh Anh"
 			elite_edata.rank = EnemyData.EnemyRank.ELITE
@@ -439,11 +451,10 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 			elite_edata.base_defense = 8.0
 			elite_edata.base_spell_power = 15.0
 			elite_edata.abilities = [create_slime_elite_ability()]
-			_spawn_custom_enemy_at_grid(elite_edata, Vector2i(3, 1), elite_lv, EnemyData.EnemyRank.ELITE)
+			_spawn_custom_enemy_at_grid(elite_edata, Vector2i(3, 1), elite_spawn_lv, EnemyData.EnemyRank.ELITE)
 			
 			var normal_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2)]
 			for i in range(normal_coords.size()):
-				var norm_lv := maxi(1, elite_lv - randi_range(1, 5))
 				var edata := EnemyData.new()
 				edata.name = "Slime Thường %d" % (i + 1)
 				edata.rank = EnemyData.EnemyRank.NORMAL
@@ -452,7 +463,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				edata.base_defense = 5.0
 				edata.base_spell_power = 10.0
 				edata.abilities = [create_slime_normal_ability()]
-				_spawn_custom_enemy_at_grid(edata, normal_coords[i], norm_lv, EnemyData.EnemyRank.NORMAL)
+				_spawn_custom_enemy_at_grid(edata, normal_coords[i], normal_spawn_lv, EnemyData.EnemyRank.NORMAL)
 				
 		FloorType.BOSS_FLOOR:
 			var variant := force_boss_variant
@@ -460,7 +471,6 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				variant = 1 if randf() < 0.5 else 2
 				
 			if variant == 1:
-				var boss_lv := max_hero_lv + randi_range(2, 3)
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Đại Vương"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
@@ -469,12 +479,11 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				boss_edata.base_defense = 12.0
 				boss_edata.base_spell_power = 25.0
 				boss_edata.abilities = [create_slime_boss_ability()]
-				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 1), boss_lv, EnemyData.EnemyRank.BOSS, false)
+				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 1), boss_spawn_lv, EnemyData.EnemyRank.BOSS, false)
 				
 				var elite_count := randi_range(1, 2)
 				var elite_pos = [Vector2i(2, 2), Vector2i(4, 2)]
 				for i in range(elite_count):
-					var elite_i_lv := maxi(1, boss_lv - randi_range(1, 2))
 					var elite_edata := EnemyData.new()
 					elite_edata.name = "Hộ Vệ Tinh Anh %d" % (i + 1)
 					elite_edata.rank = EnemyData.EnemyRank.ELITE
@@ -483,9 +492,8 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 					elite_edata.base_defense = 8.0
 					elite_edata.base_spell_power = 15.0
 					elite_edata.abilities = [create_slime_elite_ability()]
-					_spawn_custom_enemy_at_grid(elite_edata, elite_pos[i], elite_i_lv, EnemyData.EnemyRank.ELITE)
+					_spawn_custom_enemy_at_grid(elite_edata, elite_pos[i], elite_spawn_lv, EnemyData.EnemyRank.ELITE)
 			else:
-				var solo_boss_lv := max_hero_lv + randi_range(2, 3)
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Chúa Tể"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
@@ -494,7 +502,7 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				boss_edata.base_defense = 15.0
 				boss_edata.base_spell_power = 30.0
 				boss_edata.abilities = [create_slime_boss_ability()]
-				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), solo_boss_lv, EnemyData.EnemyRank.BOSS, true)
+				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), boss_spawn_lv, EnemyData.EnemyRank.BOSS, true)
 
 # Giữ lại các hàm spawn bằng offset cũ cho tính tương thích ngược nếu cần
 func _spawn_hero(data: HeroData, offset: Vector2) -> void:
@@ -1221,8 +1229,9 @@ func _run_all_tests() -> void:
 	await _run_tc_31_monster_skills_and_shield_decay()
 	await _run_tc_32_combat_juice_and_camera_trauma()
 	await _run_tc_33_safe_hit_stop_and_combat_pacing()
+	_run_tc_34_team_xp_and_survivability_guardrails()
 	
-	_log_test("\n🎉 TẤT CẢ 33 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 34 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4471,6 +4480,165 @@ func _run_tc_33_safe_hit_stop_and_combat_pacing() -> void:
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-33.3 Monster Base HP & Pacing PASSED!")
 	_log_test(">>> 🟢 TC-33 PASSED: Safe Hit Stop Anti-Lock & Combat Pacing fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-34: 70/30 Team XP Pool, Weighted Anchor Enemy Level & Anti-One-Shot Guardrail
+# ------------------------------------------------------------------------------
+func _run_tc_34_team_xp_and_survivability_guardrails() -> void:
+	_log_test("\n==================== [TEST TC-34: TEAM XP, ANCHOR LEVEL & SURVIVABILITY] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-34.1: 70/30 Shared Team XP Pool & Catch-up Mechanism
+	_log_test("[TC-34.1] Verifying 70/30 Shared Team XP Pool & +50% Catch-up for lagging heroes...")
+	var h_kira := hero_scene.instantiate() as HeroEntity
+	add_child(h_kira)
+	h_kira.initialize(_create_mock_hero_data("KiraTC34", HeroData.HeroClass.ASSASSIN, 100.0, 30.0, 0.0, 1.0))
+	
+	var h_soraka := hero_scene.instantiate() as HeroEntity
+	add_child(h_soraka)
+	h_soraka.initialize(_create_mock_hero_data("SorakaTC34", HeroData.HeroClass.SUPPORT, 120.0, 5.0, 10.0, 0.6))
+	
+	var h_arthur := hero_scene.instantiate() as HeroEntity
+	add_child(h_arthur)
+	h_arthur.initialize(_create_mock_hero_data("ArthurTC34", HeroData.HeroClass.TANK, 250.0, 10.0, 30.0, 0.8))
+	
+	# Scenario A: Kira dominates (950 damage dealt, 5 kills), Soraka 150 healing, Arthur 300 damage taken
+	h_kira.metrics.reset()
+	h_soraka.metrics.reset()
+	h_arthur.metrics.reset()
+	
+	h_kira.metrics.damage_dealt = 950.0
+	h_kira.metrics.kills = 5
+	h_soraka.metrics.healing_done = 150.0
+	h_arthur.metrics.damage_taken = 300.0
+	h_arthur.metrics.damage_dealt = 50.0
+	
+	# Execute finalize_battle_xp
+	progression_system.finalize_battle_xp(true, [h_kira, h_soraka, h_arthur])
+	
+	# In 70/30, Total Team XP = 2814.0. Shared Pool (70%) = 1969.8 -> 656.6 per hero minimum baseline!
+	# Soraka and Arthur should both receive substantial XP and level up, not starve at 0 or minimal XP.
+	assert(h_soraka.progression.current_level >= 5, "FAIL TC-34.1: Soraka must reach at least Level 5 from shared XP")
+	assert(h_arthur.progression.current_level >= 5, "FAIL TC-34.1: Arthur must reach at least Level 5 from shared XP")
+	assert(h_kira.progression.current_level >= 6, "FAIL TC-34.1: Kira (MVP) must reach at least Level 6")
+	_log_test(">>> [TC-34.1] Post-battle levels: Kira Lv%d | Soraka Lv%d | Arthur Lv%d" % [
+		h_kira.progression.current_level, h_soraka.progression.current_level, h_arthur.progression.current_level
+	])
+	
+	# Scenario B: Catch-up Mechanism (+50% XP when (avg_level - hero_level) >= 2)
+	h_kira.progression.current_level = 5
+	h_kira.progression.current_xp = 0.0
+	h_arthur.progression.current_level = 5
+	h_arthur.progression.current_xp = 0.0
+	h_soraka.progression.current_level = 1
+	h_soraka.progression.current_xp = 0.0
+	
+	# Avg level = (5 + 5 + 1) / 3 = 11 / 3 = 3.67 -> round = 4
+	# Difference for Soraka: 4 - 1 = 3 (>= 2) -> Catch-up active!
+	# Equal metric contribution:
+	h_kira.metrics.reset(); h_soraka.metrics.reset(); h_arthur.metrics.reset()
+	h_kira.metrics.damage_dealt = 100.0 / 1.5
+	h_arthur.metrics.damage_dealt = 100.0 / 0.2
+	h_soraka.metrics.healing_done = 100.0 / 2.0
+	
+	progression_system.finalize_battle_xp(true, [h_kira, h_arthur, h_soraka])
+	# Arthur gets 120.0 XP (no catch-up bonus)
+	# Soraka gets 120.0 * 1.50 = 180.0 XP (+50% catch-up bonus because 4 - 1 = 3 >= 2)
+	assert(is_equal_approx(h_arthur.progression.current_xp, 120.0), "FAIL TC-34.1: Arthur expected 120.0 XP (got %.1f)" % h_arthur.progression.current_xp)
+	assert(is_equal_approx(h_soraka.progression.current_xp, 180.0), "FAIL TC-34.1: Soraka expected 180.0 XP (+50%% bonus, got %.1f)" % h_soraka.progression.current_xp)
+	assert(is_equal_approx(h_soraka.progression.current_xp / h_arthur.progression.current_xp, 1.50), "FAIL TC-34.1: Catch-up ratio must be exactly 1.50x")
+	
+	h_kira.queue_free(); h_soraka.queue_free(); h_arthur.queue_free()
+	_log_test(">>> 🟢 TC-34.1 70/30 Team XP Pool & Catch-up Mechanism PASSED!")
+	
+	# 2. TC-34.2: Weighted Anchor Enemy Level (Purge Outlier max_hero_lv)
+	_log_test("[TC-34.2] Verifying Weighted Anchor Enemy Level (Outlier Hero Lv25 vs Lv3 team)...")
+	_reset_test_battlefield()
+	
+	# Setup: Kira Lv25, remaining 4 heroes Lv3
+	var outlier_hero := heroes[0] as HeroEntity
+	outlier_hero.progression.current_level = 25
+	for i in range(1, heroes.size()):
+		var h := heroes[i] as HeroEntity
+		if is_instance_valid(h):
+			h.progression.current_level = 3
+			
+	# Total hero lv = 25 + 3*4 = 37. Hero count = 5.
+	# avg_hero_lv = round(37 / 5) = 7.
+	# Floor 5 baseline = round(5 * 1.2) = 6.
+	# enemy_target_lv = clampi(6, max(1, 7 - 1), 7 + 2) = 6.
+	# Boss spawn lv = clampi(6 + 2, 2, 6 + 3) = 8.
+	# Elite spawn lv = clampi(6 + 1, 1, 6 + 2) = 7.
+	
+	# Spawn Floor 5, variant 1 (Boss + Elites)
+	spawn_encounter_for_floor(5, 1)
+	assert(not enemies.is_empty(), "FAIL TC-34.2: Floor 5 enemies must spawn")
+	
+	var boss_found := false
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity:
+			if e.data.rank == EnemyData.EnemyRank.BOSS:
+				boss_found = true
+				_log_test("[TC-34.2] Boss Spawned: %s (Lv%d) | Old formula would spawn Lv27-28!" % [e.name, e.level])
+				assert(e.level <= 9, "FAIL TC-34.2: Boss level must be <= 9 (got Lv%d)" % e.level)
+				assert(e.level >= 6, "FAIL TC-34.2: Boss level must be >= 6 (got Lv%d)" % e.level)
+			elif e.data.rank == EnemyData.EnemyRank.ELITE:
+				assert(e.level <= 8, "FAIL TC-34.2: Elite level must be <= 8 (got Lv%d)" % e.level)
+			else:
+				assert(e.level <= 7, "FAIL TC-34.2: Normal enemy level must be <= 7 (got Lv%d)" % e.level)
+	assert(boss_found, "FAIL TC-34.2: Floor 5 Boss must be found")
+	
+	# Spawn Floor 5, variant 2 (Solo Boss)
+	spawn_encounter_for_floor(5, 2)
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity and e.data.rank == EnemyData.EnemyRank.BOSS:
+			assert(e.level <= 9, "FAIL TC-34.2: Solo Boss level must be <= 9 (got Lv%d)" % e.level)
+	_log_test(">>> 🟢 TC-34.2 Weighted Anchor Enemy Level PASSED!")
+	
+	# 3. TC-34.3: Magic Defense Scaling & Anti-One-Shot Survivability Guardrail
+	_log_test("[TC-34.3] Verifying Magic Defense Scaling (70% Armor) & Anti-One-Shot Guardrail (<= 40% Max HP)...")
+	var test_hero := hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(_create_mock_hero_data("GuardrailHero", HeroData.HeroClass.SUPPORT, 120.0, 5.0, 20.0, 1.0))
+	
+	var test_enemy := enemy_scene.instantiate() as EnemyEntity
+	add_child(test_enemy)
+	var edata := EnemyData.new()
+	edata.name = "TestCaster"
+	edata.base_defense = 5.0
+	test_enemy.initialize(edata, 1)
+	
+	# 3a. Magic Defense Scaling Formula:
+	# Formula: 100.0 / (100.0 + defense * 0.70)
+	# Hero has 20.0 DEF -> effective magic def = 14.0 -> multiplier = 100.0 / 114.0 = ~0.877193
+	var magic_evt := DamageEvent.new(test_enemy, test_hero, 40.0, DamageEvent.DamageType.MAGIC)
+	combat_system.process_attack(magic_evt)
+	var expected_dmg: float = 40.0 * (100.0 / (100.0 + 20.0 * 0.70))
+	assert(is_equal_approx(magic_evt.final_damage, expected_dmg), "FAIL TC-34.3: Magic defense mitigation formula mismatch")
+	_log_test("[TC-34.3] Magic Defense: Base 40.0 -> Mitigated %.2f (Expected %.2f)" % [magic_evt.final_damage, expected_dmg])
+	
+	# 3b. Anti-One-Shot Survivability Guardrail:
+	# Single-hit damage from Enemy onto Hero cannot exceed 40% of Hero Max HP.
+	# Hero Max HP = 120.0 -> Ceiling = 48.0!
+	# Reset hero HP to full before testing lethal hit
+	test_hero.current_hp = test_hero.max_hp
+	test_hero.is_dead = false
+	
+	# Caster strikes with massive 500.0 raw damage:
+	var lethal_evt := DamageEvent.new(test_enemy, test_hero, 500.0, DamageEvent.DamageType.MAGIC)
+	combat_system.process_attack(lethal_evt)
+	assert(is_equal_approx(lethal_evt.final_damage, 48.0), "FAIL TC-34.3: Lethal damage must be clamped to 40 percent Max HP (48.0, got %.1f)" % lethal_evt.final_damage)
+	
+	# Hero automatically takes damage inside process_attack()
+	assert(is_equal_approx(test_hero.current_hp, 72.0), "FAIL TC-34.3: Hero must retain at least 60 percent HP (expected 72.0, got %.1f)" % test_hero.current_hp)
+	assert(not test_hero.is_dead, "FAIL TC-34.3: Hero must NOT be one-shot by monster ability")
+	_log_test("[TC-34.3] Anti-One-Shot: 500.0 Raw Lethal -> Clamped to %.1f (40 percent HP) | Hero HP: %.1f/120.0" % [lethal_evt.final_damage, test_hero.current_hp])
+	
+	test_hero.queue_free()
+	test_enemy.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-34.3 Magic Defense Scaling & Anti-One-Shot Guardrail PASSED!")
+	_log_test(">>> 🟢 TC-34 PASSED: Team XP Pool, Anchor Level & Survivability fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
