@@ -1,6 +1,12 @@
 class_name ShieldEffectData
 extends EffectData
 
+@export var base_shield: float:
+	get:
+		return base_amount
+	set(val):
+		base_amount = val
+
 @export var shield_amount: float:
 	get:
 		return base_amount
@@ -8,6 +14,8 @@ extends EffectData
 		base_amount = val
 
 @export var duration: float = 4.0
+@export var shield_type: int = 0 # 0: Omni (Trắng), 1: Physical (Cam), 2: Magic (Tím)
+@export var apply_to_self: bool = true
 
 func _init() -> void:
 	base_amount = 0.0

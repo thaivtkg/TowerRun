@@ -32,7 +32,7 @@ var magic_shield: float = 0.0:
 func get_total_shield() -> float:
 	return omni_shield + physical_shield + magic_shield
 
-func add_shield(amount: float, shield_type: int = 0) -> void:
+func add_shield(amount: float, shield_type: int = 0, duration: float = 0.0) -> void:
 	match shield_type:
 		0:
 			omni_shield += amount
@@ -40,6 +40,23 @@ func add_shield(amount: float, shield_type: int = 0) -> void:
 			physical_shield += amount
 		2:
 			magic_shield += amount
+			
+	if duration > 0.0 and is_inside_tree():
+		get_tree().create_timer(duration).timeout.connect(func():
+			if is_instance_valid(self):
+				_expire_shield(amount, shield_type)
+		)
+
+func _expire_shield(amount: float, shield_type: int) -> void:
+	if not is_instance_valid(self):
+		return
+	match shield_type:
+		0:
+			omni_shield = maxf(0.0, omni_shield - amount)
+		1:
+			physical_shield = maxf(0.0, physical_shield - amount)
+		2:
+			magic_shield = maxf(0.0, magic_shield - amount)
 var current_hp: float = 0.0:
 	set(val):
 		current_hp = val
@@ -287,6 +304,9 @@ func reset_for_new_battle() -> void:
 		
 	target = null
 	current_hp = max_hp
+	omni_shield = 0.0
+	physical_shield = 0.0
+	magic_shield = 0.0
 	
 	if self is HeroEntity:
 		var hero := self as HeroEntity

@@ -67,7 +67,7 @@ func _ready() -> void:
 	add_child(debug_cheat_ui)
 	
 	if "--run-tests" in OS.get_cmdline_user_args():
-		_run_all_tests()
+		await _run_all_tests()
 		get_tree().quit()
 
 func _start_battle() -> void:
@@ -374,57 +374,18 @@ func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd
 # ==========================================
 enum FloorType { NORMAL_FLOOR, ELITE_FLOOR, BOSS_FLOOR }
 
+const SLIME_ACID_SPRAY: Resource = preload("res://data/abilities/monsters/slime_acid_spray.tres")
+const SLIME_POISON_BURST: Resource = preload("res://data/abilities/monsters/slime_poison_burst.tres")
+const SLIME_DARK_FLOOD: Resource = preload("res://data/abilities/monsters/slime_dark_flood.tres")
+
 static func create_slime_normal_ability() -> AbilityData:
-	var ab := AbilityData.new()
-	ab.name = "Phun Dịch Axit"
-	ab.ability_type = AbilityData.AbilityType.ACTIVE
-	ab.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
-	ab.cooldown = 4.0
-	ab.energy_cost = 40.0
-	var dmg := DamageEffectData.new()
-	dmg.base_amount = 25.0
-	dmg.damage_type = DamageEvent.DamageType.MAGIC
-	dmg.scalings = { EffectData.STAT_AP: 0.50 }
-	ab.effects = [dmg]
-	ab.description = "Bắn dịch axit ăn mòn vào kẻ địch, gây {0} sát thương phép."
-	return ab
+	return (SLIME_ACID_SPRAY as AbilityData).duplicate(true)
 
 static func create_slime_elite_ability() -> AbilityData:
-	var ab := AbilityData.new()
-	ab.name = "Bùng Nổ Độc Tố"
-	ab.ability_type = AbilityData.AbilityType.ACTIVE
-	ab.target_rule = AbilityData.TargetRule.SELF
-	ab.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
-	ab.aoe_radius = 1
-	ab.cooldown = 5.0
-	ab.energy_cost = 60.0
-	var dmg := DamageEffectData.new()
-	dmg.base_amount = 50.0
-	dmg.damage_type = DamageEvent.DamageType.MAGIC
-	dmg.scalings = { EffectData.STAT_AP: 0.80 }
-	ab.effects = [dmg]
-	ab.description = "Bùng nổ độc tố lan tỏa bán kính 1 ô xung quanh, gây {0} sát thương phép lên kẻ địch."
-	return ab
+	return (SLIME_POISON_BURST as AbilityData).duplicate(true)
 
 static func create_slime_boss_ability() -> AbilityData:
-	var ab := AbilityData.new()
-	ab.name = "Đại Hồng Thủy Hắc Ám"
-	ab.ability_type = AbilityData.AbilityType.ULTIMATE
-	ab.target_rule = AbilityData.TargetRule.DENSEST_ENEMY_CLUSTER
-	ab.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
-	ab.aoe_radius = 1
-	ab.cooldown = 8.0
-	ab.energy_cost = 100.0
-	var dmg := DamageEffectData.new()
-	dmg.base_amount = 120.0
-	dmg.damage_type = DamageEvent.DamageType.MAGIC
-	dmg.scalings = { EffectData.STAT_AP: 1.20 }
-	var heal := HealEffectData.new()
-	heal.base_amount = 80.0
-	heal.scalings = { EffectData.STAT_AP: 0.50 }
-	ab.effects = [dmg, heal]
-	ab.description = "Giáng thiên thạch bùn độc vào cụm tướng đông nhất gây {0} sát thương phép, đồng thời hồi {1} Máu cho bản thân."
-	return ab
+	return (SLIME_DARK_FLOOD as AbilityData).duplicate(true)
 
 func get_floor_type(floor_num: int) -> FloorType:
 	if floor_num % 5 == 0:
@@ -1119,9 +1080,9 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 16 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 31 TEST CASE VÀ GHI REPORT
 		KEY_0:
-			_run_all_tests()
+			await _run_all_tests()
 			
 		# Chạy lẻ từng test như cũ
 		KEY_1: _run_tc_03_energy_and_ultimate()
@@ -1212,8 +1173,9 @@ func _run_all_tests() -> void:
 	_run_tc_28_hero_upgrade_anti_displacement()
 	_run_tc_29_four_tier_ability_tooltips()
 	_run_tc_30_comprehensive_narrative_and_tri_shield()
+	await _run_tc_31_monster_skills_and_shield_decay()
 	
-	_log_test("\n🎉 TẤT CẢ 30 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 31 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4153,6 +4115,117 @@ func _run_tc_30_comprehensive_narrative_and_tri_shield() -> void:
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-30.5 Ghost HP & DR Indicator PASSED!")
 	_log_test(">>> 🟢 TC-30 PASSED: Comprehensive Narrative & Tri-Shield Matrix fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-31: Data-driven Monster Skills & Shield Duration Decay
+# ------------------------------------------------------------------------------
+func _run_tc_31_monster_skills_and_shield_decay() -> void:
+	_log_test("\n==================== [TEST TC-31: MONSTER SKILLS & SHIELD DECAY] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-31.1: Verify Data-Driven Monster Skills (.tres) and 4-tier Narrative Tooltips
+	_log_test("[TC-31.1] Verifying 100% Data-driven Monster Skills from .tres...")
+	
+	# Slime Acid Spray
+	var normal_ab: AbilityData = SLIME_ACID_SPRAY as AbilityData
+	assert(normal_ab != null, "FAIL TC-31.1: SLIME_ACID_SPRAY resource must load")
+	assert(normal_ab.name == "Phun Dịch Axit", "FAIL TC-31.1: Slime normal skill name mismatch")
+	assert(normal_ab.ability_type == AbilityData.AbilityType.ACTIVE, "FAIL TC-31.1: Must be ACTIVE")
+	assert(normal_ab.cooldown == 4.0, "FAIL TC-31.1: Cooldown 4.0s")
+	assert(normal_ab.energy_cost == 40.0, "FAIL TC-31.1: Cost 40 MP")
+	assert(normal_ab.effects.size() == 1, "FAIL TC-31.1: Normal skill effects count")
+	
+	var normal_tip := normal_ab.get_formatted_tooltip(null, true)
+	assert(not normal_tip.contains("{0}"), "FAIL TC-31.1: Normal tooltip contains raw {0}")
+	assert(not normal_tip.contains("{action_target}"), "FAIL TC-31.1: Normal tooltip contains {action_target}")
+	assert(not normal_tip.contains("{hero}"), "FAIL TC-31.1: Normal tooltip contains {hero}")
+	assert(normal_tip.contains("Tiến trình theo cấp"), "FAIL TC-31.1: Normal tooltip must have Tier 4 progression")
+	_log_test("  * Normal: [Phun Dịch Axit] validated!")
+	
+	# Slime Poison Burst
+	var elite_ab: AbilityData = SLIME_POISON_BURST as AbilityData
+	assert(elite_ab != null, "FAIL TC-31.1: SLIME_POISON_BURST resource must load")
+	assert(elite_ab.name == "Bùng Nổ Độc Tố", "FAIL TC-31.1: Slime elite skill name mismatch")
+	assert(elite_ab.ability_type == AbilityData.AbilityType.ACTIVE, "FAIL TC-31.1: Must be ACTIVE")
+	assert(elite_ab.aoe_shape == AbilityData.AoEShape.HEX_RADIUS, "FAIL TC-31.1: Must be HEX_RADIUS")
+	assert(elite_ab.aoe_radius == 1, "FAIL TC-31.1: Radius must be 1")
+	assert(elite_ab.cooldown == 5.0, "FAIL TC-31.1: Cooldown 5.0s")
+	assert(elite_ab.energy_cost == 60.0, "FAIL TC-31.1: Cost 60 MP")
+	
+	var elite_tip := elite_ab.get_formatted_tooltip(null, true)
+	assert(not elite_tip.contains("{0}"), "FAIL TC-31.1: Elite tooltip contains raw {0}")
+	assert(not elite_tip.contains("{action_target}"), "FAIL TC-31.1: Elite tooltip contains {action_target}")
+	assert(not elite_tip.contains("{hero}"), "FAIL TC-31.1: Elite tooltip contains {hero}")
+	assert(elite_tip.contains("Tiến trình theo cấp"), "FAIL TC-31.1: Elite tooltip must have Tier 4 progression")
+	_log_test("  * Elite: [Bùng Nổ Độc Tố] validated!")
+	
+	# Slime Dark Flood
+	var boss_ab: AbilityData = SLIME_DARK_FLOOD as AbilityData
+	assert(boss_ab != null, "FAIL TC-31.1: SLIME_DARK_FLOOD resource must load")
+	assert(boss_ab.name == "Đại Hồng Thủy Hắc Ám", "FAIL TC-31.1: Slime boss skill name mismatch")
+	assert(boss_ab.ability_type == AbilityData.AbilityType.ULTIMATE, "FAIL TC-31.1: Must be ULTIMATE")
+	assert(boss_ab.target_rule == AbilityData.TargetRule.DENSEST_ENEMY_CLUSTER, "FAIL TC-31.1: Target rule cluster")
+	assert(boss_ab.aoe_shape == AbilityData.AoEShape.HEX_RADIUS, "FAIL TC-31.1: Must be HEX_RADIUS")
+	assert(boss_ab.aoe_radius == 1, "FAIL TC-31.1: Radius must be 1")
+	assert(boss_ab.cooldown == 8.0, "FAIL TC-31.1: Cooldown 8.0s")
+	assert(boss_ab.energy_cost == 100.0, "FAIL TC-31.1: Cost 100 MP")
+	assert(boss_ab.effects.size() == 2, "FAIL TC-31.1: Boss skill must have 2 effects (Damage + Heal)")
+	
+	var boss_tip := boss_ab.get_formatted_tooltip(null, true)
+	assert(not boss_tip.contains("{0}"), "FAIL TC-31.1: Boss tooltip contains raw {0}")
+	assert(not boss_tip.contains("{1}"), "FAIL TC-31.1: Boss tooltip contains raw {1}")
+	assert(not boss_tip.contains("{action_target}"), "FAIL TC-31.1: Boss tooltip contains {action_target}")
+	assert(not boss_tip.contains("{hero}"), "FAIL TC-31.1: Boss tooltip contains {hero}")
+	assert(boss_tip.contains("Tiến trình theo cấp"), "FAIL TC-31.1: Boss tooltip must have Tier 4 progression")
+	assert(boss_tip.contains("Hồi phục"), "FAIL TC-31.1: Boss progression must show Hồi phục")
+	_log_test("  * Boss: [Đại Hồng Thủy Hắc Ám] validated!")
+	_log_test(">>> 🟢 TC-31.1 Data-driven Monster Skills Integrity PASSED!")
+	
+	# 2. TC-31.2: Shield Duration Expiration & Decay
+	_log_test("[TC-31.2] Verifying Shield Duration Expiration & Decay Timer...")
+	var test_entity := hero_scene.instantiate() as HeroEntity
+	add_child(test_entity)
+	test_entity.initialize(_create_mock_hero_data("DecayTester", HeroData.HeroClass.TANK, 100.0, 10.0, 0.0, 1.0))
+	test_entity.current_hp = 100.0
+	
+	# Test Omni Shield Expiration
+	test_entity.add_shield(100.0, 0, 0.15)
+	assert(test_entity.omni_shield == 100.0, "FAIL TC-31.2: Omni shield must be 100.0 immediately")
+	await get_tree().create_timer(0.22).timeout
+	assert(test_entity.omni_shield == 0.0, "FAIL TC-31.2: Omni shield must decay to 0.0 after duration")
+	
+	# Test Physical Shield Expiration
+	test_entity.add_shield(60.0, 1, 0.10)
+	assert(test_entity.physical_shield == 60.0, "FAIL TC-31.2: Physical shield must be 60.0 immediately")
+	await get_tree().create_timer(0.15).timeout
+	assert(test_entity.physical_shield == 0.0, "FAIL TC-31.2: Physical shield must decay to 0.0 after duration")
+	
+	# Test Magic Shield Expiration
+	test_entity.add_shield(80.0, 2, 0.10)
+	assert(test_entity.magic_shield == 80.0, "FAIL TC-31.2: Magic shield must be 80.0 immediately")
+	await get_tree().create_timer(0.15).timeout
+	assert(test_entity.magic_shield == 0.0, "FAIL TC-31.2: Magic shield must decay to 0.0 after duration")
+	
+	# Test Breaking Shield Early before decay
+	test_entity.add_shield(50.0, 0, 0.15)
+	test_entity.take_damage(60.0, DamageEvent.DamageType.TRUE)
+	assert(test_entity.omni_shield == 0.0, "FAIL TC-31.2: Omni shield must be broken to 0.0 by damage")
+	await get_tree().create_timer(0.20).timeout
+	assert(test_entity.omni_shield == 0.0, "FAIL TC-31.2: Omni shield must remain 0.0 without underflow")
+	
+	test_entity.queue_free()
+	_log_test(">>> 🟢 TC-31.2 Shield Duration Expiration PASSED!")
+	
+	# 3. TC-31.3: Arthur Holy Shield Duration Integration
+	_log_test("[TC-31.3] Verifying Arthur Holy Shield Duration Integration...")
+	var arthur_ab: AbilityData = preload("res://data/abilities/arthur_holy_shield.tres")
+	assert(arthur_ab != null, "FAIL TC-31.3: Arthur holy shield must load")
+	assert(arthur_ab.effects.size() >= 2, "FAIL TC-31.3: Arthur must have at least 2 effects")
+	var shield_eff: ShieldEffectData = arthur_ab.effects[1] as ShieldEffectData
+	assert(shield_eff != null, "FAIL TC-31.3: Second effect must be ShieldEffectData")
+	assert(shield_eff.duration == 4.0, "FAIL TC-31.3: Arthur shield duration must be 4.0s")
+	_log_test(">>> 🟢 TC-31.3 Arthur Holy Shield Duration Integration PASSED!")
+	_log_test(">>> 🟢 TC-31 PASSED: Data-driven Monster Skills & Shield Duration Decay fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

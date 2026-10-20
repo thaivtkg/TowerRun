@@ -1,6 +1,12 @@
 class_name HealEffectData
 extends EffectData
 
+@export var base_heal: float:
+	get:
+		return base_amount
+	set(val):
+		base_amount = val
+
 @export var heal_amount: float:
 	get:
 		return base_amount

@@ -108,3 +108,11 @@ func _apply_effect(effect: EffectData, source: CombatEntity, target: CombatEntit
 		if combat_system != null and actual_healed > 0.0:
 			combat_system.entity_healed.emit(source, target, actual_healed)
 		print("[AbilitySystem] 💚 %s heals %s for %.1f HP. (New HP: %.1f)" % [source.name, target.name, actual_healed, target.current_hp])
+		
+	elif effect is ShieldEffectData:
+		var shield_effect = effect as ShieldEffectData
+		var actual_shield: float = shield_effect.calculate_total_value(source)
+		var shield_target: CombatEntity = source if (shield_effect.apply_to_self or (target != null and target.is_hero != source.is_hero)) else target
+		if is_instance_valid(shield_target):
+			shield_target.add_shield(actual_shield, shield_effect.shield_type, shield_effect.duration)
+			print("[AbilitySystem] 🛡️ %s grants %.1f shield to %s for %.1fs." % [source.name, actual_shield, shield_target.name, shield_effect.duration])
