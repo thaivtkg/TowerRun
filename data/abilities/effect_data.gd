@@ -188,11 +188,16 @@ func get_inline_value_bbcode(source: CombatEntity = null) -> String:
 	var total_val := calculate_total_value(source)
 	var scale_str := _build_scale_string(source)
 		
-	var val_color: String = "#ff5555"
+	var val_color: String = "#ff7675"
 	if "damage_type" in self:
 		var dmg_type = self.get("damage_type")
-		val_color = "#ff5555" if dmg_type == DamageEvent.DamageType.PHYSICAL else "#9b59b6"
-	elif "heal_amount" in self or "shield_amount" in self:
+		if dmg_type == DamageEvent.DamageType.PHYSICAL:
+			val_color = "#ff7675"
+		elif dmg_type == DamageEvent.DamageType.MAGIC:
+			val_color = "#a29bfe"
+		else:
+			val_color = "#ffffff"
+	elif "heal_amount" in self or "shield_amount" in self or self is ShieldEffectData or self is HealEffectData:
 		val_color = "#2ecc71"
 		
 	return "[color=%s][b]%.0f[/b][/color]%s" % [val_color, total_val, scale_str]

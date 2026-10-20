@@ -8,14 +8,25 @@
 script = ExtResource("2_pb3f0")
 base_damage = 150.0
 damage_type = 0
+scalings = {
+"TOTAL_AD": 0.5
+}
 metadata/_custom_type_script = "uid://ca1q8rjlmknkg"
 
 [resource]
 script = ExtResource("2_u6icb")
 id = "kira_ultimate"
-name = "Kira Ultimate"
+name = "Vũ Điệu Lưỡi Hái"
 ability_type = 2
 target_rule = 6
 cooldown = 0.0
+energy_cost = 100.0
+narrative_template = "{hero} hòa mình vào bóng tối rồi phóng liên hoàn đoản kiếm vào {action_target}, gây {0} lên từng mục tiêu và găm dấu ấn [b]Chảy Máu[/b], khiến chúng chịu thêm [color=#ffffff]30[/color] sát thương chuẩn mỗi giây trong 3 giây."
+caveat = "Kỹ năng này có thể kích hoạt hiệu ứng đòn đánh và có thể Chí Mạng."
+progression_ranks = {
+"Sát thương": [120, 180, 260],
+"Sát thương Chảy Máu": [30, 45, 65],
+"Tỉ lệ STVL": ["50%", "65%", "80%"]
+}
 effects = Array[ExtResource("1_rco6d")]([SubResource("Resource_3civs")])
 metadata/_custom_type_script = "uid://cekmi44787o2m"

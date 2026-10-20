@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3]
+
+[ext_resource type="Script" path="res://data/abilities/effect_data.gd" id="1_eff"]
+[ext_resource type="Script" path="res://data/abilities/damage_effect_data.gd" id="2_dmg"]
+[ext_resource type="Script" path="res://data/abilities/shield_effect_data.gd" id="3_shield"]
+[ext_resource type="Script" path="res://data/abilities/ability_data.gd" id="4_ab"]
+
+[sub_resource type="Resource" id="Resource_dmg"]
+script = ExtResource("2_dmg")
+base_damage = 70.0
+damage_type = 0
+scalings = {
+"TOTAL_ARMOR": 0.3
+}
+
+[sub_resource type="Resource" id="Resource_shield"]
+script = ExtResource("3_shield")
+base_shield = 100.0
+scalings = {
+"TOTAL_MAX_HP": 0.1
+}
+
+[resource]
+script = ExtResource("4_ab")
+id = "arthur_holy_shield"
+name = "Khiên Thánh Phán Quyết"
+ability_type = 1
+target_rule = 3
+cooldown = 8.0
+energy_cost = 50.0
+narrative_template = "{hero} dộng mạnh chiếc khiên hộ mệnh xuống đất, tạo chấn động hình nón lên {action_target}, gây {0} và [b]Làm Choáng[/b] mục tiêu trúng đòn trong 1.25 giây.
+
+Đồng thời, {hero} nhận một lớp [b]Lá Chắn[/b] bảo hộ hấp thụ {1} trong 4 giây."
+caveat = "Nếu lá chắn bị phá vỡ trước thời hạn, {hero} được tăng 20% Tốc Độ Đánh trong 3 giây."
+progression_ranks = {
+"Lá chắn": [100, 160, 240],
+"Sát thương": [70, 110, 160],
+"Thời gian Choáng": ["1.25s", "1.5s", "2.0s"]
+}
+effects = Array[ExtResource("1_eff")]([SubResource("Resource_dmg"), SubResource("Resource_shield")])

@@ -267,6 +267,14 @@ func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: flo
 	data.base_defense = def
 	data.attack_speed = spd
 	data.attack_range = atk_range
+	if h_name == "Arthur":
+		var ab = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+		if ab:
+			data.pool_lv10_actives.append(ab)
+	elif h_name == "Jaina":
+		var ab = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+		if ab:
+			data.pool_lv10_actives.append(ab)
 	return data
 
 func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
@@ -298,15 +306,32 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 			break
 			
 	if not has_ult:
-		var default_ult := AbilityData.new()
-		default_ult.name = data.name + " Ultimate"
-		default_ult.ability_type = AbilityData.AbilityType.ULTIMATE
-		default_ult.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
-		default_ult.cooldown = 1.0
-		var ult_dmg := DamageEffectData.new()
-		ult_dmg.base_damage = data.base_attack * 2.5
-		default_ult.effects.append(ult_dmg)
-		hero.unlocked_abilities.append(Ability.new(hero, default_ult))
+		var ult_res: AbilityData = null
+		if data.name == "Jaina":
+			ult_res = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+		if ult_res != null:
+			hero.unlocked_abilities.append(Ability.new(hero, ult_res))
+		else:
+			var default_ult := AbilityData.new()
+			default_ult.name = data.name + " Ultimate"
+			default_ult.ability_type = AbilityData.AbilityType.ULTIMATE
+			default_ult.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
+			default_ult.cooldown = 1.0
+			var ult_dmg := DamageEffectData.new()
+			ult_dmg.base_damage = data.base_attack * 2.5
+			default_ult.effects.append(ult_dmg)
+			hero.unlocked_abilities.append(Ability.new(hero, default_ult))
+
+	if data.name == "Arthur":
+		var shield_ab = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+		if shield_ab:
+			var has_shield := false
+			for ab in hero.unlocked_abilities:
+				if ab.data.id == shield_ab.id:
+					has_shield = true
+					break
+			if not has_shield:
+				hero.unlocked_abilities.append(Ability.new(hero, shield_ab))
 
 	hero.healed.connect(_on_entity_healed)
 	if hero.progression != null:
@@ -1190,8 +1215,9 @@ func _run_all_tests() -> void:
 	_run_tc_26_model_a_tft_and_lmht_tooltips()
 	_run_tc_27_dynamic_prestige_border_palette()
 	_run_tc_28_hero_upgrade_anti_displacement()
+	_run_tc_29_four_tier_ability_tooltips()
 	
-	_log_test("\n🎉 TẤT CẢ 28 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 29 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -3913,6 +3939,107 @@ func _run_tc_28_hero_upgrade_anti_displacement() -> void:
 	_on_skill_chosen(choice2, [choice2])
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-28 PASSED: Hero Upgrade Input Isolation & Anti-Displacement fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-29: 4-Tier Ability Tooltip Architecture & Spatial Layout (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_29_four_tier_ability_tooltips() -> void:
+	_log_test("\n==================== [TEST TC-29: 4-TIER ABILITY TOOLTIPS & SPATIAL LAYOUT] ====================")
+	_reset_test_battlefield()
+	
+	var hero_data := HeroData.new()
+	hero_data.name = "Kira"
+	hero_data.base_attack = 60.0
+	var hero_entity := hero_scene.instantiate() as HeroEntity
+	add_child(hero_entity)
+	hero_entity.initialize(hero_data)
+	
+	# 1. TC-29.1: Token Parsing Integrity
+	_log_test("[TC-29.1] Verifying Token Parsing Integrity ({hero}, {action_target}, {0})...")
+	var test_ab := AbilityData.new()
+	test_ab.name = "Vũ Điệu Lưỡi Hái"
+	test_ab.target_rule = AbilityData.TargetRule.ALL_ENEMIES
+	var dmg_eff := DamageEffectData.new()
+	dmg_eff.base_damage = 120.0
+	dmg_eff.damage_type = DamageEvent.DamageType.PHYSICAL
+	dmg_eff.scalings = { EffectData.STAT_TOTAL_AD: 0.50 }
+	test_ab.effects.append(dmg_eff)
+	test_ab.narrative_template = "{hero} phóng liên hoàn đoản kiếm vào {action_target}, gây {0} lên từng mục tiêu."
+	test_ab.caveat = "Kỹ năng này có thể kích hoạt hiệu ứng đòn đánh và có thể Chí Mạng."
+	test_ab.progression_ranks = {
+		"Sát thương": [120, 180, 260],
+		"Tỉ lệ STVL": ["50%", "65%", "80%"]
+	}
+	
+	var full_desc := test_ab.get_formatted_tooltip(hero_entity, true)
+	_log_test("[TC-29.1] Full Parsed Tooltip:\n%s" % full_desc)
+	assert(not full_desc.contains("{hero}"), "FAIL TC-29.1: {hero} token was not replaced")
+	assert(not full_desc.contains("{action_target}"), "FAIL TC-29.1: {action_target} token was not replaced")
+	assert(not full_desc.contains("{0}"), "FAIL TC-29.1: {0} token was not replaced")
+	assert(full_desc.contains("Kira"), "FAIL TC-29.1: {hero} must be replaced by hero name 'Kira'")
+	assert(full_desc.contains("toàn bộ kẻ địch trên sàn đấu"), "FAIL TC-29.1: {action_target} must be replaced by 'toàn bộ kẻ địch trên sàn đấu'")
+	assert(full_desc.contains("150"), "FAIL TC-29.1: {0} must calculate total value 120 + 60*0.5 = 150")
+	_log_test(">>> 🟢 TC-29.1 Token Parsing Integrity PASSED!")
+	
+	# 2. TC-29.2: Spatial Filtering Isolation (Gacha vs Stat Panel)
+	_log_test("[TC-29.2] Verifying Spatial Filtering Isolation (Gacha UI vs CharacterStatsUI)...")
+	var gacha_desc := test_ab.get_formatted_tooltip(hero_entity, false)
+	_log_test("[TC-29.2] Gacha Tooltip (No Tier 4):\n%s" % gacha_desc)
+	assert(gacha_desc.contains("Kira phóng liên hoàn đoản kiếm"), "FAIL TC-29.2: Gacha desc must contain Tier 2 Narrative")
+	assert(gacha_desc.contains("Kỹ năng này có thể kích hoạt"), "FAIL TC-29.2: Gacha desc must contain Tier 3 Caveat")
+	assert(not gacha_desc.contains("─── Tiến trình theo cấp ───"), "FAIL TC-29.2: Gacha desc MUST NOT contain Tier 4 separator")
+	assert(not gacha_desc.contains("Sát thương: ["), "FAIL TC-29.2: Gacha desc MUST NOT contain Tier 4 progression table")
+	
+	var stat_desc := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(stat_desc.contains("─── Tiến trình theo cấp ───"), "FAIL TC-29.2: Stat Panel tooltip must contain Tier 4 separator")
+	assert(stat_desc.contains("Sát thương: ["), "FAIL TC-29.2: Stat Panel tooltip must contain Tier 4 progression table")
+	_log_test(">>> 🟢 TC-29.2 Spatial Filtering Isolation PASSED!")
+	
+	# 3. TC-29.3: Backward Compatibility Zero-Regression
+	_log_test("[TC-29.3] Verifying Backward Compatibility on legacy skills without template...")
+	var legacy_ab := AbilityData.new()
+	legacy_ab.name = "Legacy Strike"
+	var leg_eff := DamageEffectData.new()
+	leg_eff.base_damage = 50.0
+	legacy_ab.effects.append(leg_eff)
+	var leg_desc_false := legacy_ab.get_formatted_tooltip(hero_entity, false)
+	var leg_desc_true := legacy_ab.get_formatted_tooltip(hero_entity, true)
+	assert(leg_desc_false != "" and leg_desc_false.contains("50"), "FAIL TC-29.3: Legacy false tooltip failed")
+	assert(leg_desc_true != "" and leg_desc_true.contains("50"), "FAIL TC-29.3: Legacy true tooltip failed")
+	_log_test(">>> 🟢 TC-29.3 Backward Compatibility Zero-Regression PASSED!")
+	
+	# 4. TC-29.4: Active Rank Highlighting in Progression Table
+	_log_test("[TC-29.4] Verifying Active Rank Highlighting according to hero level...")
+	# Lv 1 -> Rank 0 highlighted
+	hero_entity.progression.current_level = 1
+	var desc_lv1 := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(desc_lv1.contains("[b][color=#f1c40f]120[/color][/b] / 180 / 260"), "FAIL TC-29.4: Lv1 must highlight 120 (Rank 0)")
+	
+	# Lv 10 -> Rank 1 highlighted
+	hero_entity.progression.current_level = 10
+	var desc_lv10 := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(desc_lv10.contains("120 / [b][color=#f1c40f]180[/color][/b] / 260"), "FAIL TC-29.4: Lv10 must highlight 180 (Rank 1)")
+	
+	# Lv 25 -> Rank 2 highlighted
+	hero_entity.progression.current_level = 25
+	var desc_lv25 := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(desc_lv25.contains("120 / 180 / [b][color=#f1c40f]260[/color][/b]"), "FAIL TC-29.4: Lv25 must highlight 260 (Rank 2)")
+	_log_test(">>> 🟢 TC-29.4 Active Rank Highlighting PASSED!")
+	
+	# 5. TC-29.5: Official Kira, Arthur, Jaina Signature Abilities Verification
+	_log_test("[TC-29.5] Verifying official resources for Kira, Arthur, and Jaina...")
+	var kira_ult = load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
+	assert(kira_ult != null and kira_ult.narrative_template != "" and not kira_ult.progression_ranks.is_empty(), "FAIL TC-29.5: Kira_Ultimate.tres must have 4-tier data")
+	
+	var arthur_shield = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	assert(arthur_shield != null and arthur_shield.narrative_template != "" and not arthur_shield.progression_ranks.is_empty(), "FAIL TC-29.5: arthur_holy_shield.tres must have 4-tier data")
+	
+	var jaina_blizz = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+	assert(jaina_blizz != null and jaina_blizz.narrative_template != "" and not jaina_blizz.progression_ranks.is_empty(), "FAIL TC-29.5: jaina_eternal_blizzard.tres must have 4-tier data")
+	
+	hero_entity.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-29 PASSED: 4-Tier Ability Tooltip Architecture & Spatial Layout fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

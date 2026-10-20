@@ -51,7 +51,7 @@ class HexSkillIcon extends Control:
 		rtl.text = for_text
 		rtl.fit_content = true
 		rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		rtl.custom_minimum_size = Vector2(220, 0)
+		rtl.custom_minimum_size = Vector2(280, 0)
 		panel.add_child(rtl)
 		return panel
 
@@ -526,7 +526,7 @@ func _render_hero_prestige_ui(hero: HeroEntity) -> void:
 		
 	var skills_found: int = 0
 	if hero.basic_attack_ability != null and hero.basic_attack_ability.data != null:
-		var basic_desc: String = hero.basic_attack_ability.data.get_formatted_tooltip(hero)
+		var basic_desc: String = hero.basic_attack_ability.data.get_formatted_tooltip(hero, true)
 		var basic_icon := HexSkillIcon.new(hero.basic_attack_ability.data.name, "Đánh thường", Color(0.65, 0.70, 0.80), basic_desc)
 		skills_container.add_child(basic_icon)
 		skills_found += 1
@@ -539,7 +539,7 @@ func _render_hero_prestige_ui(hero: HeroEntity) -> void:
 				border_col = Color(1.0, 0.85, 0.2)
 			elif runtime_ab.data.ability_type == AbilityData.AbilityType.PASSIVE:
 				border_col = Color(0.4, 0.9, 0.4)
-			var skill_desc: String = runtime_ab.data.get_formatted_tooltip(hero)
+			var skill_desc: String = runtime_ab.data.get_formatted_tooltip(hero, true)
 			var skill_icon := HexSkillIcon.new(runtime_ab.data.name, type_name, border_col, skill_desc)
 			skills_container.add_child(skill_icon)
 			skills_found += 1

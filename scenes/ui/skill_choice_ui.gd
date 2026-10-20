@@ -274,8 +274,8 @@ func _get_type_color(type: AbilityData.AbilityType) -> Color:
 func _build_card_description(ability: AbilityData) -> String:
 	if ability == null:
 		return "Kỹ năng đặc biệt hỗ trợ chiến đấu."
-	if not ability.effects.is_empty():
-		return ability.get_formatted_tooltip()
+	if ability.narrative_template != "" or not ability.effects.is_empty():
+		return ability.get_formatted_tooltip(null, false)
 	if not ability.description.is_empty():
 		return ability.description
 	return "Kỹ năng đặc biệt hỗ trợ chiến đấu."
