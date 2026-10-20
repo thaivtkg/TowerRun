@@ -237,7 +237,10 @@ func calculate_max_hp(lvl: int) -> float:
 	var base: float = data.base_hp if data != null else 100.0
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+	var total_hp = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_hp()
+	if has_item_passive("colossus_vitality"):
+		total_hp *= 1.12
+	return total_hp
 
 # ==========================================
 # SPRINT 6: ITEM LOGIC & STAT MODIFIERS
@@ -272,10 +275,31 @@ func get_item_bonus_crit_chance() -> float:
 		if it != null: total += it.get_crit_chance()
 	return total
 
+func get_item_bonus_hp() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_hp()
+	return total
+
+func get_item_bonus_attack_speed() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_attack_speed()
+	return total
+
+func get_item_bonus_omnivamp() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_omnivamp()
+	return total
+
 func has_item_passive(p_id: String) -> bool:
 	for it in equipped_items:
-		if it != null and it.passive_id == p_id:
-			return true
+		if it != null:
+			if it.passive_id == p_id or it.id == p_id:
+				return true
+			if p_id != "" and (p_id in it.sub_passive_name or p_id in it.mythic_passive_name):
+				return true
 	return false
 
 func equip_item(item: ItemData) -> bool:
@@ -307,6 +331,7 @@ func equip_item(item: ItemData) -> bool:
 func _on_item_equipped(item: ItemData, is_crafted: bool) -> void:
 	print("[HeroEntity] 🎒 %s trang bị [%s] (Crafted: %s) | Items: %d/3" % [name, item.name, is_crafted, equipped_items.size()])
 	item_equipped.emit(self, item, is_crafted)
+	_update_scaled_max_hp()
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
 
@@ -354,7 +379,9 @@ func get_crit_chance() -> float:
 	var base: float = data.crit_chance if data != null else 0.0
 	return base + get_item_bonus_crit_chance()
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
-func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
+func get_attack_speed() -> float:
+	var base_spd: float = data.attack_speed if data != null else 1.0
+	return base_spd * (1.0 + get_item_bonus_attack_speed())
 
 # ==========================================
 # FULL PROGRESSION & ABILITIES PERSISTENCE (S4.6+)

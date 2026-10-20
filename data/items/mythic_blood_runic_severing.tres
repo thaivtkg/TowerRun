@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "mythic_blood_runic_severing"
+name = "Ma Vương Trảm Đao"
+description = "Đại ma kiếm thăng hoa từ ma huyết và trảm đao, cuồng bạo xé rách mọi tuyến phòng thủ."
+tier = 3
+is_component = false
+is_pure_stat = false
+recipe = ["blood_runic_blade", "soul_severing_blade"]
+bonus_ad = 50.0
+bonus_ap = 20.0
+bonus_armor = 0.0
+bonus_hp = 0.0
+starting_energy = 0.0
+crit_chance = 0.0
+bonus_attack_speed = 0.50
+bonus_omnivamp = 0.30
+stat_modifiers = {
+"bonus_ad": 50.0,
+"bonus_ap": 20.0,
+"bonus_attack_speed": 0.50,
+"bonus_omnivamp": 0.30
+}
+passive_id = "omnivamp_heal"
+passive_name = ""
+passive_desc = ""
+sub_passive_name = "Huyết Ngữ"
+sub_passive_desc = "Đòn đánh đốt cháy kẻ địch gây sát thương theo thời gian"
+mythic_passive_name = "Ma Thần Nộ"
+mythic_passive_desc = "Tăng 50% tốc độ đánh và 30% hút máu toàn phần"

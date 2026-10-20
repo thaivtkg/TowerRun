@@ -5,15 +5,28 @@
 [resource]
 script = ExtResource("1_item")
 id = "thorn_obsidian_shield"
-name = "Trọng Khiên Gai Đen"
-description = "Nội tại [Gai Phản Kích]: Giảm 25% sát thương từ đòn đánh chí mạng; phản lại 20% sát thương nhận vào thành sát thương phép."
+name = "Hắc Gai Khiên"
+description = "Trọng khiên gai hắc thạch kiên cố, phản phệ sát thương phép và triệt tiêu bạo kích."
+tier = 2
 is_component = false
+is_pure_stat = false
 recipe = ["bloodsteel_shard", "obsidian_plating"]
+bonus_ad = 15.0
+bonus_ap = 0.0
+bonus_armor = 25.0
+bonus_hp = 0.0
+starting_energy = 0.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
 stat_modifiers = {
 "bonus_ad": 15.0,
-"bonus_ap": 0.0,
-"bonus_armor": 25.0,
-"crit_chance": 0.0,
-"starting_energy": 0.0
+"bonus_armor": 25.0
 }
 passive_id = "thorn_reflect"
+passive_name = "Gai Phản Phệ"
+passive_desc = "Giảm 25% sát thương chí mạng phải nhận và phản lại 20% sát thương thành sát thương phép"
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

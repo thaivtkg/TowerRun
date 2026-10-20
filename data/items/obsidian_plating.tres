@@ -5,15 +5,27 @@
 [resource]
 script = ExtResource("1_item")
 id = "obsidian_plating"
-name = "Phiến Giáp Hắc Thạch"
-description = "Miếng giáp rèn từ đá núi lửa siêu cứng, giảm sát thương vật lý và kháng phép nhẹ."
+name = "Phiến Giáp"
+description = "Mảnh giáp hắc thạch khai thác từ lòng đất sâu, cứng cáp vô song."
+tier = 1
 is_component = true
+is_pure_stat = true
 recipe = []
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 20.0
+bonus_hp = 0.0
+starting_energy = 0.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
 stat_modifiers = {
-"bonus_ad": 0.0,
-"bonus_ap": 0.0,
-"bonus_armor": 20.0,
-"crit_chance": 0.0,
-"starting_energy": 0.0
+"bonus_armor": 20.0
 }
 passive_id = ""
+passive_name = ""
+passive_desc = ""
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "mythic_colossus_immortal"
+name = "Bất Diệt Cự Thạch"
+description = "Bảo thạch bất diệt dung hợp từ cự thần và hắc thạch, miễn nhiễm cái chết trong gang tấc."
+tier = 3
+is_component = false
+is_pure_stat = false
+recipe = ["colossus_vitality_armor", "obsidian_armor"]
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 60.0
+bonus_hp = 400.0
+starting_energy = 0.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
+stat_modifiers = {
+"bonus_armor": 60.0,
+"bonus_hp": 400.0
+}
+passive_id = "immortal_stone"
+passive_name = ""
+passive_desc = ""
+sub_passive_name = "Cự Thạch Hộ"
+sub_passive_desc = "Giảm 15% mọi sát thương nhận vào"
+mythic_passive_name = "Bất Diệt Thân"
+mythic_passive_desc = "Hồi sinh với 40% máu sau khi tử trận một lần mỗi trận"

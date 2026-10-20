@@ -5,15 +5,28 @@
 [resource]
 script = ExtResource("1_item")
 id = "frost_prison_heart"
-name = "Băng Ngục Hộ Tâm"
-description = "Nội tại [Hàn Khí Cực Độ]: Tỏa ra luồng khí lạnh làm giảm 25% Tốc Độ Đánh của tất cả kẻ địch trong phạm vi 1 ô xung quanh."
+name = "Hàn Băng Ngục"
+description = "Hộ tâm gương tỏa ra hàn khí băng giá, gia tăng giáp trụ và năng lượng khởi đầu."
+tier = 2
 is_component = false
+is_pure_stat = false
 recipe = ["obsidian_plating", "soul_aether_bead"]
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 25.0
+bonus_hp = 0.0
+starting_energy = 20.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
 stat_modifiers = {
-"bonus_ad": 0.0,
-"bonus_ap": 0.0,
 "bonus_armor": 25.0,
-"crit_chance": 0.0,
 "starting_energy": 20.0
 }
 passive_id = "frost_aura"
+passive_name = "Hàn Khí"
+passive_desc = "Làm chậm tốc độ đánh của kẻ địch xung quanh"
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

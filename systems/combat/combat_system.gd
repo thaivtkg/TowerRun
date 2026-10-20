@@ -59,11 +59,14 @@ func process_attack(event: DamageEvent) -> void:
 	# Áp dụng sát thương với phân loại DamageType
 	event.target.take_damage(event.final_damage, event.damage_type)
 	
-	# 3. Ma Đao Huyết Ngữ [omnivamp_heal]: Hồi máu 20% sát thương gây ra
-	if event.source is HeroEntity and (event.source as HeroEntity).has_item_passive("omnivamp_heal"):
-		if not event.is_reflected and is_instance_valid(event.source) and not event.source.is_dead:
-			var heal_amt: float = event.final_damage * 0.20
-			event.source.heal(heal_amt)
+	# 3. Omnivamp: Hồi máu theo % sát thương gây ra
+	if event.source is HeroEntity:
+		var hero := event.source as HeroEntity
+		var vamp_pct: float = hero.get_item_bonus_omnivamp()
+		if vamp_pct <= 0.0 and hero.has_item_passive("omnivamp_heal"):
+			vamp_pct = 0.20
+		if vamp_pct > 0.0 and not event.is_reflected and is_instance_valid(hero) and not hero.is_dead:
+			hero.heal(event.final_damage * vamp_pct)
 			
 	# 4. Trọng Khiên Gai Đen [thorn_reflect]: Phản 20% sát thương nhận vào thành sát thương phép
 	if not event.is_reflected and event.target is HeroEntity and (event.target as HeroEntity).has_item_passive("thorn_reflect"):

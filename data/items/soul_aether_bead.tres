@@ -5,15 +5,27 @@
 [resource]
 script = ExtResource("1_item")
 id = "soul_aether_bead"
-name = "Linh Hồn Thủy Châu"
-description = "Hạt ngọc ngưng tụ từ linh hồn quái vật, giúp Tướng bắt đầu ván đấu với sẵn 15 năng lượng."
+name = "Thủy Châu"
+description = "Hạt châu chứa linh hồn dĩ thái, duy trì dòng năng lượng ổn định."
+tier = 1
 is_component = true
+is_pure_stat = true
 recipe = []
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 0.0
+bonus_hp = 0.0
+starting_energy = 15.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
 stat_modifiers = {
-"bonus_ad": 0.0,
-"bonus_ap": 0.0,
-"bonus_armor": 0.0,
-"crit_chance": 0.0,
 "starting_energy": 15.0
 }
 passive_id = ""
+passive_name = ""
+passive_desc = ""
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

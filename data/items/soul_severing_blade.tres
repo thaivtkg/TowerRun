@@ -5,15 +5,28 @@
 [resource]
 script = ExtResource("1_item")
 id = "soul_severing_blade"
-name = "Trảm Hồn Đoản Đao"
-description = "Nội tại [Khai Tử]: Các đòn đánh chí mạng gây thêm 25% sát thương chuẩn lên mục tiêu dưới 40% máu."
+name = "Trảm Hồn Đao"
+description = "Đoản đao rèn từ hai mảnh huyết thép, lưỡi đao sắc bén thuần sát thương và bạo kích."
+tier = 2
 is_component = false
+is_pure_stat = true
 recipe = ["bloodsteel_shard", "bloodsteel_shard"]
+bonus_ad = 35.0
+bonus_ap = 0.0
+bonus_armor = 0.0
+bonus_hp = 0.0
+starting_energy = 0.0
+crit_chance = 0.10
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
 stat_modifiers = {
-"bonus_ad": 30.0,
-"bonus_ap": 0.0,
-"bonus_armor": 0.0,
-"crit_chance": 0.30,
-"starting_energy": 0.0
+"bonus_ad": 35.0,
+"crit_chance": 0.10
 }
-passive_id = "execute_crit"
+passive_id = ""
+passive_name = ""
+passive_desc = ""
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

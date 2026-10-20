@@ -5,15 +5,28 @@
 [resource]
 script = ExtResource("1_item")
 id = "void_celestial_orb"
-name = "Thiên Cầu Hư Không"
-description = "Nội tại [Thuần Khiết Hư Vô]: Khuếch đại toàn bộ chỉ số Sức Mạnh Phép Thuật của người sở hữu thêm 20%."
+name = "Hư Không Cầu"
+description = "Thiên cầu dung hợp từ hai tinh thể ma thuật, hội tụ sức mạnh pháp thuật và năng lượng thuần khiết."
+tier = 2
 is_component = false
+is_pure_stat = true
 recipe = ["sorcery_crystal", "sorcery_crystal"]
+bonus_ad = 0.0
+bonus_ap = 35.0
+bonus_armor = 0.0
+bonus_hp = 0.0
+starting_energy = 10.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
 stat_modifiers = {
-"bonus_ad": 0.0,
-"bonus_ap": 50.0,
-"bonus_armor": 0.0,
-"crit_chance": 0.0,
-"starting_energy": 0.0
+"bonus_ap": 35.0,
+"starting_energy": 10.0
 }
-passive_id = "ap_amplify"
+passive_id = ""
+passive_name = ""
+passive_desc = ""
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

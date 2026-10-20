@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "mythic_colossus_vitality_armor"
+name = "Cổ Thần Thánh Giáp"
+description = "Thánh giáp thượng cổ thăng hoa từ sinh mệnh cự thần, phòng ngự bất hoại và sinh lực vô biên."
+tier = 3
+is_component = false
+is_pure_stat = false
+recipe = ["colossus_vitality_armor", "colossus_vitality_armor"]
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 0.0
+bonus_hp = 800.0
+starting_energy = 0.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
+stat_modifiers = {
+"bonus_hp": 800.0
+}
+passive_id = "colossus_vitality"
+passive_name = ""
+passive_desc = ""
+sub_passive_name = "Cự Thần Thể"
+sub_passive_desc = "Tăng vĩnh viễn 25% Máu tối đa"
+mythic_passive_name = "Thần Hộ Bất Hoại"
+mythic_passive_desc = "Khi máu dưới 30%, nhận lá chắn bằng 50% Máu tối đa"
