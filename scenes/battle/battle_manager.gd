@@ -510,6 +510,7 @@ func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float,
 func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
 	if is_hero:
 		heroes.erase(entity)
+		_shake_camera(3.5, 0.18)
 	else:
 		enemies.erase(entity)
 		
@@ -933,13 +934,14 @@ func _on_entity_attack_requested(event: DamageEvent) -> void:
 		event.source.play_lunge_vfx(event.target.global_position)
 	combat_system.process_attack(event)
 
-func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool, damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
+func _on_combat_damage_dealt(source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool, damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
 	if not is_instance_valid(target):
 		return
 	target.play_hit_vfx()
 	var dmg_val: int = maxi(1, roundi(amount))
 	if is_crit:
-		_shake_camera(4.0, 0.18)
+		_shake_camera(2.5, 0.14)
+		trigger_hit_stop(0.03, false, source, target)
 		_spawn_floating_text(target.global_position, "%d!" % dmg_val, FloatingText.Type.CRIT)
 	else:
 		match damage_type:
@@ -963,13 +965,45 @@ func _on_ability_executed(source: CombatEntity, ability: Ability) -> void:
 	source.play_cast_vfx()
 	
 	if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE:
-		_shake_camera(6.0, 0.25)
-		_spawn_floating_text(source.global_position + Vector2(0, -35), "[ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
+		var is_boss_ult: bool = (source is EnemyEntity and ((source as EnemyEntity).data.name.contains("Chúa Tể") or (source as EnemyEntity).data.rank == EnemyData.EnemyRank.BOSS)) or ability.data.id == "slime_dark_flood"
+		if is_boss_ult:
+			_shake_camera(7.0, 0.35)
+			trigger_hit_stop(0.08, true)
+			_flash_board_dark(0.15)
+			_spawn_floating_text(source.global_position + Vector2(0, -35), "[BOSS ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
+		else:
+			_shake_camera(4.5, 0.22)
+			trigger_hit_stop(0.05, true)
+			_spawn_floating_text(source.global_position + Vector2(0, -35), "[ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
 	elif ability.data.ability_type == AbilityData.AbilityType.ACTIVE:
 		_spawn_floating_text(source.global_position + Vector2(0, -35), "[ACTIVE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
 
+func trigger_hit_stop(duration: float = 0.05, is_global: bool = false, source: CombatEntity = null, target: CombatEntity = null) -> void:
+	if duration <= 0.0:
+		return
+	if is_global:
+		var prev_scale: float = Engine.time_scale
+		Engine.time_scale = 0.05
+		get_tree().create_timer(duration, true, false, true).timeout.connect(func():
+			Engine.time_scale = prev_scale
+		)
+	else:
+		if is_instance_valid(source):
+			source.apply_hit_stop(duration)
+		if is_instance_valid(target):
+			target.apply_hit_stop(duration)
+
+func _flash_board_dark(duration: float = 0.15) -> void:
+	if board_view == null:
+		return
+	var tween := create_tween()
+	tween.tween_property(board_view, "modulate", Color(0.65, 0.60, 0.75), 0.05)
+	tween.tween_property(board_view, "modulate", Color.WHITE, maxf(0.05, duration - 0.05))
+
 func _shake_camera(intensity: float, duration: float = 0.2) -> void:
 	if camera == null:
+		return
+	if intensity <= 0.0:
 		return
 	# Anti-stacking: chỉ override nếu rung động mới mạnh hơn rung động hiện tại
 	if _shake_tween != null and _shake_tween.is_running():
@@ -994,7 +1028,11 @@ func _shake_camera(intensity: float, duration: float = 0.2) -> void:
 		_shake_tween.tween_property(camera, "offset", offset, step_time)
 		
 	_shake_tween.tween_property(camera, "offset", Vector2.ZERO, 0.04)
-	_shake_tween.tween_callback(func(): _current_shake_strength = 0.0)
+	_shake_tween.tween_callback(func():
+		_current_shake_strength = 0.0
+		if camera != null:
+			camera.offset = Vector2.ZERO
+	)
 
 func _on_entity_healed(entity: CombatEntity, amount: float) -> void:
 	if not is_instance_valid(entity):
@@ -1174,8 +1212,9 @@ func _run_all_tests() -> void:
 	_run_tc_29_four_tier_ability_tooltips()
 	_run_tc_30_comprehensive_narrative_and_tri_shield()
 	await _run_tc_31_monster_skills_and_shield_decay()
+	await _run_tc_32_combat_juice_and_camera_trauma()
 	
-	_log_test("\n🎉 TẤT CẢ 31 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 32 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4226,6 +4265,135 @@ func _run_tc_31_monster_skills_and_shield_decay() -> void:
 	assert(shield_eff.duration == 4.0, "FAIL TC-31.3: Arthur shield duration must be 4.0s")
 	_log_test(">>> 🟢 TC-31.3 Arthur Holy Shield Duration Integration PASSED!")
 	_log_test(">>> 🟢 TC-31 PASSED: Data-driven Monster Skills & Shield Duration Decay fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-32: Combat Juice, Hit Stop & Camera Trauma Matrix
+# ------------------------------------------------------------------------------
+func _run_tc_32_combat_juice_and_camera_trauma() -> void:
+	_log_test("\n==================== [TEST TC-32: COMBAT JUICE & CAMERA TRAUMA] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-32.1: Selective Hit Stop Verification
+	_log_test("[TC-32.1] Verifying Selective Hit Stop on Crit (Attacker & Victim)...")
+	var attacker := hero_scene.instantiate() as HeroEntity
+	add_child(attacker)
+	attacker.initialize(_create_mock_hero_data("AttackerHero", HeroData.HeroClass.ASSASSIN, 100.0, 30.0, 0.0, 1.0))
+	
+	var victim := hero_scene.instantiate() as HeroEntity
+	add_child(victim)
+	victim.initialize(_create_mock_hero_data("VictimHero", HeroData.HeroClass.TANK, 150.0, 10.0, 0.0, 1.0))
+	
+	var bystander := hero_scene.instantiate() as HeroEntity
+	add_child(bystander)
+	bystander.initialize(_create_mock_hero_data("BystanderHero", HeroData.HeroClass.MAGE, 80.0, 20.0, 0.0, 1.0))
+	
+	# Play attack and hit VFX
+	attacker.play_lunge_vfx(victim.global_position)
+	victim.play_hit_vfx()
+	
+	# Trigger selective hit stop (0.03s, non-global)
+	trigger_hit_stop(0.03, false, attacker, victim)
+	
+	assert(attacker.is_hit_stopped == true, "FAIL TC-32.1: Attacker must be in hit stop")
+	assert(victim.is_hit_stopped == true, "FAIL TC-32.1: Victim must be in hit stop")
+	assert(bystander.is_hit_stopped == false, "FAIL TC-32.1: Bystander must NOT be in hit stop")
+	assert(Engine.time_scale >= 0.99, "FAIL TC-32.1: Engine.time_scale must NOT be frozen globally for crits")
+	
+	# Wait for hit stop to resolve
+	await get_tree().create_timer(0.045).timeout
+	assert(attacker.is_hit_stopped == false, "FAIL TC-32.1: Attacker must resume after hit stop duration")
+	assert(victim.is_hit_stopped == false, "FAIL TC-32.1: Victim must resume after hit stop duration")
+	
+	attacker.queue_free()
+	victim.queue_free()
+	bystander.queue_free()
+	_log_test(">>> 🟢 TC-32.1 Selective Hit Stop PASSED!")
+	
+	# 2. TC-32.2: Camera Trauma Multi-tier & Anti-Stacking
+	_log_test("[TC-32.2] Verifying Camera Trauma Multi-tier & Anti-Stacking...")
+	if camera != null:
+		# Reset camera
+		if _shake_tween != null and _shake_tween.is_running(): _shake_tween.kill()
+		camera.offset = Vector2.ZERO
+		_current_shake_strength = 0.0
+		
+		# Tier 0: Normal Attack (0.0px)
+		_shake_camera(0.0, 0.0)
+		assert(_current_shake_strength == 0.0, "FAIL TC-32.2: Normal attack shake must be 0.0px")
+		
+		# Tier 1: Crit (2.5px)
+		_shake_camera(2.5, 0.14)
+		assert(is_equal_approx(_current_shake_strength, 2.5), "FAIL TC-32.2: Crit shake must be 2.5px")
+		
+		# Anti-Stacking: Weaker shake (1.5px) must NOT override 2.5px
+		_shake_camera(1.5, 0.10)
+		assert(is_equal_approx(_current_shake_strength, 2.5), "FAIL TC-32.2: Weaker shake overrode 2.5px")
+		
+		# Tier 2: Hero Ultimate (4.5px)
+		_shake_camera(4.5, 0.22)
+		assert(is_equal_approx(_current_shake_strength, 4.5), "FAIL TC-32.2: Hero Ultimate shake must be 4.5px")
+		
+		# Tier 3: Boss Ultimate (7.0px)
+		_shake_camera(7.0, 0.35)
+		assert(is_equal_approx(_current_shake_strength, 7.0), "FAIL TC-32.2: Boss Ultimate shake must be 7.0px")
+		
+		# Anti-Stacking: Hero Death (3.5px) under Boss Ultimate must NOT override 7.0px
+		_shake_camera(3.5, 0.18)
+		assert(is_equal_approx(_current_shake_strength, 7.0), "FAIL TC-32.2: 3.5px overrode 7.0px Boss shake")
+		
+		# Clean up camera
+		if _shake_tween != null and _shake_tween.is_running(): _shake_tween.kill()
+		camera.offset = Vector2.ZERO
+		_current_shake_strength = 0.0
+	_log_test(">>> 🟢 TC-32.2 Camera Trauma Multi-tier & Anti-Stacking PASSED!")
+	
+	# 3. TC-32.3: Boss Dark Flood Impact Integration
+	_log_test("[TC-32.3] Verifying Boss Dark Flood Impact Integration...")
+	_reset_test_battlefield()
+	
+	# Setup Boss Slime
+	var boss_edata := EnemyData.new()
+	boss_edata.name = "Slime Chúa Tể"
+	boss_edata.base_hp = 500.0
+	boss_edata.base_attack = 20.0
+	boss_edata.base_defense = 10.0
+	boss_edata.base_spell_power = 20.0
+	boss_edata.abilities = [create_slime_boss_ability()]
+	
+	var boss_unit := _spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), 1, EnemyData.EnemyRank.BOSS, true)
+	boss_unit.current_hp = 300.0 # Damaged so heal can take effect
+	boss_unit.current_energy = 100.0 # Full energy for Ultimate cast
+	
+	# Arthur with shield
+	var arthur := heroes[0] as HeroEntity
+	arthur.add_shield(100.0, 0, 4.0) # 100 Omni shield
+	var initial_shield := arthur.omni_shield
+	
+	# Execute Boss Ultimate
+	assert(not boss_unit.unlocked_abilities.is_empty(), "FAIL TC-32.3: Boss must have unlocked ability")
+	var boss_ult := boss_unit.unlocked_abilities[0]
+	assert(boss_ult.data.name == "Đại Hồng Thủy Hắc Ám", "FAIL TC-32.3: Ability name mismatch")
+	
+	var cast_success := ability_system.execute_ability(boss_ult)
+	assert(cast_success == true, "FAIL TC-32.3: Boss cast failed")
+	
+	# Verify Boss Shake 7.0px triggered
+	assert(is_equal_approx(_current_shake_strength, 7.0), "FAIL TC-32.3: Boss Ultimate must trigger 7.0px camera shake")
+	
+	# Verify Boss healed self
+	assert(boss_unit.current_hp > 300.0, "FAIL TC-32.3: Boss must be healed by Dark Flood")
+	
+	# Verify Hero shield or HP took damage
+	var current_shield := arthur.omni_shield
+	assert(current_shield < initial_shield or arthur.current_hp < arthur.max_hp, "FAIL TC-32.3: Arthur took no damage from Boss Ultimate")
+	
+	# Clean up camera and battlefield
+	if _shake_tween != null and _shake_tween.is_running(): _shake_tween.kill()
+	if camera != null: camera.offset = Vector2.ZERO
+	_current_shake_strength = 0.0
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-32.3 Boss Dark Flood Impact Integration PASSED!")
+	_log_test(">>> 🟢 TC-32 PASSED: Combat Juice, Hit Stop & Camera Trauma fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

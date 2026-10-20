@@ -106,6 +106,7 @@ var _base_sprite_modulate: Color = Color.WHITE
 
 var _sprite_move_tween: Tween = null
 var _sprite_flash_tween: Tween = null
+var is_hit_stopped: bool = false
 
 func _ready() -> void:
 	_capture_base_sprite_state()
@@ -173,6 +174,25 @@ func play_cast_vfx() -> void:
 	_sprite_move_tween = create_tween()
 	_sprite_move_tween.tween_property(sprite, "scale", _base_sprite_scale * 1.25, 0.1).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_sprite_move_tween.tween_property(sprite, "scale", _base_sprite_scale, 0.1).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+func apply_hit_stop(duration: float = 0.03) -> void:
+	if is_dead or duration <= 0.0:
+		return
+	is_hit_stopped = true
+	if _sprite_move_tween != null and _sprite_move_tween.is_running():
+		_sprite_move_tween.pause()
+	if _sprite_flash_tween != null and _sprite_flash_tween.is_running():
+		_sprite_flash_tween.pause()
+		
+	if is_inside_tree():
+		get_tree().create_timer(duration, true, false, true).timeout.connect(func():
+			if is_instance_valid(self):
+				is_hit_stopped = false
+				if _sprite_move_tween != null and _sprite_move_tween.is_valid():
+					_sprite_move_tween.play()
+				if _sprite_flash_tween != null and _sprite_flash_tween.is_valid():
+					_sprite_flash_tween.play()
+		)
 	
 	if _sprite_flash_tween != null and _sprite_flash_tween.is_running():
 		_sprite_flash_tween.kill()
@@ -307,6 +327,7 @@ func reset_for_new_battle() -> void:
 	omni_shield = 0.0
 	physical_shield = 0.0
 	magic_shield = 0.0
+	is_hit_stopped = false
 	
 	if self is HeroEntity:
 		var hero := self as HeroEntity

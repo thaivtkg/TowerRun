@@ -36,9 +36,19 @@ func execute_ability(ability: Ability) -> bool:
 		
 	ability.start_cooldown()
 	
+	var self_effects_applied: Array[EffectData] = []
 	for target in targets:
 		for effect in ability.data.effects:
-			_apply_effect(effect, source, target)
+			if effect is ShieldEffectData and (effect.apply_to_self or (target != null and target.is_hero != source.is_hero)):
+				if not self_effects_applied.has(effect):
+					self_effects_applied.append(effect)
+					_apply_effect(effect, source, source)
+			elif effect is HealEffectData and (effect.apply_to_self or (target != null and target.is_hero != source.is_hero and ability.data.target_rule != AbilityData.TargetRule.SINGLE_ALLY and ability.data.target_rule != AbilityData.TargetRule.ALL_ALLIES and ability.data.target_rule != AbilityData.TargetRule.LOWEST_HP_ALLY)):
+				if not self_effects_applied.has(effect):
+					self_effects_applied.append(effect)
+					_apply_effect(effect, source, source)
+			else:
+				_apply_effect(effect, source, target)
 			
 	ability_executed.emit(source, ability)
 	return true # Cast thành công

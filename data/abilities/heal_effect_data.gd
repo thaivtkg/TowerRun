@@ -13,6 +13,8 @@ extends EffectData
 	set(val):
 		base_amount = val
 
+@export var apply_to_self: bool = false
+
 func _init() -> void:
 	base_amount = 20.0
 
