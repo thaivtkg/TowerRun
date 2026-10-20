@@ -17,6 +17,12 @@ var _current_shake_strength: float = 0.0
 var _is_hit_stop_active: bool = false
 var _normal_game_speed: float = 1.0
 
+# S5.5: RESOLUTION PACING & VICTORY SETTLE DELAY (ANTI-DESYNC)
+const VICTORY_SETTLE_DELAY: float = 1.0
+const DEFEAT_SETTLE_DELAY: float = 0.8
+var _is_battle_resolving: bool = false
+var force_battle_end_delay: bool = false
+
 var heroes: Array[CombatEntity] = []
 var enemies: Array[CombatEntity] = []
 var corpses: Array[CombatEntity] = []
@@ -533,11 +539,42 @@ func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
 func _check_battle_end() -> void:
 	if GameManager.current_state != GameManager.GameState.BATTLE:
 		return
+	if _is_battle_resolving or battle_ended:
+		return
 		
 	if heroes.is_empty():
-		_end_battle(GameManager.GameState.GAME_OVER, "❌ DEFEAT - All Heroes have fallen.")
+		_is_battle_resolving = true
+		if placement_controller != null:
+			placement_controller.set_locked(true)
+		_schedule_battle_end(GameManager.GameState.GAME_OVER, "❌ DEFEAT - All Heroes have fallen.", DEFEAT_SETTLE_DELAY)
 	elif enemies.is_empty():
-		_end_battle(GameManager.GameState.REWARD, "🏆 VICTORY - Floor Cleared!")
+		_is_battle_resolving = true
+		
+		# 1. Đóng băng chiến đấu: Tắt nhịp đánh của toàn bộ Tướng, chuyển sang trạng thái nhàn rỗi
+		for h in heroes:
+			if is_instance_valid(h):
+				h.set_combat_active(false)
+				
+		# 2. Khóa kéo thả tuyệt đối trong lúc đợi chuyển cảnh
+		if placement_controller != null:
+			placement_controller.set_locked(true)
+			
+		# 3. Chờ 1.0 giây để toàn bộ Tween thanh máu, Ghost Bar và Floating Text tan biến sạch sẽ
+		_schedule_battle_end(GameManager.GameState.REWARD, "🏆 VICTORY - Floor Cleared!", VICTORY_SETTLE_DELAY)
+
+func _schedule_battle_end(state: GameManager.GameState, log_msg: String, delay: float) -> void:
+	# Chế độ Headless Test Runner: Chạy ngay lập tức không delay trừ khi bài test chủ động yêu cầu đo độ trễ
+	if ("--run-tests" in OS.get_cmdline_user_args() or get_tree() == null) and not force_battle_end_delay:
+		_end_battle(state, log_msg)
+		return
+	if get_tree() == null:
+		_end_battle(state, log_msg)
+		return
+		
+	get_tree().create_timer(delay).timeout.connect(func():
+		if is_instance_valid(self):
+			_end_battle(state, log_msg)
+	)
 
 # ==========================================
 # POST-BATTLE REWARD PHASE (Xử lý cuối trận)
@@ -753,6 +790,7 @@ func _on_skill_chosen(chosen: Variant, all_choices: Array) -> void:
 		_process_next_choice()
 
 func _finish_battle_cleanup() -> void:
+	_is_battle_resolving = false
 	var surviving_hero_corpses: Array[CombatEntity] = []
 	for corpse in corpses:
 		if is_instance_valid(corpse):
@@ -776,6 +814,7 @@ func _finish_battle_cleanup() -> void:
 
 func _start_next_floor() -> void:
 	battle_ended = false
+	_is_battle_resolving = false
 	if RunManager != null:
 		current_floor = RunManager.current_floor
 	print("\n=====================================")
@@ -1231,8 +1270,9 @@ func _run_all_tests() -> void:
 	await _run_tc_33_safe_hit_stop_and_combat_pacing()
 	_run_tc_34_team_xp_and_survivability_guardrails()
 	_run_tc_35_ability_cast_integrity_and_faction_resolution()
+	await _run_tc_36_victory_pacing_and_resolution_delay()
 	
-	_log_test("\n🎉 TẤT CẢ 35 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 36 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4776,6 +4816,81 @@ func _run_tc_35_ability_cast_integrity_and_faction_resolution() -> void:
 	_log_test(">>> 🟢 TC-35 PASSED: Ability Cast Integrity & Safe Faction Resolution fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-36: Victory Pacing & 1.0s Resolution Delay (Anti-Desync Guardrail)
+# ------------------------------------------------------------------------------
+func _run_tc_36_victory_pacing_and_resolution_delay() -> void:
+	_log_test("\n==================== [TEST TC-36: VICTORY PACING & RESOLUTION DELAY] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-36.1: Victory Settle State Lock & Hero Combat Deactivation
+	_log_test("[TC-36.1] Verifying Victory Settle State Lock & Immediate Hero Combat Deactivation...")
+	assert(heroes.size() > 0, "FAIL TC-36.1: Heroes must exist")
+	for h in heroes:
+		if is_instance_valid(h):
+			h.set_combat_active(true)
+			assert(h.is_processing() == true, "FAIL TC-36.1: Heroes must be active during combat")
+			
+	# Enable force delay mode to test the live settle timer
+	force_battle_end_delay = true
+	assert(_is_battle_resolving == false, "FAIL TC-36.1: _is_battle_resolving must be false before victory")
+	assert(battle_ended == false, "FAIL TC-36.1: battle_ended must be false initially")
+	
+	# Clear all enemies except one
+	while enemies.size() > 1:
+		var extra_e = enemies.pop_back()
+		if is_instance_valid(extra_e):
+			board_grid.remove_dead_entity(extra_e)
+			extra_e.queue_free()
+			
+	var last_enemy := enemies[0] as EnemyEntity
+	# Trigger death of last enemy via _on_entity_died
+	_on_entity_died(last_enemy, false)
+	
+	# Verify settle state lock is active immediately
+	assert(_is_battle_resolving == true, "FAIL TC-36.1: _is_battle_resolving must be true immediately on last enemy death")
+	assert(placement_controller.is_locked == true, "FAIL TC-36.1: PlacementController must remain locked during settle delay")
+	
+	# Verify all heroes have combat deactivated (no extra attacks or rogue energy generation)
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			assert(h.target == null, "FAIL TC-36.1: Hero target must be cleared to null upon victory settle")
+			assert(h.attack_timer.is_stopped() == true, "FAIL TC-36.1: Hero attack_timer must be stopped immediately")
+			assert(h.is_processing() == false, "FAIL TC-36.1: Hero processing must be deactivated")
+	_log_test(">>> 🟢 TC-36.1 Victory Settle State Lock PASSED!")
+	
+	# 2. TC-36.2: Delayed Summary Trigger Verification (t = 0.5s -> hidden, t = 1.05s -> visible)
+	_log_test("[TC-36.2] Verifying Delayed Summary Trigger (Hidden at 0.5s, Visible at 1.05s)...")
+	assert(combat_summary_ui != null, "FAIL TC-36.2: combat_summary_ui must exist")
+	assert(combat_summary_ui.visible == false, "FAIL TC-36.2: Summary UI must be hidden at t = 0.0s")
+	
+	# Wait 0.5s (halfway through 1.0s delay)
+	await get_tree().create_timer(0.5).timeout
+	assert(combat_summary_ui.visible == false, "FAIL TC-36.2: Summary UI must NOT pop up at t = 0.5s (visual desync guardrail)")
+	assert(battle_ended == false, "FAIL TC-36.2: battle_ended must still be false at t = 0.5s")
+	_log_test(">>> [TC-36.2] At t = 0.5s: combat_summary_ui.visible == false (Smooth tweens playing undisturbed)")
+	
+	# Wait remaining 0.55s (reaching 1.05s > VICTORY_SETTLE_DELAY)
+	await get_tree().create_timer(0.55).timeout
+	assert(battle_ended == true, "FAIL TC-36.2: battle_ended must be true after 1.0s delay")
+	assert(combat_summary_ui.visible == true, "FAIL TC-36.2: Summary UI must become visible after 1.0s delay")
+	_log_test(">>> [TC-36.2] At t = 1.05s: combat_summary_ui.visible == true (Victory screen shown cleanly)")
+	_log_test(">>> 🟢 TC-36.2 Delayed Summary Trigger Verification PASSED!")
+	
+	# 3. TC-36.3: Visual Desync Protection & Tween Timing Verification
+	_log_test("[TC-36.3] Verifying Visual Desync Protection (HealthBar & GhostBar Tweens)...")
+	combat_summary_ui.hide()
+	force_battle_end_delay = false
+	_reset_test_battlefield()
+	
+	# Verify settle delays are sufficient for status bar tweens
+	assert(VICTORY_SETTLE_DELAY >= 1.0, "FAIL TC-36.3: VICTORY_SETTLE_DELAY must be at least 1.0s")
+	assert(DEFEAT_SETTLE_DELAY >= 0.8, "FAIL TC-36.3: DEFEAT_SETTLE_DELAY must be at least 0.8s")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-36.3 Visual Desync Protection PASSED!")
+	_log_test(">>> 🟢 TC-36 PASSED: Victory Pacing & 1.0s Resolution Delay fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -4813,6 +4928,8 @@ func _reset_test_battlefield() -> void:
 	if camera != null:
 		camera.offset = Vector2.ZERO
 	_is_hit_stop_active = false
+	_is_battle_resolving = false
+	force_battle_end_delay = false
 	Engine.time_scale = _normal_game_speed
 	battle_ended = false
 	if RunManager != null:

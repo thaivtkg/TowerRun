@@ -86,8 +86,10 @@ func finalize_battle_xp(is_victory: bool, target_heroes: Array = []) -> void:
 	var total_level: int = 0
 	
 	for hero_item in raw_heroes:
+		if not is_instance_valid(hero_item):
+			continue
 		var hero := hero_item as HeroEntity
-		if is_instance_valid(hero) and hero.progression != null:
+		if hero != null and hero.progression != null:
 			valid_heroes.append(hero)
 			var contrib: float = calculate_hero_contribution(hero)
 			hero_contribs[hero] = contrib
