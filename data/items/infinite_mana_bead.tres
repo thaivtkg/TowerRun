@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "infinite_mana_bead"
+name = "Vô Hạn Châu"
+description = "Bảo châu chứa nguồn linh lực vô tận, cung cấp năng lượng dồi dào."
+tier = 2
+is_component = false
+is_pure_stat = false
+recipe = ["soul_aether_bead", "soul_aether_bead"]
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 0.0
+bonus_hp = 0.0
+starting_energy = 35.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
+stat_modifiers = {
+"starting_energy": 35.0
+}
+passive_id = "infinite_flow"
+passive_name = "Hồi Năng"
+passive_desc = "Hồi 5 năng lượng mỗi đòn đánh"
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""

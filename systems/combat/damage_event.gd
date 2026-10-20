@@ -10,6 +10,7 @@ var damage_type: DamageType = DamageType.PHYSICAL
 var is_crit: bool = false
 var crit_multiplier: float = 2.0 # Hệ số nhân (mặc định x2)
 var final_damage: float = 0.0
+var is_reflected: bool = false
 
 func _init(_source: CombatEntity, _target: CombatEntity, _base: float, _type: DamageType = DamageType.PHYSICAL) -> void:
 	source = _source

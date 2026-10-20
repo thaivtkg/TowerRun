@@ -649,6 +649,7 @@ func _reset_heroes_for_new_run() -> void:
 			hero.has_pending_milestone = false
 			hero.pending_upgrade_milestone = 0
 			hero.passive_stat_bonus = 0.0
+			hero.equipped_items.clear()
 			hero.unlocked_abilities.clear()
 			if hero.data != null:
 				hero.initialize(hero.data)
@@ -1271,8 +1272,11 @@ func _run_all_tests() -> void:
 	_run_tc_34_team_xp_and_survivability_guardrails()
 	_run_tc_35_ability_cast_integrity_and_faction_resolution()
 	await _run_tc_36_victory_pacing_and_resolution_delay()
+	_run_tc_37_item_pipeline_and_auto_combine()
+	_run_tc_38_bench_crafting_and_pure_stat()
+	_run_tc_39_mythic_tier3_fusion_and_clean_tooltip()
 	
-	_log_test("\n🎉 TẤT CẢ 36 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 39 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4889,6 +4893,349 @@ func _run_tc_36_victory_pacing_and_resolution_delay() -> void:
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-36.3 Visual Desync Protection PASSED!")
 	_log_test(">>> 🟢 TC-36 PASSED: Victory Pacing & 1.0s Resolution Delay fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-37: Core Item Pipeline & Auto-Combine Matrix (Sprint 6 Dark Fantasy RPG)
+# ------------------------------------------------------------------------------
+func _run_tc_37_item_pipeline_and_auto_combine() -> void:
+	_log_test("\n==================== [TEST TC-37: CORE ITEM PIPELINE & AUTO-COMBINE] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-37.1: Item Resource Validation & Recipe Commutativity
+	_log_test("[TC-37.1] Verifying 4 Components, 6 Completed Artifacts & Recipe Commutativity...")
+	
+	# Load 4 Components
+	var bloodsteel_shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
+	var sorcery_crystal = load("res://data/items/sorcery_crystal.tres") as ItemData
+	var obsidian_plating = load("res://data/items/obsidian_plating.tres") as ItemData
+	var soul_aether_bead = load("res://data/items/soul_aether_bead.tres") as ItemData
+	
+	assert(bloodsteel_shard != null, "FAIL TC-37.1: bloodsteel_shard must load")
+	assert(sorcery_crystal != null, "FAIL TC-37.1: sorcery_crystal must load")
+	assert(obsidian_plating != null, "FAIL TC-37.1: obsidian_plating must load")
+	assert(soul_aether_bead != null, "FAIL TC-37.1: soul_aether_bead must load")
+	
+	assert(bloodsteel_shard.is_component == true, "FAIL TC-37.1: bloodsteel_shard must be component")
+	assert(sorcery_crystal.is_component == true, "FAIL TC-37.1: sorcery_crystal must be component")
+	assert(obsidian_plating.is_component == true, "FAIL TC-37.1: obsidian_plating must be component")
+	assert(soul_aether_bead.is_component == true, "FAIL TC-37.1: soul_aether_bead must be component")
+	
+	# Load 6 Completed Artifacts
+	var soul_severing_blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+	var blood_runic_blade = load("res://data/items/blood_runic_blade.tres") as ItemData
+	var thorn_obsidian_shield = load("res://data/items/thorn_obsidian_shield.tres") as ItemData
+	var void_celestial_orb = load("res://data/items/void_celestial_orb.tres") as ItemData
+	var origin_ancient_staff = load("res://data/items/origin_ancient_staff.tres") as ItemData
+	var frost_prison_heart = load("res://data/items/frost_prison_heart.tres") as ItemData
+	
+	assert(soul_severing_blade != null, "FAIL TC-37.1: soul_severing_blade must load")
+	assert(blood_runic_blade != null, "FAIL TC-37.1: blood_runic_blade must load")
+	assert(thorn_obsidian_shield != null, "FAIL TC-37.1: thorn_obsidian_shield must load")
+	assert(void_celestial_orb != null, "FAIL TC-37.1: void_celestial_orb must load")
+	assert(origin_ancient_staff != null, "FAIL TC-37.1: origin_ancient_staff must load")
+	assert(frost_prison_heart != null, "FAIL TC-37.1: frost_prison_heart must load")
+	
+	assert(ItemManager != null, "FAIL TC-37.1: ItemManager autoload must exist")
+	
+	# Verify Recipe Commutativity: combine(A, B) == combine(B, A)
+	# 1. Shard + Crystal -> Blood Runic Blade
+	var res_sc1 = ItemManager.combine(bloodsteel_shard, sorcery_crystal)
+	var res_sc2 = ItemManager.combine(sorcery_crystal, bloodsteel_shard)
+	assert(res_sc1 != null and res_sc1.id == "blood_runic_blade", "FAIL TC-37.1: Shard + Crystal must yield blood_runic_blade")
+	assert(res_sc1 == res_sc2, "FAIL TC-37.1: Crafting must be strictly commutative (A+B == B+A)")
+	
+	# 2. Shard + Plating -> Thorn Obsidian Shield
+	var res_sp1 = ItemManager.combine(bloodsteel_shard, obsidian_plating)
+	var res_sp2 = ItemManager.combine(obsidian_plating, bloodsteel_shard)
+	assert(res_sp1 != null and res_sp1.id == "thorn_obsidian_shield", "FAIL TC-37.1: Shard + Plating must yield thorn_obsidian_shield")
+	assert(res_sp1 == res_sp2, "FAIL TC-37.1: Crafting Shard + Plating must be commutative")
+	
+	# 3. Crystal + Bead -> Origin Ancient Staff
+	var res_cb1 = ItemManager.combine(sorcery_crystal, soul_aether_bead)
+	var res_cb2 = ItemManager.combine(soul_aether_bead, sorcery_crystal)
+	assert(res_cb1 != null and res_cb1.id == "origin_ancient_staff", "FAIL TC-37.1: Crystal + Bead must yield origin_ancient_staff")
+	assert(res_cb1 == res_cb2, "FAIL TC-37.1: Crafting Crystal + Bead must be commutative")
+	
+	# 4. Plating + Bead -> Frost Prison Heart
+	var res_pb1 = ItemManager.combine(obsidian_plating, soul_aether_bead)
+	var res_pb2 = ItemManager.combine(soul_aether_bead, obsidian_plating)
+	assert(res_pb1 != null and res_pb2 != null and res_pb1.id == "frost_prison_heart", "FAIL TC-37.1: Plating + Bead must yield frost_prison_heart")
+	assert(res_pb1 == res_pb2, "FAIL TC-37.1: Crafting Plating + Bead must be commutative")
+	
+	# 5. Shard + Shard -> Soul Severing Blade
+	var res_ss = ItemManager.combine(bloodsteel_shard, bloodsteel_shard)
+	assert(res_ss != null and res_ss.id == "soul_severing_blade", "FAIL TC-37.1: Shard + Shard must yield soul_severing_blade")
+	
+	# 6. Crystal + Crystal -> Void Celestial Orb
+	var res_cc = ItemManager.combine(sorcery_crystal, sorcery_crystal)
+	assert(res_cc != null and res_cc.id == "void_celestial_orb", "FAIL TC-37.1: Crystal + Crystal must yield void_celestial_orb")
+	
+	# Invalid recipe check
+	assert(ItemManager.combine(bloodsteel_shard, soul_severing_blade) == null, "FAIL TC-37.1: Component + Completed item must return null")
+	assert(ItemManager.combine(null, bloodsteel_shard) == null, "FAIL TC-37.1: Null item must return null")
+	_log_test(">>> 🟢 TC-37.1 Item Resource Validation & Recipe Symmetry PASSED!")
+	
+	# 2. TC-37.2: Stat Injection & Recalculation
+	_log_test("[TC-37.2] Verifying Stat Modifiers Injection (AD, AP, Armor, Crit, Energy)...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-37.2: Arthur must exist")
+	arthur.equipped_items.clear()
+	
+	var base_ad: float = arthur.get_attack()
+	var base_crit: float = arthur.get_crit_chance()
+	var base_armor: float = arthur.get_defense()
+	var base_ap: float = arthur.get_spell_power()
+	
+	# Equip Soul Severing Blade (+35 AD, +10% Crit, pure stat)
+	var equip_ok = arthur.equip_item(soul_severing_blade)
+	assert(equip_ok == true, "FAIL TC-37.2: Equipping soul_severing_blade must succeed")
+	assert(is_equal_approx(arthur.get_attack(), base_ad + soul_severing_blade.get_bonus_ad()), "FAIL TC-37.2: Arthur AD must increase by 35.0")
+	assert(is_equal_approx(arthur.get_crit_chance(), base_crit + soul_severing_blade.get_crit_chance()), "FAIL TC-37.2: Arthur Crit must increase by 0.10")
+	
+	# Equip Obsidian Plating (+20 Armor)
+	equip_ok = arthur.equip_item(obsidian_plating)
+	assert(equip_ok == true, "FAIL TC-37.2: Equipping obsidian_plating must succeed")
+	assert(is_equal_approx(arthur.get_defense(), base_armor + 20.0), "FAIL TC-37.2: Arthur Armor must increase by 20.0")
+	
+	# Equip Void Celestial Orb (+35 AP, +10 Energy, pure stat)
+	equip_ok = arthur.equip_item(void_celestial_orb)
+	assert(equip_ok == true, "FAIL TC-37.2: Equipping void_celestial_orb must succeed")
+	assert(is_equal_approx(arthur.get_spell_power(), base_ap + void_celestial_orb.get_bonus_ap()), "FAIL TC-37.2: Arthur AP must match base + 35.0")
+	
+	_log_test(">>> [TC-37.2] Arthur Boosted Stats: AD %.1f -> %.1f (+%.1f) | Armor %.1f -> %.1f (+20) | AP %.1f -> %.1f (+%.1f) | Crit %.2f -> %.2f (+%.2f)" % [
+		base_ad, arthur.get_attack(), soul_severing_blade.get_bonus_ad(),
+		base_armor, arthur.get_defense(),
+		base_ap, arthur.get_spell_power(), void_celestial_orb.get_bonus_ap(),
+		base_crit, arthur.get_crit_chance(), soul_severing_blade.get_crit_chance()
+	])
+	
+	# Test starting energy bonus
+	arthur.equipped_items.clear()
+	arthur.equip_item(soul_aether_bead)
+	arthur.reset_for_new_battle()
+	assert(is_equal_approx(arthur.current_energy, 15.0), "FAIL TC-37.2: Arthur starting energy must be 15.0 from soul_aether_bead")
+	_log_test(">>> [TC-37.2] Arthur Starting Energy: 0.0 -> %.1f (+15 from Bead)" % arthur.current_energy)
+	_log_test(">>> 🟢 TC-37.2 Stat Injection & Recalculation PASSED!")
+	
+	# 3. TC-37.3: 3-Slot Ceiling & In-Place Auto-Crafting on Hero
+	_log_test("[TC-37.3] Verifying 3-Slot Ceiling & In-Place Auto-Crafting on Unit...")
+	arthur.equipped_items.clear()
+	
+	# Equip component 1: bloodsteel_shard
+	assert(arthur.equip_item(bloodsteel_shard) == true, "FAIL TC-37.3: Equip bloodsteel_shard should succeed")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-37.3: Arthur should have 1 item")
+	assert(arthur.equipped_items[0].id == "bloodsteel_shard", "FAIL TC-37.3: Slot 0 must be bloodsteel_shard")
+	
+	# Equip component 2: sorcery_crystal -> in-place crafting into blood_runic_blade!
+	assert(arthur.equip_item(sorcery_crystal) == true, "FAIL TC-37.3: Equip sorcery_crystal should trigger auto-craft")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-37.3: In-place auto-crafting must retain 1 slot occupied")
+	assert(arthur.equipped_items[0].id == "blood_runic_blade", "FAIL TC-37.3: In-place item must be blood_runic_blade")
+	
+	# Equip 2 more completed items to fill all 3 slots
+	assert(arthur.equip_item(void_celestial_orb) == true, "FAIL TC-37.3: Equip void_celestial_orb should succeed")
+	assert(arthur.equipped_items.size() == 2, "FAIL TC-37.3: Arthur should have 2 items")
+	assert(arthur.equip_item(thorn_obsidian_shield) == true, "FAIL TC-37.3: Equip thorn_obsidian_shield should succeed")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-37.3: Arthur should have 3 items (max slots)")
+	
+	# 4th item must fail (3-slot ceiling)
+	var overfill_res = arthur.equip_item(frost_prison_heart)
+	assert(overfill_res == false, "FAIL TC-37.3: Equipping 4th item must be rejected")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-37.3: Slot count must remain 3")
+	
+	# Component auto-crafting when holding 2 completed items + 1 component
+	arthur.equipped_items.clear()
+	arthur.equip_item(soul_severing_blade)
+	arthur.equip_item(void_celestial_orb)
+	arthur.equip_item(bloodsteel_shard)
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-37.3: 3 items equipped (2 completed + 1 component)")
+	
+	# Feeding sorcery_crystal should combine with bloodsteel_shard in-place without exceeding 3 slots
+	var craft_ok = arthur.equip_item(sorcery_crystal)
+	assert(craft_ok == true, "FAIL TC-37.3: Auto-crafting when at 3/3 slots with a component must succeed")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-37.3: Slot count must remain 3 after in-place craft")
+	assert(arthur.equipped_items[2].id == "blood_runic_blade", "FAIL TC-37.3: 3rd slot must now be blood_runic_blade")
+	_log_test(">>> 🟢 TC-37.3 3-Slot Ceiling & In-Place Auto-Crafting PASSED!")
+	
+	# 4. TC-37.4: Combat Passives Pipeline (Execution, Vamp & Thorns)
+	_log_test("[TC-37.4] Verifying Combat Passives Pipeline (Thorns, Vamp, Crit Execute)...")
+	_reset_test_battlefield()
+	arthur = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-37.4: Arthur must exist")
+	arthur.equipped_items.clear()
+	
+	var enemy = enemies[0] as EnemyEntity
+	assert(enemy != null, "FAIL TC-37.4: Enemy must exist")
+	
+	# A. Test omnivamp_heal
+	arthur.equip_item(blood_runic_blade)
+	arthur.current_hp = 100.0
+	arthur.max_hp = 300.0
+	var hp_before_heal = arthur.current_hp
+	var dmg_event_vamp = DamageEvent.new(arthur, enemy, 100.0, DamageEvent.DamageType.PHYSICAL)
+	dmg_event_vamp.is_crit = false
+	combat_system.process_attack(dmg_event_vamp)
+	var expected_heal = dmg_event_vamp.final_damage * 0.20
+	assert(is_equal_approx(arthur.current_hp, hp_before_heal + expected_heal), "FAIL TC-37.4: Arthur must heal 20%% of damage dealt")
+	_log_test(">>> [TC-37.4] Omnivamp healed Arthur: %.1f -> %.1f (+%.1f)" % [hp_before_heal, arthur.current_hp, expected_heal])
+	
+	# B. Test thorn_reflect & crit reduction
+	arthur.equipped_items.clear()
+	arthur.equip_item(thorn_obsidian_shield)
+	enemy.current_hp = 300.0
+	var enemy_hp_before = enemy.current_hp
+	var dmg_event_thorn = DamageEvent.new(enemy, arthur, 100.0, DamageEvent.DamageType.PHYSICAL)
+	dmg_event_thorn.is_crit = true
+	combat_system.process_attack(dmg_event_thorn)
+	# Crit damage was reduced by 25% (checked via event.final_damage calculation)
+	# Enemy takes 20% reflected magic damage
+	assert(enemy.current_hp < enemy_hp_before, "FAIL TC-37.4: Enemy must take reflected magic damage from thorn_reflect")
+	_log_test(">>> [TC-37.4] Thorn reflected magic damage to Enemy: %.1f -> %.1f" % [enemy_hp_before, enemy.current_hp])
+	
+	# C. Test execute_crit
+	arthur.equipped_items.clear()
+	enemy.max_hp = 1000.0
+	enemy.current_hp = 300.0 # <= 40% (30% of max_hp)
+	enemy.is_dead = false
+	var normal_crit_event = DamageEvent.new(arthur, enemy, 100.0, DamageEvent.DamageType.PHYSICAL)
+	normal_crit_event.is_crit = true
+	combat_system.process_attack(normal_crit_event)
+	var baseline_crit_dmg = normal_crit_event.final_damage
+	
+	# Reset enemy HP to 300.0 again so target is alive and at 30% HP
+	enemy.current_hp = 300.0
+	enemy.is_dead = false
+	var mythic_blade_res = load("res://data/items/mythic_soul_severing_blade.tres") as ItemData
+	arthur.equip_item(mythic_blade_res)
+	var execute_crit_event = DamageEvent.new(arthur, enemy, 100.0, DamageEvent.DamageType.PHYSICAL)
+	execute_crit_event.is_crit = true
+	combat_system.process_attack(execute_crit_event)
+	assert(is_equal_approx(execute_crit_event.final_damage, baseline_crit_dmg * 1.25), "FAIL TC-37.4: execute_crit must amplify crit damage by 25%% on target <= 40%% HP")
+	_log_test(">>> [TC-37.4] Execute crit amplified damage: %.1f -> %.1f (x1.25)" % [baseline_crit_dmg, execute_crit_event.final_damage])
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-37.4 Combat Passives Pipeline PASSED!")
+	_log_test(">>> 🟢 TC-37 PASSED: Core Item Pipeline & Auto-Combine Matrix fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-38: Bench-to-Bench Crafting & Pure Stat Validation (Sprint 6.2)
+# ------------------------------------------------------------------------------
+func _run_tc_38_bench_crafting_and_pure_stat() -> void:
+	_log_test("\n==================== [TEST TC-38: BENCH CRAFTING & PURE STAT] ====================")
+	_reset_test_battlefield()
+	
+	assert(ItemManager != null, "FAIL TC-38: ItemManager autoload must exist")
+	
+	# 1. Clear bench slots
+	ItemManager.bench_slots.clear()
+	for i in range(10):
+		ItemManager.bench_slots.append(null)
+		
+	var bloodsteel_shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
+	var sorcery_crystal = load("res://data/items/sorcery_crystal.tres") as ItemData
+	assert(bloodsteel_shard != null and sorcery_crystal != null, "FAIL TC-38: Components must load")
+	
+	# Place 2 bloodsteel_shards at slot 0 and 1
+	ItemManager.bench_slots[0] = bloodsteel_shard
+	ItemManager.bench_slots[1] = bloodsteel_shard
+	
+	var craft_ok = ItemManager.craft_on_bench(0, 1)
+	assert(craft_ok == true, "FAIL TC-38: Craft on bench 0 -> 1 must succeed")
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-38: Slot 0 must become null")
+	assert(ItemManager.bench_slots[1] != null, "FAIL TC-38: Slot 1 must contain crafted item")
+	
+	var blade: ItemData = ItemManager.bench_slots[1]
+	assert(blade.id == "soul_severing_blade", "FAIL TC-38: Result must be soul_severing_blade")
+	assert(blade.is_pure_stat == true, "FAIL TC-38: soul_severing_blade must be pure stat")
+	assert(is_equal_approx(blade.bonus_ad, 35.0), "FAIL TC-38: bonus_ad must be 35.0 (got %.1f)" % blade.bonus_ad)
+	assert(is_equal_approx(blade.crit_chance, 0.10), "FAIL TC-38: crit_chance must be 0.10 (got %.2f)" % blade.crit_chance)
+	assert(blade.passive_name == "" and blade.passive_desc == "", "FAIL TC-38: Pure stat item must have empty passive_name and passive_desc")
+	_log_test(">>> [TC-38] Trảm Hồn Đao crafted: Pure Stat = true | AD: %.1f | Crit: %.2f | Passives empty" % [blade.bonus_ad, blade.crit_chance])
+	
+	# Place 2 sorcery_crystals at slot 2 and 3
+	ItemManager.bench_slots[2] = sorcery_crystal
+	ItemManager.bench_slots[3] = sorcery_crystal
+	
+	craft_ok = ItemManager.craft_on_bench(2, 3)
+	assert(craft_ok == true, "FAIL TC-38: Craft on bench 2 -> 3 must succeed")
+	assert(ItemManager.bench_slots[2] == null, "FAIL TC-38: Slot 2 must become null")
+	assert(ItemManager.bench_slots[3] != null, "FAIL TC-38: Slot 3 must contain crafted item")
+	
+	var orb: ItemData = ItemManager.bench_slots[3]
+	assert(orb.id == "void_celestial_orb", "FAIL TC-38: Result must be void_celestial_orb")
+	assert(orb.is_pure_stat == true, "FAIL TC-38: void_celestial_orb must be pure stat")
+	assert(is_equal_approx(orb.bonus_ap, 35.0), "FAIL TC-38: bonus_ap must be 35.0 (got %.1f)" % orb.bonus_ap)
+	assert(is_equal_approx(orb.starting_energy, 10.0), "FAIL TC-38: starting_energy must be 10.0 (got %.1f)" % orb.starting_energy)
+	assert(orb.passive_name == "" and orb.passive_desc == "", "FAIL TC-38: Pure stat orb must have empty passive_name and passive_desc")
+	_log_test(">>> [TC-38] Hư Không Cầu crafted: Pure Stat = true | AP: %.1f | Energy: %.1f | Passives empty" % [orb.bonus_ap, orb.starting_energy])
+	_log_test(">>> 🟢 TC-38 Bench-to-Bench Crafting & Pure Stat Validation PASSED!\n")
+
+# ------------------------------------------------------------------------------
+# TC-39: Tier 3 Mythic Fusion & Dynamic Sub-Passive (Sprint 6.2)
+# ------------------------------------------------------------------------------
+func _run_tc_39_mythic_tier3_fusion_and_clean_tooltip() -> void:
+	_log_test("\n==================== [TEST TC-39: MYTHIC TIER 3 FUSION & CLEAN TOOLTIP] ====================")
+	_reset_test_battlefield()
+	
+	ItemManager.bench_slots.clear()
+	for i in range(10):
+		ItemManager.bench_slots.append(null)
+		
+	var soul_blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+	assert(soul_blade != null, "FAIL TC-39: soul_severing_blade must load")
+	
+	# Place 2 Trảm Hồn Đao in slot 0 and 1
+	ItemManager.bench_slots[0] = soul_blade
+	ItemManager.bench_slots[1] = soul_blade
+	
+	var craft_ok = ItemManager.craft_on_bench(0, 1)
+	assert(craft_ok == true, "FAIL TC-39: Tier 3 mythic craft 0 -> 1 must succeed")
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-39: Slot 0 must become null")
+	assert(ItemManager.bench_slots[1] != null, "FAIL TC-39: Slot 1 must contain mythic item")
+	
+	var mythic_blade: ItemData = ItemManager.bench_slots[1]
+	assert(mythic_blade.tier == 3, "FAIL TC-39: Result item tier must be 3 (got %d)" % mythic_blade.tier)
+	assert(mythic_blade.name == "Tuyệt Hồn Thần Đao", "FAIL TC-39: Name must be 'Tuyệt Hồn Thần Đao' (got '%s')" % mythic_blade.name)
+	var word_count = mythic_blade.name.split(" ", false).size()
+	assert(word_count <= 4, "FAIL TC-39: Name word count must be <= 4 (got %d words)" % word_count)
+	assert(mythic_blade.bonus_ad >= 70.0, "FAIL TC-39: bonus_ad must be >= 70.0 (got %.1f)" % mythic_blade.bonus_ad)
+	assert(mythic_blade.crit_chance >= 0.20, "FAIL TC-39: crit_chance must be >= 0.20 (got %.2f)" % mythic_blade.crit_chance)
+	assert(mythic_blade.sub_passive_name != "" and mythic_blade.mythic_passive_name != "", "FAIL TC-39: Must have both sub_passive and mythic_passive")
+	
+	# Tooltip rendering verification
+	var tooltip_text = ItemTooltip.format_tooltip_text(mythic_blade)
+	assert("Huyết Sát" in tooltip_text, "FAIL TC-39: Tooltip must contain sub_passive 'Huyết Sát'")
+	assert("Tuyệt Diệt Bạo Kích" in tooltip_text, "FAIL TC-39: Tooltip must contain mythic_passive 'Tuyệt Diệt Bạo Kích'")
+	assert(not "kế thừa" in tooltip_text.to_lower(), "FAIL TC-39: Tooltip must NOT contain 'kế thừa'")
+	assert(not "%" in mythic_blade.sub_passive_name and not "%" in mythic_blade.mythic_passive_name, "FAIL TC-39: Passive names must NOT contain '%'")
+	assert(not "Nội tại thần thoại" in tooltip_text, "FAIL TC-39: Tooltip must NOT contain 'Nội tại thần thoại'")
+	_log_test(">>> [TC-39] Mythic Blade verified: '%s' | Tier 3 | AD: %.1f | Crit: %.2f" % [mythic_blade.name, mythic_blade.bonus_ad, mythic_blade.crit_chance])
+	_log_test(">>> [TC-39] Clean Tooltip Output:\n%s" % tooltip_text)
+	
+	# Test Dynamic Mythic Synthesizer with 2 items without static .tres (e.g. colossus + thorn)
+	var colossus = load("res://data/items/colossus_vitality_armor.tres") as ItemData
+	var thorn = load("res://data/items/thorn_obsidian_shield.tres") as ItemData
+	assert(colossus != null and thorn != null, "FAIL TC-39: Colossus and Thorn must load")
+	
+	ItemManager.bench_slots[4] = colossus
+	ItemManager.bench_slots[5] = thorn
+	var dyn_ok = ItemManager.craft_on_bench(4, 5)
+	assert(dyn_ok == true, "FAIL TC-39: Dynamic synthesis must succeed")
+	var dyn_item: ItemData = ItemManager.bench_slots[5]
+	assert(dyn_item != null, "FAIL TC-39: Dynamic item must be created")
+	assert(dyn_item.tier == 3, "FAIL TC-39: Dynamic item tier must be 3")
+	assert(dyn_item.name.split(" ", false).size() <= 4, "FAIL TC-39: Dynamic name word count <= 4")
+	assert(dyn_item.bonus_hp >= colossus.bonus_hp, "FAIL TC-39: Dynamic item must inherit HP")
+	assert(dyn_item.bonus_armor >= thorn.bonus_armor, "FAIL TC-39: Dynamic item must inherit Armor")
+	_log_test(">>> [TC-39] Dynamic Synthesizer created: '%s' (Tier 3, HP: %.1f, Armor: %.1f)" % [dyn_item.name, dyn_item.bonus_hp, dyn_item.bonus_armor])
+	_log_test(">>> 🟢 TC-39 Tier 3 Mythic Fusion & Dynamic Sub-Passive PASSED!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

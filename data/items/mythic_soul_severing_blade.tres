@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "mythic_soul_severing_blade"
+name = "Tuyệt Hồn Thần Đao"
+description = "Thần đao thăng hoa tối thượng, trảm hồn đoạn phách và tuyệt diệt kẻ thù."
+tier = 3
+is_component = false
+is_pure_stat = false
+recipe = ["soul_severing_blade", "soul_severing_blade"]
+bonus_ad = 75.0
+bonus_ap = 0.0
+bonus_armor = 0.0
+bonus_hp = 0.0
+starting_energy = 0.0
+crit_chance = 0.25
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
+stat_modifiers = {
+"bonus_ad": 75.0,
+"crit_chance": 0.25
+}
+passive_id = "execute_crit"
+passive_name = ""
+passive_desc = ""
+sub_passive_name = "Huyết Sát"
+sub_passive_desc = "Đòn đánh gây thêm 20% sát thương chuẩn dựa trên SMCK"
+mythic_passive_name = "Tuyệt Diệt Bạo Kích"
+mythic_passive_desc = "Đòn đánh chí mạng kết liễu kẻ địch dưới 15% máu"

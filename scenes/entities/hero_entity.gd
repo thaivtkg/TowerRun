@@ -24,6 +24,10 @@ var has_pending_milestone: bool:
 
 var upgrade_badge: Node2D = null
 
+# SPRINT 6: INVENTORY & ARTIFACT SLOTS (TASK S6.1)
+signal item_equipped(hero: HeroEntity, item: ItemData, is_crafted: bool)
+var equipped_items: Array[ItemData] = []
+
 func _setup_upgrade_badge() -> void:
 	if upgrade_badge != null and is_instance_valid(upgrade_badge):
 		return
@@ -233,28 +237,127 @@ func calculate_max_hp(lvl: int) -> float:
 	var base: float = data.base_hp if data != null else 100.0
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+	var total_hp = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_hp()
+	if has_item_passive("colossus_vitality"):
+		total_hp *= 1.12
+	return total_hp
+
+# ==========================================
+# SPRINT 6: ITEM LOGIC & STAT MODIFIERS
+# ==========================================
+func get_item_bonus_ad() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_ad()
+	return total
+
+func get_item_bonus_ap() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_ap()
+	return total
+
+func get_item_bonus_armor() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_armor()
+	return total
+
+func get_item_bonus_starting_energy() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_starting_energy()
+	return total
+
+func get_item_bonus_crit_chance() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_crit_chance()
+	return total
+
+func get_item_bonus_hp() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_hp()
+	return total
+
+func get_item_bonus_attack_speed() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_attack_speed()
+	return total
+
+func get_item_bonus_omnivamp() -> float:
+	var total := 0.0
+	for it in equipped_items:
+		if it != null: total += it.get_bonus_omnivamp()
+	return total
+
+func has_item_passive(p_id: String) -> bool:
+	for it in equipped_items:
+		if it != null:
+			if it.passive_id == p_id or it.id == p_id:
+				return true
+			if p_id != "" and (p_id in it.sub_passive_name or p_id in it.mythic_passive_name):
+				return true
+	return false
+
+func equip_item(item: ItemData) -> bool:
+	if item == null:
+		return false
+		
+	# 1. Nếu là Mảnh Thành Phần: kiểm tra Auto-Crafting nếu Tướng đang có sẵn 1 Mảnh Thành Phần
+	if item.is_component:
+		for i in range(equipped_items.size()):
+			var existing := equipped_items[i]
+			if existing != null and existing.is_component:
+				var crafted_item: ItemData = null
+				if ItemManager != null:
+					crafted_item = ItemManager.combine(existing, item)
+				if crafted_item != null:
+					equipped_items[i] = crafted_item
+					_on_item_equipped(crafted_item, true)
+					return true
+					
+	# 2. Nếu không ghép được (hoặc là bảo khí hoàn chỉnh): kiểm tra trần 3 slot
+	if equipped_items.size() >= 3:
+		print("[HeroEntity] %s đã đầy 3 ô trang bị!" % name)
+		return false
+		
+	equipped_items.append(item)
+	_on_item_equipped(item, false)
+	return true
+
+func _on_item_equipped(item: ItemData, is_crafted: bool) -> void:
+	print("[HeroEntity] 🎒 %s trang bị [%s] (Crafted: %s) | Items: %d/3" % [name, item.name, is_crafted, equipped_items.size()])
+	item_equipped.emit(self, item, is_crafted)
+	_update_scaled_max_hp()
+	hp_changed.emit(current_hp, max_hp)
+	energy_changed.emit(current_energy, max_energy)
 
 func get_attack() -> float:
 	var base: float = data.base_attack if data != null else 10.0
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+	return (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_ad()
 
 func get_spell_power() -> float:
 	var base: float = data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+	var ap: float = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_ap()
+	if has_item_passive("ap_amplify"):
+		ap *= 1.20
+	return ap
 
 func get_defense() -> float:
 	var base: float = data.base_defense if data != null else 0.0
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.05
 	var t_mult: float = get_tier_multiplier(lvl)
-	return base * factor * t_mult
+	return (base * factor * t_mult) + get_item_bonus_armor()
 
 func _update_scaled_max_hp() -> void:
 	if data == null: return
@@ -272,20 +375,30 @@ func _update_scaled_max_hp() -> void:
 	hp_changed.emit(current_hp, max_hp)
 
 func get_attack_range() -> int: return int(data.attack_range) if data != null else 1
-func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
+func get_crit_chance() -> float:
+	var base: float = data.crit_chance if data != null else 0.0
+	return base + get_item_bonus_crit_chance()
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
-func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
+func get_attack_speed() -> float:
+	var base_spd: float = data.attack_speed if data != null else 1.0
+	return base_spd * (1.0 + get_item_bonus_attack_speed())
 
 # ==========================================
 # FULL PROGRESSION & ABILITIES PERSISTENCE (S4.6+)
 # ==========================================
 func serialize() -> Dictionary:
+	var item_ids: Array = []
+	for it in equipped_items:
+		if it != null:
+			item_ids.append(it.id)
+			
 	var hero_dict := {
 		"name": name,
 		"level": progression.current_level if progression != null else 1,
 		"xp": progression.current_xp if progression != null else 0.0,
 		"deployed_cell": [deployed_cell.x, deployed_cell.y],
-		"unlocked_abilities": []
+		"unlocked_abilities": [],
+		"equipped_items": item_ids
 	}
 	if basic_attack_ability != null and basic_attack_ability.data != null:
 		hero_dict["basic_attack_effects"] = _serialize_effects(basic_attack_ability.data.effects)
@@ -313,6 +426,15 @@ func deserialize(saved: Dictionary) -> void:
 		var cell_arr: Array = saved["deployed_cell"]
 		if cell_arr.size() == 2:
 			deployed_cell = Vector2i(int(cell_arr[0]), int(cell_arr[1]))
+			
+	if saved.has("equipped_items"):
+		equipped_items.clear()
+		for it_id in saved["equipped_items"]:
+			var it: ItemData = null
+			if ItemManager != null:
+				it = ItemManager.get_item_by_id(it_id)
+			if it != null:
+				equipped_items.append(it)
 			
 	if saved.has("basic_attack_effects") and basic_attack_ability != null and basic_attack_ability.data != null:
 		_deserialize_effects(basic_attack_ability.data.effects, saved["basic_attack_effects"])

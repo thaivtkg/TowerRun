@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "colossus_vitality_armor"
+name = "Khổng Lồ Giáp"
+description = "Chiến giáp đúc từ hai khối sinh thạch, trao tặng sinh lực dồi dào và khả năng hồi phục bền bỉ."
+tier = 2
+is_component = false
+is_pure_stat = false
+recipe = ["life_stone_shard", "life_stone_shard"]
+bonus_ad = 0.0
+bonus_ap = 0.0
+bonus_armor = 0.0
+bonus_hp = 350.0
+starting_energy = 0.0
+crit_chance = 0.0
+bonus_attack_speed = 0.0
+bonus_omnivamp = 0.0
+stat_modifiers = {
+"bonus_hp": 350.0
+}
+passive_id = "colossus_vitality"
+passive_name = "Khổng Lồ Thể"
+passive_desc = "+12% Max HP và hồi 2.5% Max HP mỗi 3s"
+sub_passive_name = ""
+sub_passive_desc = ""
+mythic_passive_name = ""
+mythic_passive_desc = ""
