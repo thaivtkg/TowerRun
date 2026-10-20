@@ -17,6 +17,7 @@ scalings = {
 script = ExtResource("3_shield")
 base_shield = 100.0
 duration = 4.0
+apply_to_self = true
 scalings = {
 "TOTAL_MAX_HP": 0.1
 }

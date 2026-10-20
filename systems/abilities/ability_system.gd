@@ -14,6 +14,11 @@ func setup_hooks() -> void:
 		combat_system.entity_killed.connect(_on_entity_killed)
 
 
+func _is_hostile(entity_a: CombatEntity, entity_b: CombatEntity) -> bool:
+	if not is_instance_valid(entity_a) or not is_instance_valid(entity_b):
+		return false
+	return (entity_a is HeroEntity) != (entity_b is HeroEntity)
+
 # Trả về bool để biết ability có thực sự thi triển không (có target không)
 func execute_ability(ability: Ability) -> bool:
 	if ability == null or not is_instance_valid(ability.owner): return false
@@ -39,11 +44,11 @@ func execute_ability(ability: Ability) -> bool:
 	var self_effects_applied: Array[EffectData] = []
 	for target in targets:
 		for effect in ability.data.effects:
-			if effect is ShieldEffectData and (effect.apply_to_self or (target != null and target.is_hero != source.is_hero)):
+			if effect is ShieldEffectData and (effect.apply_to_self or (target != null and _is_hostile(source, target))):
 				if not self_effects_applied.has(effect):
 					self_effects_applied.append(effect)
 					_apply_effect(effect, source, source)
-			elif effect is HealEffectData and (effect.apply_to_self or (target != null and target.is_hero != source.is_hero and ability.data.target_rule != AbilityData.TargetRule.SINGLE_ALLY and ability.data.target_rule != AbilityData.TargetRule.ALL_ALLIES and ability.data.target_rule != AbilityData.TargetRule.LOWEST_HP_ALLY)):
+			elif effect is HealEffectData and (effect.apply_to_self or (target != null and _is_hostile(source, target) and ability.data.target_rule != AbilityData.TargetRule.SINGLE_ALLY and ability.data.target_rule != AbilityData.TargetRule.ALL_ALLIES and ability.data.target_rule != AbilityData.TargetRule.LOWEST_HP_ALLY)):
 				if not self_effects_applied.has(effect):
 					self_effects_applied.append(effect)
 					_apply_effect(effect, source, source)
@@ -122,7 +127,7 @@ func _apply_effect(effect: EffectData, source: CombatEntity, target: CombatEntit
 	elif effect is ShieldEffectData:
 		var shield_effect = effect as ShieldEffectData
 		var actual_shield: float = shield_effect.calculate_total_value(source)
-		var shield_target: CombatEntity = source if (shield_effect.apply_to_self or (target != null and target.is_hero != source.is_hero)) else target
+		var shield_target: CombatEntity = source if (shield_effect.apply_to_self or (target != null and _is_hostile(source, target))) else target
 		if is_instance_valid(shield_target):
 			shield_target.add_shield(actual_shield, shield_effect.shield_type, shield_effect.duration)
 			print("[AbilitySystem] 🛡️ %s grants %.1f shield to %s for %.1fs." % [source.name, actual_shield, shield_target.name, shield_effect.duration])

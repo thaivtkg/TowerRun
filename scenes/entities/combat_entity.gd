@@ -13,6 +13,11 @@ const STATUS_BAR_SCENE: PackedScene = preload("res://scenes/ui/status_bar/Entity
 
 var status_bar: EntityStatusBar = null
 
+# Định danh phe phái an toàn cho toàn bộ hệ thống Ability, Combat và UI
+var is_hero: bool:
+	get:
+		return self is HeroEntity
+
 # S5.3: TRI-SHIELD MATRIX (Khiên Trắng, Khiên Vật Lý, Khiên Phép)
 var omni_shield: float = 0.0:
 	set(val):

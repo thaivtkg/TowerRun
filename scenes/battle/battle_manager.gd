@@ -1230,8 +1230,9 @@ func _run_all_tests() -> void:
 	await _run_tc_32_combat_juice_and_camera_trauma()
 	await _run_tc_33_safe_hit_stop_and_combat_pacing()
 	_run_tc_34_team_xp_and_survivability_guardrails()
+	_run_tc_35_ability_cast_integrity_and_faction_resolution()
 	
-	_log_test("\n🎉 TẤT CẢ 34 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 35 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4639,6 +4640,140 @@ func _run_tc_34_team_xp_and_survivability_guardrails() -> void:
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-34.3 Magic Defense Scaling & Anti-One-Shot Guardrail PASSED!")
 	_log_test(">>> 🟢 TC-34 PASSED: Team XP Pool, Anchor Level & Survivability fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-35: Ability Cast Integrity & Safe Faction Resolution (Anti-Crash Guardrail)
+# ------------------------------------------------------------------------------
+func _run_tc_35_ability_cast_integrity_and_faction_resolution() -> void:
+	_log_test("\n==================== [TEST TC-35: ABILITY CAST INTEGRITY & FACTION RESOLUTION] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-35.1: Arthur Holy Shield Cast Execution
+	_log_test("[TC-35.1] Verifying Arthur Holy Shield Cast (Damage to Enemy, Shield to Self)...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-35.1: Arthur must be found in heroes")
+	
+	var enemy_target: EnemyEntity = null
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			enemy_target = e
+			break
+	assert(enemy_target != null, "FAIL TC-35.1: Enemy target must be found")
+	
+	# Load Arthur's Holy Shield ability resource
+	var arthur_ab_res: AbilityData = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	assert(arthur_ab_res != null, "FAIL TC-35.1: Arthur holy shield resource must load")
+	
+	var holy_shield_ability := Ability.new(arthur, arthur_ab_res)
+	arthur.unlocked_abilities.clear()
+	arthur.unlocked_abilities.append(holy_shield_ability)
+	
+	# Charge Arthur to 100 energy
+	arthur.current_energy = 100.0
+	arthur.omni_shield = 0.0
+	
+	var total_enemy_hp_before := 0.0
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			total_enemy_hp_before += e.current_hp
+	
+	# Cast Holy Shield
+	var cast_success := ability_system.execute_ability(holy_shield_ability)
+	assert(cast_success == true, "FAIL TC-35.1: Arthur Holy Shield cast execution failed")
+	
+	var total_enemy_hp_after := 0.0
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			total_enemy_hp_after += e.current_hp
+	
+	# Enemy takes damage
+	assert(total_enemy_hp_after < total_enemy_hp_before, "FAIL TC-35.1: Enemies must receive physical damage from Holy Shield")
+	
+	# Arthur gets omni shield
+	assert(arthur.omni_shield >= 100.0, "FAIL TC-35.1: Arthur must receive omni shield (expected >= 100, got %.1f)" % arthur.omni_shield)
+	assert(arthur.current_energy == 0.0, "FAIL TC-35.1: Arthur energy must be consumed to 0")
+	_log_test(">>> [TC-35.1] Enemies Total HP: %.1f -> %.1f | Arthur Omni Shield: %.1f | Energy: %.1f" % [
+		total_enemy_hp_before, total_enemy_hp_after, arthur.omni_shield, arthur.current_energy
+	])
+	_log_test(">>> 🟢 TC-35.1 Arthur Holy Shield Cast Execution PASSED!")
+	
+	# 2. TC-35.2: Soraka Wish Multi-Target Heal Execution
+	_log_test("[TC-35.2] Verifying Soraka Wish Multi-Target Heal (All 5 Heroes Healed, Safe Faction)...")
+	var soraka: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Soraka":
+			soraka = h
+			break
+	assert(soraka != null, "FAIL TC-35.2: Soraka must be found in heroes")
+	
+	# Injure all heroes so heal can be measured
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			h.current_hp = h.max_hp * 0.50 # Injure to 50% HP
+			
+	var soraka_ab_res: AbilityData = load("res://data/abilities/soraka_wish.tres") as AbilityData
+	assert(soraka_ab_res != null, "FAIL TC-35.2: Soraka wish resource must load")
+	
+	var wish_ability := Ability.new(soraka, soraka_ab_res)
+	soraka.unlocked_abilities.clear()
+	soraka.unlocked_abilities.append(wish_ability)
+	soraka.current_energy = 100.0
+	
+	var wish_success := ability_system.execute_ability(wish_ability)
+	assert(wish_success == true, "FAIL TC-35.2: Soraka Wish cast execution failed")
+	
+	# Confirm all 5 heroes received healing
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			assert(h.current_hp > h.max_hp * 0.50, "FAIL TC-35.2: Hero %s was not healed by Wish (HP: %.1f/%.1f)" % [h.name, h.current_hp, h.max_hp])
+	assert(soraka.current_energy == 0.0, "FAIL TC-35.2: Soraka energy must be consumed to 0")
+	_log_test(">>> [TC-35.2] All heroes successfully healed by Soraka Wish without runtime crash!")
+	_log_test(">>> 🟢 TC-35.2 Soraka Wish Multi-Target Heal Execution PASSED!")
+	
+	# 3. TC-35.3: Monster Dark Flood Hybrid Cast Execution
+	_log_test("[TC-35.3] Verifying Monster Dark Flood Hybrid Cast (AoE Damage to Heroes, Heal to Boss)...")
+	_reset_test_battlefield()
+	
+	var boss_edata := EnemyData.new()
+	boss_edata.name = "Slime Chúa Tể"
+	boss_edata.base_hp = 1000.0
+	boss_edata.base_attack = 20.0
+	boss_edata.base_defense = 15.0
+	boss_edata.base_spell_power = 25.0
+	boss_edata.abilities = [create_slime_boss_ability()]
+	
+	var boss_unit := _spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), 1, EnemyData.EnemyRank.BOSS, true)
+	boss_unit.current_hp = 500.0 # Injured
+	boss_unit.current_energy = 100.0
+	
+	var hero_target: HeroEntity = heroes[0] as HeroEntity
+	var initial_hero_hp := hero_target.current_hp
+	
+	var boss_ability := boss_unit.unlocked_abilities[0]
+	var dark_flood_success := ability_system.execute_ability(boss_ability)
+	assert(dark_flood_success == true, "FAIL TC-35.3: Boss Dark Flood cast execution failed")
+	
+	# Verify Boss healed self
+	assert(boss_unit.current_hp > 500.0, "FAIL TC-35.3: Boss must heal itself with Dark Flood (got %.1f)" % boss_unit.current_hp)
+	
+	# Verify Heroes took damage
+	var damaged_heroes := 0
+	for h in heroes:
+		if is_instance_valid(h) and h.current_hp < h.max_hp:
+			damaged_heroes += 1
+	assert(damaged_heroes > 0, "FAIL TC-35.3: Heroes must take AoE magic damage from Dark Flood")
+	
+	# Verify entity.is_hero polymorphic property
+	assert(hero_target.is_hero == true, "FAIL TC-35.3: HeroEntity.is_hero must be true")
+	assert(boss_unit.is_hero == false, "FAIL TC-35.3: EnemyEntity.is_hero must be false")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-35.3 Monster Dark Flood Hybrid Cast Execution PASSED!")
+	_log_test(">>> 🟢 TC-35 PASSED: Ability Cast Integrity & Safe Faction Resolution fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield
