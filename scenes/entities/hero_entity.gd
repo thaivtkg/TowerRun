@@ -10,6 +10,49 @@ var metrics: CombatMetric = CombatMetric.new()
 var basic_attack_ability: Ability           
 var runtime_pools: Dictionary = {} 
 var pending_milestones: Array[int] = []
+var pending_upgrade_milestone: int = 0
+var _has_pending_milestone: bool = false
+var has_pending_milestone: bool:
+	get:
+		return _has_pending_milestone or (not pending_milestones.is_empty())
+	set(val):
+		_has_pending_milestone = val
+		if not val:
+			pending_milestones.clear()
+			pending_upgrade_milestone = 0
+		_update_upgrade_badge()
+
+var upgrade_badge: Node2D = null
+
+func _setup_upgrade_badge() -> void:
+	if upgrade_badge != null and is_instance_valid(upgrade_badge):
+		return
+	upgrade_badge = Node2D.new()
+	upgrade_badge.name = "UpgradeBadge"
+	# Placed safely above status_bar at Vector2(0, -35), preventing overlap
+	upgrade_badge.position = Vector2(0, -56)
+	
+	var badge_label := Label.new()
+	badge_label.name = "BadgeLabel"
+	badge_label.text = "⬆️ NÂNG CẤP"
+	badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_label.position = Vector2(-40, -10)
+	badge_label.size = Vector2(80, 20)
+	badge_label.add_theme_font_size_override("font_size", 10)
+	badge_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	badge_label.add_theme_constant_override("outline_size", 2)
+	badge_label.add_theme_color_override("font_outline_color", Color(0.1, 0.1, 0.1, 0.9))
+	upgrade_badge.add_child(badge_label)
+	
+	add_child(upgrade_badge)
+	upgrade_badge.visible = has_pending_milestone
+
+func _update_upgrade_badge() -> void:
+	if upgrade_badge == null:
+		_setup_upgrade_badge()
+	if upgrade_badge != null:
+		upgrade_badge.visible = has_pending_milestone
 
 # ==========================================
 # SPRINT 4: RUNTIME ABILITY CLONING (P0 ISOLATION)
@@ -47,8 +90,9 @@ func initialize(initial_data: HeroData) -> void:
 	if data == null: return
 		
 	name = data.name 
-	max_hp = data.base_hp
-	current_hp = data.base_hp
+	var init_lvl: int = progression.current_level if progression != null else 1
+	max_hp = calculate_max_hp(init_lvl)
+	current_hp = max_hp
 	if "max_energy" in data and data.max_energy > 0.0:
 		max_energy = data.max_energy
 	if "starting_energy" in data:
@@ -56,6 +100,7 @@ func initialize(initial_data: HeroData) -> void:
 	else:
 		current_energy = 0.0
 	setup_status_bar(true)
+	_setup_upgrade_badge()
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
 	
@@ -123,9 +168,12 @@ func _on_attack_timer_timeout() -> void:
 
 func _on_level_up(_new_level: int) -> void:
 	level = _new_level
+	_update_scaled_max_hp()
 
 func _on_milestone_reached(milestone: int) -> void:
 	pending_milestones.append(milestone)
+	_has_pending_milestone = true
+	_update_upgrade_badge()
 	print("[HeroEntity] %s reached Milestone Lv%d. Choice pending." % [name, milestone])
 
 func pull_milestone_choices(milestone: int) -> Array[AbilityData]:
@@ -153,13 +201,79 @@ func apply_skill_choice(milestone: int, chosen: AbilityData, revealed: Array[Abi
 	
 	var pool: Array = runtime_pools.get(milestone, [])
 	for ability in revealed: pool.erase(ability)
+	
+	has_pending_milestone = false
+	pending_milestones.clear()
+	pending_upgrade_milestone = 0
+	_update_upgrade_badge()
+
+# ==========================================
+# SPRINT 5: HERO STAT PROGRESSION (GD SPEC SECTION I.2)
+# ==========================================
+static func get_tier_multiplier(lvl: int) -> float:
+	if lvl >= 99: return 1.30
+	if lvl >= 75: return 1.20
+	if lvl >= 50: return 1.15
+	if lvl >= 25: return 1.10
+	if lvl >= 10: return 1.05
+	return 1.00
+
+func get_effective_level() -> int:
+	if progression != null:
+		return progression.current_level
+	return level
+
+var passive_stat_bonus: float = 0.0
+
+func add_milestone_compensation(count: int = 1) -> void:
+	passive_stat_bonus += 0.05 * float(count)
+	_update_scaled_max_hp()
+
+func calculate_max_hp(lvl: int) -> float:
+	var base: float = data.base_hp if data != null else 100.0
+	var factor: float = 1.0 + float(lvl - 1) * 0.08
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+
+func get_attack() -> float:
+	var base: float = data.base_attack if data != null else 10.0
+	var lvl: int = get_effective_level()
+	var factor: float = 1.0 + float(lvl - 1) * 0.08
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+
+func get_spell_power() -> float:
+	var base: float = data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
+	var lvl: int = get_effective_level()
+	var factor: float = 1.0 + float(lvl - 1) * 0.08
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult * (1.0 + passive_stat_bonus)
+
+func get_defense() -> float:
+	var base: float = data.base_defense if data != null else 0.0
+	var lvl: int = get_effective_level()
+	var factor: float = 1.0 + float(lvl - 1) * 0.05
+	var t_mult: float = get_tier_multiplier(lvl)
+	return base * factor * t_mult
+
+func _update_scaled_max_hp() -> void:
+	if data == null: return
+	var old_max := max_hp
+	var new_max := calculate_max_hp(get_effective_level())
+	if is_equal_approx(old_max, new_max):
+		return
+	if old_max > 0.0 and new_max > 0.0:
+		var ratio := current_hp / old_max
+		max_hp = new_max
+		current_hp = clampf(new_max * ratio, 1.0, new_max)
+	else:
+		max_hp = new_max
+		current_hp = new_max
+	hp_changed.emit(current_hp, max_hp)
 
 func get_attack_range() -> int: return int(data.attack_range) if data != null else 1
-func get_defense() -> float: return data.base_defense if data != null else 0.0
 func get_crit_chance() -> float: return data.crit_chance if data != null else 0.0
 func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
-func get_attack() -> float: return data.base_attack if data != null else 10.0
-func get_spell_power() -> float: return data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 func get_attack_speed() -> float: return data.attack_speed if data != null else 1.0
 
 # ==========================================

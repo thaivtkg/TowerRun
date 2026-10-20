@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3]
+
+[ext_resource type="Script" path="res://data/abilities/effect_data.gd" id="1_eff"]
+[ext_resource type="Script" path="res://data/abilities/damage_effect_data.gd" id="2_dmg"]
+[ext_resource type="Script" path="res://data/abilities/ability_data.gd" id="3_ab"]
+
+[sub_resource type="Resource" id="Resource_dmg"]
+script = ExtResource("2_dmg")
+base_damage = 25.0
+damage_type = 1
+scalings = {
+"TOTAL_AP": 0.5
+}
+
+[resource]
+script = ExtResource("3_ab")
+id = "slime_acid_spray"
+name = "Phun Dịch Axit"
+ability_type = 1
+target_rule = 0
+cooldown = 4.0
+energy_cost = 40.0
+narrative_template = "Slime co bóp cơ thể bắn ra một luồng dịch nhầy axit ăn mòn vào {action_target}, gây {0} sát thương phép và làm giảm 5 Giáp của nạn nhân trong 3 giây."
+caveat = "Dịch axit có thể tích tụ tối đa 3 lần trên cùng một mục tiêu."
+progression_ranks = {
+"Sát thương": [25, 45, 75],
+"Tỉ lệ SMPT": ["50%", "60%", "75%"],
+"Trừ Giáp": [5, 8, 12]
+}
+effects = Array[ExtResource("1_eff")]([SubResource("Resource_dmg")])

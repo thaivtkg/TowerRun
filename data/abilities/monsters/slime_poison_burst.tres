@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3]
+
+[ext_resource type="Script" path="res://data/abilities/effect_data.gd" id="1_eff"]
+[ext_resource type="Script" path="res://data/abilities/damage_effect_data.gd" id="2_dmg"]
+[ext_resource type="Script" path="res://data/abilities/ability_data.gd" id="3_ab"]
+
+[sub_resource type="Resource" id="Resource_dmg"]
+script = ExtResource("2_dmg")
+base_damage = 50.0
+damage_type = 1
+scalings = {
+"TOTAL_AP": 0.8
+}
+
+[resource]
+script = ExtResource("3_ab")
+id = "slime_poison_burst"
+name = "Bùng Nổ Độc Tố"
+ability_type = 1
+target_rule = 7
+aoe_shape = 1
+aoe_radius = 1
+cooldown = 5.0
+energy_cost = 60.0
+narrative_template = "Slime Tinh Anh phát nổ giải phóng làn khói độc cực mạnh bao trùm toàn bộ kẻ địch trong bán kính 1 ô, gây {0} sát thương phép và khiến các nạn nhân chịu trạng thái Nhiễm Độc, mất thêm 15 sát thương chuẩn mỗi giây trong 3 giây."
+caveat = "Kẻ địch đứng càng gần tâm nổ càng nhận thêm 15% sát thương."
+progression_ranks = {
+"Độc chuẩn": [15, 25, 40],
+"Sát thương nổ": [50, 85, 130],
+"Tỉ lệ SMPT": ["80%", "95%", "115%"]
+}
+effects = Array[ExtResource("1_eff")]([SubResource("Resource_dmg")])

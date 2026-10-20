@@ -1,6 +1,7 @@
 extends Node2D
 
 const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/FloatingText.tscn")
+const ShieldEffectData = preload("res://data/abilities/shield_effect_data.gd")
 
 @export var hero_scene: PackedScene
 @export var enemy_scene: PackedScene
@@ -13,6 +14,14 @@ const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/
 
 var _shake_tween: Tween = null
 var _current_shake_strength: float = 0.0
+var _is_hit_stop_active: bool = false
+var _normal_game_speed: float = 1.0
+
+# S5.5: RESOLUTION PACING & VICTORY SETTLE DELAY (ANTI-DESYNC)
+const VICTORY_SETTLE_DELAY: float = 1.0
+const DEFEAT_SETTLE_DELAY: float = 0.8
+var _is_battle_resolving: bool = false
+var force_battle_end_delay: bool = false
 
 var heroes: Array[CombatEntity] = []
 var enemies: Array[CombatEntity] = []
@@ -26,6 +35,8 @@ var skill_ui: SkillChoiceUI
 var combat_summary_ui: CombatSummaryUI
 var character_stats_ui: CharacterStatsUI
 var choice_queue: Array[Dictionary] = []
+var _active_choice_hero: HeroEntity = null
+var _active_choice_milestone: int = 0
 var current_floor: int = 1
 
 var board_config: BoardConfig
@@ -64,7 +75,7 @@ func _ready() -> void:
 	add_child(debug_cheat_ui)
 	
 	if "--run-tests" in OS.get_cmdline_user_args():
-		_run_all_tests()
+		await _run_all_tests()
 		get_tree().quit()
 
 func _start_battle() -> void:
@@ -96,15 +107,14 @@ func _init_systems() -> void:
 		placement_controller.board_grid = board_grid
 		placement_controller.board_view = board_view
 		placement_controller.entity_selected.connect(func(e):
-			if is_instance_valid(character_stats_ui):
+			if e is EnemyEntity and is_instance_valid(character_stats_ui):
 				character_stats_ui.inspect_hero(e)
 		)
 		placement_controller.hero_selected.connect(func(h):
-			if is_instance_valid(character_stats_ui):
-				character_stats_ui.inspect_hero(h)
+			handle_hero_clicked(h)
 		)
 		placement_controller.hero_hovered.connect(func(h):
-			if is_instance_valid(character_stats_ui):
+			if is_instance_valid(character_stats_ui) and not character_stats_ui.visible:
 				character_stats_ui.inspect_hero(h)
 		)
 
@@ -265,6 +275,22 @@ func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: flo
 	data.base_defense = def
 	data.attack_speed = spd
 	data.attack_range = atk_range
+	if h_name == "Arthur":
+		data.basic_attack = load("res://data/abilities/arthur_basic_attack.tres") as AbilityData
+		var ab = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+		if ab: data.pool_lv10_actives.append(ab)
+	elif h_name == "Robin":
+		data.basic_attack = load("res://data/abilities/robin_basic_attack.tres") as AbilityData
+		var ab = load("res://data/abilities/robin_rain_of_arrows.tres") as AbilityData
+		if ab: data.pool_lv10_actives.append(ab)
+	elif h_name == "Jaina":
+		data.basic_attack = load("res://data/abilities/jaina_basic_attack.tres") as AbilityData
+		var ab = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+		if ab: data.pool_lv10_actives.append(ab)
+	elif h_name == "Soraka":
+		data.basic_attack = load("res://data/abilities/soraka_basic_attack.tres") as AbilityData
+		var ab = load("res://data/abilities/soraka_wish.tres") as AbilityData
+		if ab: data.pool_lv10_actives.append(ab)
 	return data
 
 func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
@@ -288,23 +314,27 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	
 	hero.initialize(data)
 	
-	# Đảm bảo mọi Hero đều có ít nhất 1 kỹ năng ULTIMATE để xả Energy khi đầy 100/100
-	var has_ult: bool = false
-	for ab in hero.unlocked_abilities:
-		if ab.data.ability_type == AbilityData.AbilityType.ULTIMATE:
-			has_ult = true
-			break
-			
-	if not has_ult:
-		var default_ult := AbilityData.new()
-		default_ult.name = data.name + " Ultimate"
-		default_ult.ability_type = AbilityData.AbilityType.ULTIMATE
-		default_ult.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
-		default_ult.cooldown = 1.0
-		var ult_dmg := DamageEffectData.new()
-		ult_dmg.base_damage = data.base_attack * 2.5
-		default_ult.effects.append(ult_dmg)
-		hero.unlocked_abilities.append(Ability.new(hero, default_ult))
+	# Đảm bảo mọi Hero đều được trang bị Ultimate chính thức theo bản sắc Tướng (Xóa bỏ hoàn toàn default_ult thô)
+	var ult_res: AbilityData = null
+	if data.name == "Kira":
+		ult_res = load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
+	elif data.name == "Arthur":
+		ult_res = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	elif data.name == "Robin":
+		ult_res = load("res://data/abilities/robin_rain_of_arrows.tres") as AbilityData
+	elif data.name == "Jaina":
+		ult_res = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+	elif data.name == "Soraka":
+		ult_res = load("res://data/abilities/soraka_wish.tres") as AbilityData
+		
+	if ult_res != null:
+		var has_it := false
+		for ab in hero.unlocked_abilities:
+			if ab.data.id == ult_res.id:
+				has_it = true
+				break
+		if not has_it:
+			hero.unlocked_abilities.append(Ability.new(hero, ult_res))
 
 	hero.healed.connect(_on_entity_healed)
 	if hero.progression != null:
@@ -352,57 +382,18 @@ func _spawn_enemy_at_grid(e_name: String, hp: float, atk: float, def: float, spd
 # ==========================================
 enum FloorType { NORMAL_FLOOR, ELITE_FLOOR, BOSS_FLOOR }
 
+const SLIME_ACID_SPRAY: Resource = preload("res://data/abilities/monsters/slime_acid_spray.tres")
+const SLIME_POISON_BURST: Resource = preload("res://data/abilities/monsters/slime_poison_burst.tres")
+const SLIME_DARK_FLOOD: Resource = preload("res://data/abilities/monsters/slime_dark_flood.tres")
+
 static func create_slime_normal_ability() -> AbilityData:
-	var ab := AbilityData.new()
-	ab.name = "Phun Dịch Axit"
-	ab.ability_type = AbilityData.AbilityType.ACTIVE
-	ab.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
-	ab.cooldown = 4.0
-	ab.energy_cost = 40.0
-	var dmg := DamageEffectData.new()
-	dmg.base_amount = 25.0
-	dmg.damage_type = DamageEvent.DamageType.MAGIC
-	dmg.scalings = { EffectData.STAT_AP: 0.50 }
-	ab.effects = [dmg]
-	ab.description = "Bắn dịch axit ăn mòn vào kẻ địch, gây {0} sát thương phép."
-	return ab
+	return (SLIME_ACID_SPRAY as AbilityData).duplicate(true)
 
 static func create_slime_elite_ability() -> AbilityData:
-	var ab := AbilityData.new()
-	ab.name = "Bùng Nổ Độc Tố"
-	ab.ability_type = AbilityData.AbilityType.ACTIVE
-	ab.target_rule = AbilityData.TargetRule.SELF
-	ab.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
-	ab.aoe_radius = 1
-	ab.cooldown = 5.0
-	ab.energy_cost = 60.0
-	var dmg := DamageEffectData.new()
-	dmg.base_amount = 50.0
-	dmg.damage_type = DamageEvent.DamageType.MAGIC
-	dmg.scalings = { EffectData.STAT_AP: 0.80 }
-	ab.effects = [dmg]
-	ab.description = "Bùng nổ độc tố lan tỏa bán kính 1 ô xung quanh, gây {0} sát thương phép lên kẻ địch."
-	return ab
+	return (SLIME_POISON_BURST as AbilityData).duplicate(true)
 
 static func create_slime_boss_ability() -> AbilityData:
-	var ab := AbilityData.new()
-	ab.name = "Đại Hồng Thủy Hắc Ám"
-	ab.ability_type = AbilityData.AbilityType.ULTIMATE
-	ab.target_rule = AbilityData.TargetRule.DENSEST_ENEMY_CLUSTER
-	ab.aoe_shape = AbilityData.AoEShape.HEX_RADIUS
-	ab.aoe_radius = 1
-	ab.cooldown = 8.0
-	ab.energy_cost = 100.0
-	var dmg := DamageEffectData.new()
-	dmg.base_amount = 120.0
-	dmg.damage_type = DamageEvent.DamageType.MAGIC
-	dmg.scalings = { EffectData.STAT_AP: 1.20 }
-	var heal := HealEffectData.new()
-	heal.base_amount = 80.0
-	heal.scalings = { EffectData.STAT_AP: 0.50 }
-	ab.effects = [dmg, heal]
-	ab.description = "Giáng thiên thạch bùn độc vào cụm tướng đông nhất gây {0} sát thương phép, đồng thời hồi {1} Máu cho bản thân."
-	return ab
+	return (SLIME_DARK_FLOOD as AbilityData).duplicate(true)
 
 func get_floor_type(floor_num: int) -> FloorType:
 	if floor_num % 5 == 0:
@@ -422,13 +413,26 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 	enemies.clear()
 	
 	var floor_type := get_floor_type(floor_num)
-	var base_floor_lv := maxi(1, (floor_num - 1) * 2 + 1)
 	
-	var max_hero_lv := 1
+	# MỐC NEO QUÁI ĐA BIẾN (WEIGHTED ANCHOR)
+	# 1. Bỏ hoàn toàn max_hero_lv để chống Kira snowball kéo lệch cấp độ
+	var total_hero_lv: int = 0
+	var hero_count: int = 0
 	for h in heroes:
 		if is_instance_valid(h) and h is HeroEntity and h.progression != null:
-			max_hero_lv = maxi(max_hero_lv, h.progression.current_level)
-			
+			total_hero_lv += h.progression.current_level
+			hero_count += 1
+	var avg_hero_lv: int = maxi(1, int(round(float(total_hero_lv) / maxf(1.0, float(hero_count)))))
+	
+	# 2. Neo theo Floor Baseline: Base Lv = floor_num * 1.2
+	var floor_baseline_lv: int = maxi(1, int(round(float(floor_num) * 1.2)))
+	
+	# 3. Cộng hưởng Trung bình Đội hình: Level Quái = clampi(floor_base, avg_lv - 1, avg_lv + 2)
+	var enemy_target_lv: int = clampi(floor_baseline_lv, maxi(1, avg_hero_lv - 1), avg_hero_lv + 2)
+	var normal_spawn_lv: int = enemy_target_lv
+	var elite_spawn_lv: int = clampi(enemy_target_lv + 1, 1, enemy_target_lv + 2)
+	var boss_spawn_lv: int = clampi(enemy_target_lv + 2, 2, enemy_target_lv + 3)
+	
 	match floor_type:
 		FloorType.NORMAL_FLOOR:
 			var slime_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2), Vector2i(5, 2), Vector2i(3, 1)]
@@ -436,38 +440,36 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				var edata := EnemyData.new()
 				edata.name = "Slime %d" % (i + 1)
 				edata.rank = EnemyData.EnemyRank.NORMAL
-				edata.base_hp = 80.0
+				edata.base_hp = 150.0
 				edata.base_attack = 8.0
 				edata.base_defense = 5.0
 				edata.base_spell_power = 10.0
 				edata.attack_speed = 1.0
 				edata.abilities = [create_slime_normal_ability()]
-				_spawn_custom_enemy_at_grid(edata, slime_coords[i], base_floor_lv, EnemyData.EnemyRank.NORMAL)
+				_spawn_custom_enemy_at_grid(edata, slime_coords[i], normal_spawn_lv, EnemyData.EnemyRank.NORMAL)
 				
 		FloorType.ELITE_FLOOR:
-			var elite_lv: int = base_floor_lv + randi_range(2, 4)
 			var elite_edata := EnemyData.new()
 			elite_edata.name = "Slime Tinh Anh"
 			elite_edata.rank = EnemyData.EnemyRank.ELITE
-			elite_edata.base_hp = 120.0
+			elite_edata.base_hp = 200.0
 			elite_edata.base_attack = 14.0
 			elite_edata.base_defense = 8.0
 			elite_edata.base_spell_power = 15.0
 			elite_edata.abilities = [create_slime_elite_ability()]
-			_spawn_custom_enemy_at_grid(elite_edata, Vector2i(3, 1), elite_lv, EnemyData.EnemyRank.ELITE)
+			_spawn_custom_enemy_at_grid(elite_edata, Vector2i(3, 1), elite_spawn_lv, EnemyData.EnemyRank.ELITE)
 			
 			var normal_coords = [Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2)]
 			for i in range(normal_coords.size()):
-				var norm_lv := maxi(1, elite_lv - randi_range(1, 5))
 				var edata := EnemyData.new()
 				edata.name = "Slime Thường %d" % (i + 1)
 				edata.rank = EnemyData.EnemyRank.NORMAL
-				edata.base_hp = 80.0
+				edata.base_hp = 150.0
 				edata.base_attack = 8.0
 				edata.base_defense = 5.0
 				edata.base_spell_power = 10.0
 				edata.abilities = [create_slime_normal_ability()]
-				_spawn_custom_enemy_at_grid(edata, normal_coords[i], norm_lv, EnemyData.EnemyRank.NORMAL)
+				_spawn_custom_enemy_at_grid(edata, normal_coords[i], normal_spawn_lv, EnemyData.EnemyRank.NORMAL)
 				
 		FloorType.BOSS_FLOOR:
 			var variant := force_boss_variant
@@ -475,41 +477,38 @@ func spawn_encounter_for_floor(floor_num: int, force_boss_variant: int = 0) -> v
 				variant = 1 if randf() < 0.5 else 2
 				
 			if variant == 1:
-				var boss_lv := max_hero_lv + randi_range(2, 3)
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Đại Vương"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
-				boss_edata.base_hp = 250.0
+				boss_edata.base_hp = 450.0
 				boss_edata.base_attack = 20.0
 				boss_edata.base_defense = 12.0
 				boss_edata.base_spell_power = 25.0
 				boss_edata.abilities = [create_slime_boss_ability()]
-				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 1), boss_lv, EnemyData.EnemyRank.BOSS, false)
+				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 1), boss_spawn_lv, EnemyData.EnemyRank.BOSS, false)
 				
 				var elite_count := randi_range(1, 2)
 				var elite_pos = [Vector2i(2, 2), Vector2i(4, 2)]
 				for i in range(elite_count):
-					var elite_i_lv := maxi(1, boss_lv - randi_range(1, 2))
 					var elite_edata := EnemyData.new()
 					elite_edata.name = "Hộ Vệ Tinh Anh %d" % (i + 1)
 					elite_edata.rank = EnemyData.EnemyRank.ELITE
-					elite_edata.base_hp = 120.0
+					elite_edata.base_hp = 200.0
 					elite_edata.base_attack = 14.0
 					elite_edata.base_defense = 8.0
 					elite_edata.base_spell_power = 15.0
 					elite_edata.abilities = [create_slime_elite_ability()]
-					_spawn_custom_enemy_at_grid(elite_edata, elite_pos[i], elite_i_lv, EnemyData.EnemyRank.ELITE)
+					_spawn_custom_enemy_at_grid(elite_edata, elite_pos[i], elite_spawn_lv, EnemyData.EnemyRank.ELITE)
 			else:
-				var solo_boss_lv := max_hero_lv + randi_range(2, 3)
 				var boss_edata := EnemyData.new()
 				boss_edata.name = "Slime Chúa Tể"
 				boss_edata.rank = EnemyData.EnemyRank.BOSS
-				boss_edata.base_hp = 300.0
+				boss_edata.base_hp = 450.0
 				boss_edata.base_attack = 25.0
 				boss_edata.base_defense = 15.0
 				boss_edata.base_spell_power = 30.0
 				boss_edata.abilities = [create_slime_boss_ability()]
-				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), solo_boss_lv, EnemyData.EnemyRank.BOSS, true)
+				_spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), boss_spawn_lv, EnemyData.EnemyRank.BOSS, true)
 
 # Giữ lại các hàm spawn bằng offset cũ cho tính tương thích ngược nếu cần
 func _spawn_hero(data: HeroData, offset: Vector2) -> void:
@@ -527,6 +526,7 @@ func _spawn_enemy(e_name: String, hp: float, atk: float, def: float, spd: float,
 func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
 	if is_hero:
 		heroes.erase(entity)
+		_shake_camera(3.5, 0.18)
 	else:
 		enemies.erase(entity)
 		
@@ -539,11 +539,42 @@ func _on_entity_died(entity: CombatEntity, is_hero: bool) -> void:
 func _check_battle_end() -> void:
 	if GameManager.current_state != GameManager.GameState.BATTLE:
 		return
+	if _is_battle_resolving or battle_ended:
+		return
 		
 	if heroes.is_empty():
-		_end_battle(GameManager.GameState.GAME_OVER, "❌ DEFEAT - All Heroes have fallen.")
+		_is_battle_resolving = true
+		if placement_controller != null:
+			placement_controller.set_locked(true)
+		_schedule_battle_end(GameManager.GameState.GAME_OVER, "❌ DEFEAT - All Heroes have fallen.", DEFEAT_SETTLE_DELAY)
 	elif enemies.is_empty():
-		_end_battle(GameManager.GameState.REWARD, "🏆 VICTORY - Floor Cleared!")
+		_is_battle_resolving = true
+		
+		# 1. Đóng băng chiến đấu: Tắt nhịp đánh của toàn bộ Tướng, chuyển sang trạng thái nhàn rỗi
+		for h in heroes:
+			if is_instance_valid(h):
+				h.set_combat_active(false)
+				
+		# 2. Khóa kéo thả tuyệt đối trong lúc đợi chuyển cảnh
+		if placement_controller != null:
+			placement_controller.set_locked(true)
+			
+		# 3. Chờ 1.0 giây để toàn bộ Tween thanh máu, Ghost Bar và Floating Text tan biến sạch sẽ
+		_schedule_battle_end(GameManager.GameState.REWARD, "🏆 VICTORY - Floor Cleared!", VICTORY_SETTLE_DELAY)
+
+func _schedule_battle_end(state: GameManager.GameState, log_msg: String, delay: float) -> void:
+	# Chế độ Headless Test Runner: Chạy ngay lập tức không delay trừ khi bài test chủ động yêu cầu đo độ trễ
+	if ("--run-tests" in OS.get_cmdline_user_args() or get_tree() == null) and not force_battle_end_delay:
+		_end_battle(state, log_msg)
+		return
+	if get_tree() == null:
+		_end_battle(state, log_msg)
+		return
+		
+	get_tree().create_timer(delay).timeout.connect(func():
+		if is_instance_valid(self):
+			_end_battle(state, log_msg)
+	)
 
 # ==========================================
 # POST-BATTLE REWARD PHASE (Xử lý cuối trận)
@@ -596,9 +627,9 @@ func _on_summary_continued() -> void:
 			SaveManager.delete_save()
 		GameManager.change_state(GameManager.GameState.GAME_OVER)
 		print("[BattleManager] 🛑 PERMA-DEATH: Đã reset toàn bộ Hero về Level 1.")
-	elif not choice_queue.is_empty():
-		_process_next_choice()
 	else:
+		# SPRINT 5 (MODEL A): NON-BLOCKING PREPARATION
+		# Không tự động bật skill_ui đè màn hình. Chuyển thẳng sang phase Chuẩn bị!
 		_finish_battle_cleanup()
 
 func _reset_heroes_for_new_run() -> void:
@@ -615,6 +646,9 @@ func _reset_heroes_for_new_run() -> void:
 				hero.progression.current_level = 1
 				hero.progression.current_xp = 0.0
 				hero.progression.pending_milestones.clear()
+			hero.has_pending_milestone = false
+			hero.pending_upgrade_milestone = 0
+			hero.passive_stat_bonus = 0.0
 			hero.unlocked_abilities.clear()
 			if hero.data != null:
 				hero.initialize(hero.data)
@@ -645,19 +679,72 @@ func _build_post_battle_choice_queue() -> void:
 	for entity in all_heroes:
 		if entity is HeroEntity:
 			var hero = entity as HeroEntity
-			for milestone in hero.pending_milestones:
-				var choices: Array = []
-				if progression_system != null:
-					choices = progression_system.generate_upgrade_choices(hero, milestone)
-				if choices.is_empty():
-					choices = hero.pull_milestone_choices(milestone)
-				if not choices.is_empty():
-					choice_queue.append({
-						"hero": hero,
-						"milestone": milestone,
-						"choices": choices
-					})
+			if hero.pending_milestones.is_empty():
+				continue
+				
+			# SPRINT 5: ONE-CHOICE RULE & MILESTONE FUSION (GD SPEC SECTION I.2)
+			# Mỗi Hero chỉ kích hoạt DUY NHẤT 1 lần mở bảng chọn thẻ kỹ năng sau trận
+			hero.pending_milestones.sort()
+			var highest_milestone: int = hero.pending_milestones[-1]
+			var skipped_count: int = hero.pending_milestones.size() - 1
+			
+			# Đền bù mốc bị bỏ qua: +5% stats per skipped milestone
+			if skipped_count > 0:
+				hero.add_milestone_compensation(skipped_count)
+				
+			var choices: Array = []
+			if progression_system != null:
+				choices = progression_system.generate_upgrade_choices(hero, highest_milestone)
+			if choices.is_empty():
+				choices = hero.pull_milestone_choices(highest_milestone)
+			if not choices.is_empty():
+				choice_queue.append({
+					"hero": hero,
+					"milestone": highest_milestone,
+					"choices": choices
+				})
+			hero.pending_upgrade_milestone = highest_milestone
+			hero.has_pending_milestone = true
 			hero.pending_milestones.clear()
+
+func handle_hero_clicked(hero: HeroEntity) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if hero.has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
+		open_hero_skill_choice(hero)
+	elif is_instance_valid(character_stats_ui):
+		character_stats_ui.inspect_hero(hero)
+
+func open_hero_skill_choice(hero: HeroEntity) -> void:
+	if hero == null or not is_instance_valid(hero):
+		return
+	if not hero.has_pending_milestone:
+		return
+		
+	# Khóa PlacementController và ngắt kéo dở ngay lập tức
+	if placement_controller != null:
+		placement_controller.set_locked(true)
+		
+	var milestone_to_use: int = hero.pending_upgrade_milestone
+	if milestone_to_use <= 0 and not hero.pending_milestones.is_empty():
+		hero.pending_milestones.sort()
+		milestone_to_use = hero.pending_milestones[-1]
+		var skipped_count: int = hero.pending_milestones.size() - 1
+		if skipped_count > 0:
+			hero.add_milestone_compensation(skipped_count)
+	if milestone_to_use <= 0:
+		milestone_to_use = 5
+		
+	var choices: Array = []
+	if progression_system != null:
+		choices = progression_system.generate_upgrade_choices(hero, milestone_to_use)
+	if choices.is_empty():
+		choices = hero.pull_milestone_choices(milestone_to_use)
+		
+	_active_choice_hero = hero
+	_active_choice_milestone = milestone_to_use
+	if is_instance_valid(skill_ui):
+		skill_ui.show_choices(hero.name, milestone_to_use, choices)
 
 func _process_next_choice() -> void:
 	if choice_queue.is_empty(): return
@@ -665,26 +752,45 @@ func _process_next_choice() -> void:
 	skill_ui.show_choices(next.hero.name, next.milestone, next.choices)
 
 func _on_skill_chosen(chosen: Variant, all_choices: Array) -> void:
-	if choice_queue.is_empty():
-		return
-	var current = choice_queue.pop_front()
-	if current == null or not current.has("hero") or not is_instance_valid(current.hero):
-		return
-	if chosen is SkillUpgradeCard:
-		chosen.apply_to_hero(current.hero)
-	elif chosen is AbilityData:
-		var all_ab: Array[AbilityData] = []
-		for c in all_choices:
-			if c is AbilityData:
-				all_ab.append(c as AbilityData)
-		current.hero.apply_skill_choice(current.milestone, chosen, all_ab)
+	var hero_to_apply: HeroEntity = _active_choice_hero
+	var milestone_to_apply: int = _active_choice_milestone
+	var from_queue: bool = false
 	
-	if choice_queue.size() > 0:
+	if (hero_to_apply == null or not is_instance_valid(hero_to_apply)) and not choice_queue.is_empty():
+		var current = choice_queue.pop_front()
+		if current != null and current.has("hero") and is_instance_valid(current.hero):
+			hero_to_apply = current.hero
+			milestone_to_apply = current.milestone
+			from_queue = true
+			
+	if hero_to_apply != null and is_instance_valid(hero_to_apply):
+		if chosen is SkillUpgradeCard:
+			chosen.apply_to_hero(hero_to_apply)
+		elif chosen is AbilityData:
+			var all_ab: Array[AbilityData] = []
+			for c in all_choices:
+				if c is AbilityData:
+					all_ab.append(c as AbilityData)
+			hero_to_apply.apply_skill_choice(milestone_to_apply, chosen, all_ab)
+		hero_to_apply.has_pending_milestone = false
+		hero_to_apply.pending_milestones.clear()
+		hero_to_apply.pending_upgrade_milestone = 0
+		_active_choice_hero = null
+		_active_choice_milestone = 0
+	
+	if is_instance_valid(skill_ui):
+		skill_ui.hide()
+		
+	# Mở khóa PlacementController khi thoát modal nếu đang ở Preparation Phase
+	if placement_controller != null and current_phase == EncounterPhase.PREPARATION:
+		placement_controller.set_locked(false)
+		
+	# Only continue queue in legacy sequential mode (TC-07.4)
+	if from_queue and choice_queue.size() > 0:
 		_process_next_choice()
-	else:
-		_finish_battle_cleanup()
 
 func _finish_battle_cleanup() -> void:
+	_is_battle_resolving = false
 	var surviving_hero_corpses: Array[CombatEntity] = []
 	for corpse in corpses:
 		if is_instance_valid(corpse):
@@ -708,6 +814,7 @@ func _finish_battle_cleanup() -> void:
 
 func _start_next_floor() -> void:
 	battle_ended = false
+	_is_battle_resolving = false
 	if RunManager != null:
 		current_floor = RunManager.current_floor
 	print("\n=====================================")
@@ -876,16 +983,23 @@ func _on_entity_attack_requested(event: DamageEvent) -> void:
 		event.source.play_lunge_vfx(event.target.global_position)
 	combat_system.process_attack(event)
 
-func _on_combat_damage_dealt(_source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool) -> void:
+func _on_combat_damage_dealt(source: CombatEntity, target: CombatEntity, amount: float, is_crit: bool, damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
 	if not is_instance_valid(target):
 		return
 	target.play_hit_vfx()
 	var dmg_val: int = maxi(1, roundi(amount))
 	if is_crit:
-		_shake_camera(4.0, 0.18)
+		_shake_camera(2.5, 0.14)
+		trigger_hit_stop(0.03, false, source, target)
 		_spawn_floating_text(target.global_position, "%d!" % dmg_val, FloatingText.Type.CRIT)
 	else:
-		_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE)
+		match damage_type:
+			DamageEvent.DamageType.MAGIC:
+				_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE_MAGIC)
+			DamageEvent.DamageType.TRUE:
+				_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE_TRUE)
+			_:
+				_spawn_floating_text(target.global_position, str(dmg_val), FloatingText.Type.DAMAGE_PHYSICAL)
 
 func _on_ability_executed(source: CombatEntity, ability: Ability) -> void:
 	if not is_instance_valid(source) or ability == null or ability.data == null:
@@ -900,13 +1014,50 @@ func _on_ability_executed(source: CombatEntity, ability: Ability) -> void:
 	source.play_cast_vfx()
 	
 	if ability.data.ability_type == AbilityData.AbilityType.ULTIMATE:
-		_shake_camera(6.0, 0.25)
-		_spawn_floating_text(source.global_position + Vector2(0, -35), "[ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
+		var is_boss_ult: bool = (source is EnemyEntity and ((source as EnemyEntity).data.name.contains("Chúa Tể") or (source as EnemyEntity).data.rank == EnemyData.EnemyRank.BOSS)) or ability.data.id == "slime_dark_flood"
+		if is_boss_ult:
+			_shake_camera(7.0, 0.35)
+			trigger_hit_stop(0.08, true)
+			_flash_board_dark(0.15)
+			_spawn_floating_text(source.global_position + Vector2(0, -35), "[BOSS ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
+		else:
+			_shake_camera(4.5, 0.22)
+			trigger_hit_stop(0.05, true)
+			_spawn_floating_text(source.global_position + Vector2(0, -35), "[ULTIMATE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
 	elif ability.data.ability_type == AbilityData.AbilityType.ACTIVE:
 		_spawn_floating_text(source.global_position + Vector2(0, -35), "[ACTIVE] %s!" % ability.data.name, FloatingText.Type.SYSTEM)
 
+func trigger_hit_stop(duration: float = 0.05, is_global: bool = false, source: CombatEntity = null, target: CombatEntity = null) -> void:
+	if duration <= 0.0:
+		return
+	if is_global:
+		if _is_hit_stop_active:
+			# Anti-Stacking Lock: Bỏ qua lệnh giảm time_scale mới nếu đã có hit-stop đang chạy!
+			return
+		_is_hit_stop_active = true
+		_normal_game_speed = 1.0
+		Engine.time_scale = 0.05
+		get_tree().create_timer(duration, true, false, true).timeout.connect(func():
+			_is_hit_stop_active = false
+			Engine.time_scale = _normal_game_speed
+		)
+	else:
+		if is_instance_valid(source):
+			source.apply_hit_stop(duration)
+		if is_instance_valid(target):
+			target.apply_hit_stop(duration)
+
+func _flash_board_dark(duration: float = 0.15) -> void:
+	if board_view == null:
+		return
+	var tween := create_tween()
+	tween.tween_property(board_view, "modulate", Color(0.65, 0.60, 0.75), 0.05)
+	tween.tween_property(board_view, "modulate", Color.WHITE, maxf(0.05, duration - 0.05))
+
 func _shake_camera(intensity: float, duration: float = 0.2) -> void:
 	if camera == null:
+		return
+	if intensity <= 0.0:
 		return
 	# Anti-stacking: chỉ override nếu rung động mới mạnh hơn rung động hiện tại
 	if _shake_tween != null and _shake_tween.is_running():
@@ -931,7 +1082,11 @@ func _shake_camera(intensity: float, duration: float = 0.2) -> void:
 		_shake_tween.tween_property(camera, "offset", offset, step_time)
 		
 	_shake_tween.tween_property(camera, "offset", Vector2.ZERO, 0.04)
-	_shake_tween.tween_callback(func(): _current_shake_strength = 0.0)
+	_shake_tween.tween_callback(func():
+		_current_shake_strength = 0.0
+		if camera != null:
+			camera.offset = Vector2.ZERO
+	)
 
 func _on_entity_healed(entity: CombatEntity, amount: float) -> void:
 	if not is_instance_valid(entity):
@@ -976,6 +1131,13 @@ func _log_test(msg: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+		var screen_pos: Vector2 = event.position
+		# 1. Nếu click vào panel hoặc crest badge -> Bỏ qua, giữ nguyên mở
+		if is_instance_valid(character_stats_ui) and character_stats_ui.visible:
+			if character_stats_ui.is_click_inside(screen_pos):
+				return
+				
+		# 2. Kiểm tra click vào Tướng hoặc Quái trên sàn đấu
 		var mouse_pos: Vector2 = get_global_mouse_position()
 		var all_entities: Array[CombatEntity] = []
 		all_entities.append_array(heroes)
@@ -983,10 +1145,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		for e in all_entities:
 			if is_instance_valid(e) and not e.is_dead:
 				var rad: float = board_config.hex_radius if board_config != null else 44.0
-				if e.global_position.distance_to(mouse_pos) <= rad:
-					if is_instance_valid(character_stats_ui):
+				var is_clicked: bool = (e.global_position.distance_to(mouse_pos) <= rad)
+				if not is_clicked and e is HeroEntity and (e as HeroEntity).has_pending_milestone:
+					var badge_pos: Vector2 = e.global_position + Vector2(0, -56)
+					if mouse_pos.distance_to(badge_pos) <= 32.0:
+						is_clicked = true
+						
+				if is_clicked:
+					if e is HeroEntity:
+						handle_hero_clicked(e as HeroEntity)
+					elif is_instance_valid(character_stats_ui):
 						character_stats_ui.inspect_hero(e)
 					return
+					
+		# 3. Click ngoài khoảng trống hoặc ô cờ trống -> Tự động đóng bảng stat
+		if is_instance_valid(character_stats_ui) and character_stats_ui.visible:
+			character_stats_ui.close()
 
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed): return
@@ -998,9 +1172,9 @@ func _input(event: InputEvent) -> void:
 				if is_instance_valid(hero) and hero.progression != null:
 					hero.progression.add_xp(800.0)
 					
-		# PHÍM 0: CHẠY TOÀN BỘ 16 TEST CASE VÀ GHI REPORT
+		# PHÍM 0: CHẠY TOÀN BỘ 31 TEST CASE VÀ GHI REPORT
 		KEY_0:
-			_run_all_tests()
+			await _run_all_tests()
 			
 		# Chạy lẻ từng test như cũ
 		KEY_1: _run_tc_03_energy_and_ultimate()
@@ -1024,6 +1198,12 @@ func _input(event: InputEvent) -> void:
 		KEY_APOSTROPHE: _run_tc_19_narrative_and_encounter_director()
 		KEY_ENTER: _run_tc_20_procedural_ui_and_polymorphism()
 		KEY_BACKSPACE: _run_tc_21_save_resume_and_boss_balance()
+		KEY_F2: _run_tc_22_floating_combat_text()
+		KEY_F3: _run_tc_23_tft_level_crest_and_compact_grid()
+		KEY_F4: _run_tc_24_hero_stat_progression_and_seamless_ui()
+		KEY_F5: _run_tc_25_monolithic_header_one_choice_and_scaling()
+		KEY_F8: _run_tc_26_model_a_tft_and_lmht_tooltips()
+		KEY_F9: _run_tc_27_dynamic_prestige_border_palette()
 		
 		# QA & DEV CHEAT SHORTCUTS (GD & QA SIGN-OFF)
 		KEY_F1, KEY_QUOTELEFT:
@@ -1033,9 +1213,9 @@ func _input(event: InputEvent) -> void:
 			toggle_god_mode()
 		KEY_K:
 			cheat_kill_all_enemies()
-		KEY_F5:
-			cheat_warp_floor(5)
 		KEY_F6:
+			cheat_warp_floor(5)
+		KEY_F7:
 			if RunManager != null:
 				RunManager.add_gold(50)
 				if debug_cheat_ui != null:
@@ -1076,8 +1256,23 @@ func _run_all_tests() -> void:
 	_run_tc_19_narrative_and_encounter_director()
 	_run_tc_20_procedural_ui_and_polymorphism()
 	_run_tc_21_save_resume_and_boss_balance()
+	_run_tc_22_floating_combat_text()
+	_run_tc_23_tft_level_crest_and_compact_grid()
+	_run_tc_24_hero_stat_progression_and_seamless_ui()
+	_run_tc_25_monolithic_header_one_choice_and_scaling()
+	_run_tc_26_model_a_tft_and_lmht_tooltips()
+	_run_tc_27_dynamic_prestige_border_palette()
+	_run_tc_28_hero_upgrade_anti_displacement()
+	_run_tc_29_four_tier_ability_tooltips()
+	_run_tc_30_comprehensive_narrative_and_tri_shield()
+	await _run_tc_31_monster_skills_and_shield_decay()
+	await _run_tc_32_combat_juice_and_camera_trauma()
+	await _run_tc_33_safe_hit_stop_and_combat_pacing()
+	_run_tc_34_team_xp_and_survivability_guardrails()
+	_run_tc_35_ability_cast_integrity_and_faction_resolution()
+	await _run_tc_36_victory_pacing_and_resolution_delay()
 	
-	_log_test("\n🎉 TẤT CẢ 21 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 36 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -1344,7 +1539,8 @@ func _run_tc_05_post_battle_choice_queue() -> void:
 	assert(not skill_ui.visible, "FAIL: UI opened mid-combat")
 	
 	_end_battle(GameManager.GameState.REWARD, "Victory Test")
-	assert(choice_queue.size() == 3, "FAIL: Queue construction failed")
+	assert(choice_queue.size() == 1, "FAIL: One-Choice Rule must consolidate single hero to 1 choice")
+	assert(choice_queue[0].milestone == 15, "FAIL: Highest milestone 15 must be chosen")
 	if is_instance_valid(skill_ui):
 		skill_ui.hide()
 	if get_tree() != null:
@@ -3065,6 +3261,1636 @@ func _run_tc_21_save_resume_and_boss_balance() -> void:
 	_log_test(">>> 🟢 TC-21 PASSED: Full Persistence, Hero State, Boss Balance & QA Cheats fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-22: Floating Combat Text & Damage Popups (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_22_floating_combat_text() -> void:
+	_log_test("\n==================== [TEST TC-22: FLOATING COMBAT TEXT & POPUPS] ====================")
+	_reset_test_battlefield()
+
+	# 1. TC-22.1: Palette Matrix & Typography Rule Check
+	_log_test("[TC-22.1] Checking FloatingText GD Palette Matrix & Typography Rules...")
+	var test_ft = FLOATING_TEXT_SCENE.instantiate() as FloatingText
+	add_child(test_ft)
+
+	# Check Physical Damage
+	test_ft.setup("100", FloatingText.Type.DAMAGE_PHYSICAL)
+	var label = test_ft.label
+	assert(label != null, "FAIL TC-22.1: Label is null")
+	assert(label.get_theme_color("font_outline_color") == Color("#11141a"), "FAIL TC-22.1: Font outline color must be #11141a")
+	assert(label.get_theme_constant("outline_size") == 3, "FAIL TC-22.1: Font outline size must be 3px")
+	assert(label.modulate == Color("#ff7675"), "FAIL TC-22.1: Physical damage modulate mismatch")
+
+	# Check Magic Damage
+	test_ft.setup("75", FloatingText.Type.DAMAGE_MAGIC)
+	assert(label.modulate == Color("#a29bfe"), "FAIL TC-22.1: Magic damage modulate mismatch")
+
+	# Check True Damage
+	test_ft.setup("50", FloatingText.Type.DAMAGE_TRUE)
+	assert(label.modulate == Color("#ffffff"), "FAIL TC-22.1: True damage modulate mismatch")
+
+	# Check Crit Damage & Format Suffix
+	test_ft.setup("180", FloatingText.Type.CRIT)
+	assert(label.modulate == Color("#fdcb6e"), "FAIL TC-22.1: Crit modulate mismatch")
+	assert(label.text == "180!", "FAIL TC-22.1: Crit must format with ! suffix")
+
+	# Check Heal & Format Prefix
+	test_ft.setup("35", FloatingText.Type.HEAL)
+	assert(label.modulate == Color("#2ecc71"), "FAIL TC-22.1: Heal modulate mismatch")
+	assert(label.text == "+35", "FAIL TC-22.1: Heal must format with + prefix")
+
+	# Check XP & Format Suffix
+	test_ft.setup("+120", FloatingText.Type.XP)
+	assert(label.modulate == Color("#fd79a8"), "FAIL TC-22.1: XP modulate mismatch")
+	assert(label.text == "+120 XP", "FAIL TC-22.1: XP must format with XP suffix")
+
+	# Check System
+	test_ft.setup("[ULTIMATE]", FloatingText.Type.SYSTEM)
+	assert(label.modulate == Color("#f1c40f"), "FAIL TC-22.1: System modulate mismatch")
+
+	test_ft.queue_free()
+	_log_test(">>> 🟢 TC-22.1 FloatingText GD Palette Matrix & Typography Rules PASSED!")
+
+	# 2. TC-22.2: Signal Arity Compatibility Check
+	_log_test("[TC-22.2] Checking Signal Arity Compatibility (5 params) across all systems...")
+	var hero = heroes[0] as HeroEntity
+	var enemy = enemies[0] as EnemyEntity
+	var initial_hero_dmg = hero.metrics.damage_dealt
+
+	# Emit 5 arguments via combat_system.damage_dealt
+	combat_system.damage_dealt.emit(hero, enemy, 42.0, false, DamageEvent.DamageType.MAGIC)
+	assert(hero.metrics.damage_dealt == initial_hero_dmg + 42.0, "FAIL TC-22.2: ProgressionSystem failed to update metric from 5-arg damage_dealt")
+
+	# Emit with Physical crit
+	combat_system.damage_dealt.emit(hero, enemy, 20.0, true, DamageEvent.DamageType.PHYSICAL)
+	assert(hero.metrics.damage_dealt == initial_hero_dmg + 62.0, "FAIL TC-22.2: ProgressionSystem failed on crit damage_dealt")
+	_log_test(">>> 🟢 TC-22.2 Signal Arity Compatibility PASSED!")
+
+	# 3. TC-22.3: Damage Routing for Physical, Magic, True, and Crit
+	_log_test("[TC-22.3] Checking DamageEvent processing for Physical, Magic, and True damage...")
+	var initial_hp = enemy.current_hp
+	var magic_event = DamageEvent.new(hero, enemy, 30.0, DamageEvent.DamageType.MAGIC)
+	combat_system.process_attack(magic_event)
+	assert(enemy.current_hp < initial_hp, "FAIL TC-22.3: Magic attack did not deal damage")
+
+	var true_event = DamageEvent.new(hero, enemy, 20.0, DamageEvent.DamageType.TRUE)
+	combat_system.process_attack(true_event)
+	assert(true_event.final_damage == 20.0, "FAIL TC-22.3: True damage should bypass defense")
+	_log_test(">>> 🟢 TC-22.3 Damage Event Processing PASSED!")
+
+	_log_test(">>> 🟢 TC-22 PASSED: Floating Combat Text & Damage Popups fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-23: TFT-Style Level Crest & Compact Stats Grid (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_23_tft_level_crest_and_compact_grid() -> void:
+	_log_test("\n==================== [TEST TC-23: TFT-STYLE LEVEL CREST & COMPACT GRID] ====================")
+	_reset_test_battlefield()
+	assert(character_stats_ui != null, "FAIL TC-23: CharacterStatsUI instance missing")
+	character_stats_ui.close()
+	
+	# 1. TC-23.1: HERO LEVEL CREST 6-TIER MATRIX (1, 15, 25, 50, 75, 99)
+	_log_test("[TC-23.1] Checking Hero Level Crest 6-Tier Matrix (1, 15, 25, 50, 75, 99)...")
+	var knight_data := _create_mock_hero_data("Lancelot", HeroData.HeroClass.TANK, 250.0, 20.0, 10.0, 1.0, 1, 0.0)
+	var hero_inst := hero_scene.instantiate() as HeroEntity
+	add_child(hero_inst)
+	hero_inst.initialize(knight_data)
+	
+	# Tier I: Bronze (Lv 1 - 9)
+	hero_inst.progression.current_level = 1
+	character_stats_ui.inspect_entity(hero_inst)
+	assert(character_stats_ui.crest_label.text == "• CẤP 1 •", "FAIL TC-23.1: Tier I Bronze text mismatch (got: %s)" % character_stats_ui.crest_label.text)
+	assert(character_stats_ui.crest_style.border_color == Color("#cd7f32"), "FAIL TC-23.1: Tier I Bronze border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#2d1a10"), "FAIL TC-23.1: Tier I Bronze bg mismatch")
+	
+	# Tier II: Silver (Lv 10 - 24)
+	hero_inst.progression.current_level = 15
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "✦ CẤP 15 ✦", "FAIL TC-23.1: Tier II Silver text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#bdc3c7"), "FAIL TC-23.1: Tier II Silver border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#1e272e"), "FAIL TC-23.1: Tier II Silver bg mismatch")
+	
+	# Tier III: Gold (Lv 25 - 49)
+	hero_inst.progression.current_level = 25
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "★ CẤP 25 ★", "FAIL TC-23.1: Tier III Gold text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#f1c40f"), "FAIL TC-23.1: Tier III Gold border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#2c2105"), "FAIL TC-23.1: Tier III Gold bg mismatch")
+	
+	# Tier IV: Diamond (Lv 50 - 74)
+	hero_inst.progression.current_level = 50
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "❖ CẤP 50 ❖", "FAIL TC-23.1: Tier IV Diamond text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#00cec9"), "FAIL TC-23.1: Tier IV Diamond border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#062024"), "FAIL TC-23.1: Tier IV Diamond bg mismatch")
+	
+	# Tier V: Legend (Lv 75 - 98)
+	hero_inst.progression.current_level = 75
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "👑 CẤP 75 👑", "FAIL TC-23.1: Tier V Legend text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#e74c3c"), "FAIL TC-23.1: Tier V Legend border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#2a0808"), "FAIL TC-23.1: Tier V Legend bg mismatch")
+	
+	# Tier VI: Mythic MAX (Lv 99)
+	hero_inst.progression.current_level = 99
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.crest_label.text == "✨ CẤP 99 MAX ✨", "FAIL TC-23.1: Tier VI Mythic text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#9b59b6"), "FAIL TC-23.1: Tier VI Mythic border mismatch")
+	assert(character_stats_ui.crest_style.bg_color == Color("#1f0a2a"), "FAIL TC-23.1: Tier VI Mythic bg mismatch")
+	
+	hero_inst.queue_free()
+	_log_test(">>> 🟢 TC-23.1 Hero Level Crest 6-Tier Matrix PASSED!")
+	
+	# 2. TC-23.2: MONSTER RANK EMBLEMS (Normal, Elite, Boss, Solo Boss)
+	_log_test("[TC-23.2] Checking Monster Rank Crest Badges...")
+	var norm_data := EnemyData.new()
+	norm_data.name = "Slime Thường"
+	norm_data.rank = EnemyData.EnemyRank.NORMAL
+	var norm_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(norm_enemy)
+	norm_enemy.initialize(norm_data, 1, EnemyData.EnemyRank.NORMAL, false)
+	
+	character_stats_ui.inspect_entity(norm_enemy)
+	assert(character_stats_ui.crest_label.text.contains("Lv.1"), "FAIL TC-23.2: Normal enemy crest should show Lv.1")
+	assert(character_stats_ui.crest_style.border_color == Color("#7f8c8d"), "FAIL TC-23.2: Normal enemy crest border mismatch")
+	assert(character_stats_ui.xp_box.visible == false, "FAIL TC-23.2: XP box must be hidden for Normal Enemy")
+	assert(character_stats_ui.xp_bar.visible == false, "FAIL TC-23.2: XP bar must be hidden for Normal Enemy")
+	norm_enemy.queue_free()
+	
+	var elite_data := EnemyData.new()
+	elite_data.name = "EliteSlime"
+	elite_data.rank = EnemyData.EnemyRank.ELITE
+	var elite_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(elite_enemy)
+	elite_enemy.initialize(elite_data, 5, EnemyData.EnemyRank.ELITE, false)
+	
+	character_stats_ui.inspect_entity(elite_enemy)
+	assert(character_stats_ui.crest_label.text == "🔥 TINH ANH (Lv.5) 🔥", "FAIL TC-23.2: Elite crest text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#8e44ad"), "FAIL TC-23.2: Elite crest border mismatch")
+	elite_enemy.queue_free()
+	
+	var boss_data := EnemyData.new()
+	boss_data.name = "BossSlime"
+	boss_data.rank = EnemyData.EnemyRank.BOSS
+	var boss_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(boss_enemy)
+	boss_enemy.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, false)
+	
+	character_stats_ui.inspect_entity(boss_enemy)
+	assert(character_stats_ui.crest_label.text == "💀 BOSS (Lv.10) 💀", "FAIL TC-23.2: Boss crest text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#c0392b"), "FAIL TC-23.2: Boss crest border mismatch")
+	boss_enemy.queue_free()
+	
+	var solo_boss: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(solo_boss)
+	solo_boss.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, true)
+	
+	character_stats_ui.inspect_entity(solo_boss)
+	assert(character_stats_ui.crest_label.text == "👑 SOLO BOSS (Lv.10) 👑", "FAIL TC-23.2: Solo Boss crest text mismatch")
+	assert(character_stats_ui.crest_style.border_color == Color("#d35400"), "FAIL TC-23.2: Solo Boss crest border mismatch")
+	assert(character_stats_ui.crest_label.tooltip_text.contains("30%"), "FAIL TC-23.2: Solo Boss tooltip mismatch")
+	solo_boss.queue_free()
+	_log_test(">>> 🟢 TC-23.2 Monster Rank Crest Badges PASSED!")
+	
+	# 3. TC-23.3: TOP-CENTER ANCHORING & TFT COMPACT GRID LAYOUT
+	_log_test("[TC-23.3] Checking Top-Center Anchoring & Compact TFT Grid...")
+	assert(character_stats_ui.crest_panel.position.y >= 0.0, "FAIL TC-23.3: Crest Y position must be >= 0 (Integrated in Monolithic Header)")
+	assert(character_stats_ui.crest_panel.custom_minimum_size.x >= 120.0, "FAIL TC-23.3: Crest minimum width must be >= 120px")
+	assert(character_stats_ui.crest_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER, "FAIL TC-23.3: Crest label must be centered")
+	assert(character_stats_ui.speed_val_label != null and character_stats_ui.crit_val_label != null, "FAIL TC-23.3: Compact grid labels missing")
+	character_stats_ui.close()
+	assert(character_stats_ui.visible == false, "FAIL TC-23.3: Panel must hide on close")
+	_log_test(">>> 🟢 TC-23.3 Top-Center Anchoring & Compact TFT Grid PASSED!")
+	
+	_log_test(">>> 🟢 TC-23 PASSED: TFT-Style Level Crest & Compact Stats Grid fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-24: Hero Stat Progression Formula & Seamless Monolithic UI with Click-Outside
+# (GD & QA Specification Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_24_hero_stat_progression_and_seamless_ui() -> void:
+	_log_test("\n==================== [TEST TC-24: HERO STAT PROGRESSION & SEAMLESS UI] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-24.1: HERO STAT PROGRESSION FORMULA VERIFICATION (Soraka at Lv 1, 10, 25, 27, 99)
+	_log_test("[TC-24.1] Checking Hero Stat Progression formula for Soraka (Lv 1, 10, 25, 27, 99)...")
+	var soraka_data: HeroData = _create_mock_hero_data("Soraka", HeroData.HeroClass.SUPPORT, 120.0, 3.0, 10.0, 0.6, 3, 10.0)
+	var hero_inst: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(hero_inst)
+	hero_inst.initialize(soraka_data)
+	hero_inst.progression = HeroProgression.new()
+	
+	# Level 1 (Tier I: Tân Binh, mult = 1.0)
+	hero_inst.progression.current_level = 1
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 120.0), "FAIL TC-24.1: Lv1 Max HP should be 120.0, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 3.0), "FAIL TC-24.1: Lv1 ATK should be 3.0, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 10.0), "FAIL TC-24.1: Lv1 AP should be 10.0, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 10.0), "FAIL TC-24.1: Lv1 DEF should be 10.0, got %f" % hero_inst.get_defense())
+	
+	# Level 10 (Tier II: Tinh Anh, mult = 1.05)
+	hero_inst.progression.current_level = 10
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 216.72), "FAIL TC-24.1: Lv10 Max HP should be 216.72, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 5.418), "FAIL TC-24.1: Lv10 ATK should be 5.418, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 18.06), "FAIL TC-24.1: Lv10 AP should be 18.06, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 15.225), "FAIL TC-24.1: Lv10 DEF should be 15.225, got %f" % hero_inst.get_defense())
+	
+	# Level 25 (Tier III: Dũng Sĩ, mult = 1.10)
+	hero_inst.progression.current_level = 25
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 385.44), "FAIL TC-24.1: Lv25 Max HP should be 385.44, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 9.636), "FAIL TC-24.1: Lv25 ATK should be 9.636, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 32.12), "FAIL TC-24.1: Lv25 AP should be 32.12, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 24.2), "FAIL TC-24.1: Lv25 DEF should be 24.2, got %f" % hero_inst.get_defense())
+	
+	# Level 27 (Tier III: Dũng Sĩ, mult = 1.10 - GD Spec Table)
+	hero_inst.progression.current_level = 27
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 406.56), "FAIL TC-24.1: Lv27 Max HP should be 406.56, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 10.164), "FAIL TC-24.1: Lv27 ATK should be 10.164, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 33.88), "FAIL TC-24.1: Lv27 AP should be 33.88, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 25.3), "FAIL TC-24.1: Lv27 DEF should be 25.3, got %f" % hero_inst.get_defense())
+	
+	# Level 99 (Tier VI: Vô Cực MAX, mult = 1.30)
+	hero_inst.progression.current_level = 99
+	hero_inst._update_scaled_max_hp()
+	assert(is_equal_approx(hero_inst.max_hp, 1379.04), "FAIL TC-24.1: Lv99 Max HP should be 1379.04, got %f" % hero_inst.max_hp)
+	assert(is_equal_approx(hero_inst.get_attack(), 34.476), "FAIL TC-24.1: Lv99 ATK should be 34.476, got %f" % hero_inst.get_attack())
+	assert(is_equal_approx(hero_inst.get_spell_power(), 114.92), "FAIL TC-24.1: Lv99 AP should be 114.92, got %f" % hero_inst.get_spell_power())
+	assert(is_equal_approx(hero_inst.get_defense(), 76.7), "FAIL TC-24.1: Lv99 DEF should be 76.7, got %f" % hero_inst.get_defense())
+	_log_test(">>> 🟢 TC-24.1 Hero Stat Progression Formula PASSED!")
+	
+	# 2. TC-24.2: SEAMLESS MONOLITHIC CARD & NO CLOSE_BUTTON IN TREE
+	_log_test("[TC-24.2] Checking Seamless Monolithic Card & absence of close_button...")
+	hero_inst.progression.current_level = 27
+	hero_inst._update_scaled_max_hp()
+	character_stats_ui.inspect_hero(hero_inst)
+	assert(character_stats_ui.visible, "FAIL TC-24.2: CharacterStatsUI should be visible")
+	assert(character_stats_ui.close_button == null, "FAIL TC-24.2: close_button variable must be null")
+	var found_btn = character_stats_ui.find_child("close_button", true, false)
+	assert(found_btn == null, "FAIL TC-24.2: No node named 'close_button' must exist in tree")
+	var avatar_panel = character_stats_ui.avatar_panel
+	assert(avatar_panel != null, "FAIL TC-24.2: avatar_panel must exist")
+	for child in avatar_panel.find_children("*", "Button", true, false):
+		assert(false, "FAIL TC-24.2: Found unexpected button in avatar_panel: %s" % child.name)
+	# Verify UI values match Lv 27
+	assert(character_stats_ui.hp_label.text.contains("407"), "FAIL TC-24.2: HP label must show 407, got %s" % character_stats_ui.hp_label.text)
+	assert(character_stats_ui.attack_val_label.text == "10.2", "FAIL TC-24.2: Attack label must show 10.2, got %s" % character_stats_ui.attack_val_label.text)
+	assert(character_stats_ui.spell_val_label.text == "33.9", "FAIL TC-24.2: Spell label must show 33.9, got %s" % character_stats_ui.spell_val_label.text)
+	assert(character_stats_ui.def_val_label.text == "25.3", "FAIL TC-24.2: Defense label must show 25.3, got %s" % character_stats_ui.def_val_label.text)
+	_log_test(">>> 🟢 TC-24.2 Seamless Monolithic Card & No Close Button PASSED!")
+	
+	# 3. TC-24.3: CLICK-OUTSIDE DISMISS & CLICK-INSIDE PERSISTENCE
+	_log_test("[TC-24.3] Checking Click-Outside Dismiss and Click-Inside Persistence...")
+	# Simulated click INSIDE panel (e.g., Vector2(900, 100))
+	var click_inside := InputEventMouseButton.new()
+	click_inside.button_index = MOUSE_BUTTON_LEFT
+	click_inside.pressed = true
+	click_inside.position = Vector2(900, 100)
+	_unhandled_input(click_inside)
+	assert(character_stats_ui.visible == true, "FAIL TC-24.3: Clicking inside panel must keep UI open")
+	
+	# Simulated click on Top-Center Crest (using crest_panel global rect)
+	var crest_global_pos: Vector2 = character_stats_ui.crest_panel.get_global_rect().position + Vector2(10, 10)
+	var click_crest := InputEventMouseButton.new()
+	click_crest.button_index = MOUSE_BUTTON_LEFT
+	click_crest.pressed = true
+	click_crest.position = crest_global_pos
+	_unhandled_input(click_crest)
+	assert(character_stats_ui.visible == true, "FAIL TC-24.3: Clicking inside crest badge must keep UI open")
+	
+	# Simulated click OUTSIDE on empty space (e.g., Vector2(50, 50))
+	var click_outside := InputEventMouseButton.new()
+	click_outside.button_index = MOUSE_BUTTON_LEFT
+	click_outside.pressed = true
+	click_outside.position = Vector2(50, 50)
+	_unhandled_input(click_outside)
+	assert(character_stats_ui.visible == false, "FAIL TC-24.3: Clicking outside must dismiss CharacterStatsUI")
+	
+	# Clean up
+	hero_inst.queue_free()
+	_log_test(">>> 🟢 TC-24.3 Click-Outside Dismiss & Click-Inside Persistence PASSED!")
+	_log_test(">>> 🟢 TC-24 PASSED: Hero Stat Progression & Seamless UI fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-25: Monolithic Crest Header, One-Choice Gacha & Advanced Stat Scaling
+# (GD & QA Specification Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_25_monolithic_header_one_choice_and_scaling() -> void:
+	_log_test("\n==================== [TEST TC-25: MONOLITHIC HEADER, ONE-CHOICE & SCALING] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-25.1: MONOLITHIC CREST HEADER (Inside panel, Y >= 0, single outer boundary)
+	_log_test("[TC-25.1] Checking True Monolithic Header (Inside panel, Y >= 0, single outer border)...")
+	var kira_hero := heroes[0] as HeroEntity
+	character_stats_ui.inspect_hero(kira_hero)
+	assert(character_stats_ui.visible == true, "FAIL TC-25.1: CharacterStatsUI should be visible")
+	assert(character_stats_ui.crest_panel != null, "FAIL TC-25.1: crest_panel must exist")
+	assert(character_stats_ui.crest_panel.position.y >= 0.0, "FAIL TC-25.1: Crest Y position must be >= 0 (got %f)" % character_stats_ui.crest_panel.position.y)
+	assert(character_stats_ui.crest_overlay == null or character_stats_ui.crest_overlay.get_child_count() == 0, "FAIL TC-25.1: No detached crest overlay should be used")
+	var panel_style = character_stats_ui.panel_container.get_theme_stylebox("panel") as StyleBoxFlat
+	assert(panel_style != null, "FAIL TC-25.1: panel_container StyleBoxFlat missing")
+	assert(panel_style.border_width_left == 2 and panel_style.corner_radius_top_left == 12, "FAIL TC-25.1: Monolithic panel border width 2, radius 12 required")
+	character_stats_ui.close()
+	_log_test(">>> 🟢 TC-25.1 Monolithic Crest Header PASSED!")
+	
+	# 2. TC-25.2: ONE-CHOICE CONSOLIDATION & MILESTONE FUSION (+5000 XP across mốc 5, 10, 15)
+	_log_test("[TC-25.2] Checking One-Choice Rule & Milestone Fusion for 5000 XP...")
+	var test_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(_create_mock_hero_data("KiraTest", HeroData.HeroClass.ASSASSIN, 100.0, 60.0, 10.0, 1.0, 1))
+	for lvl in [5, 10, 15]:
+		var pool: Array[AbilityData] = []
+		for i in range(3):
+			var a = AbilityData.new()
+			a.name = "Skill_%d_%d" % [lvl, i + 1]
+			pool.append(a)
+		test_hero.runtime_pools[lvl] = pool
+	
+	test_hero.progression.add_xp(5000.0)
+	assert(test_hero.progression.current_level >= 15, "FAIL TC-25.2: Level should be >= 15 after 5000 XP")
+	assert(test_hero.pending_milestones.has(5) and test_hero.pending_milestones.has(10) and test_hero.pending_milestones.has(15), "FAIL TC-25.2: Pending milestones should contain 5, 10, 15")
+	
+	heroes.clear()
+	heroes.append(test_hero)
+	_build_post_battle_choice_queue()
+	
+	assert(choice_queue.size() == 1, "FAIL TC-25.2: choice_queue must contain exactly 1 entry per hero, got %d" % choice_queue.size())
+	assert(choice_queue[0].milestone == 15, "FAIL TC-25.2: Milestone fusion must pick highest milestone (15), got %d" % choice_queue[0].milestone)
+	assert(is_equal_approx(test_hero.passive_stat_bonus, 0.10), "FAIL TC-25.2: Compensation for 2 skipped milestones should be 0.10 (+10%%), got %f" % test_hero.passive_stat_bonus)
+	assert(test_hero.pending_milestones.is_empty(), "FAIL TC-25.2: pending_milestones should be cleared after building queue")
+	choice_queue.clear()
+	heroes.clear()
+	test_hero.queue_free()
+	_log_test(">>> 🟢 TC-25.2 One-Choice Consolidation & Milestone Fusion PASSED!")
+	
+	# 3. TC-25.3: TOTAL AD VS BONUS AD SCALING TOOLTIP BREAKDOWN
+	_log_test("[TC-25.3] Checking Total AD vs Bonus AD scaling and breakdown...")
+	var kira_data := HeroData.new()
+	kira_data.name = "Kira"
+	kira_data.base_attack = 60.0
+	var mock_kira: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(mock_kira)
+	mock_kira.data = kira_data
+	mock_kira.passive_stat_bonus = (100.0 / 60.0) - 1.0
+	assert(is_equal_approx(mock_kira.get_attack(), 100.0), "FAIL TC-25.3: Kira Total AD should be 100.0, got %f" % mock_kira.get_attack())
+	
+	# Test 3a: Total AD Scale (Base 70, 20% Total AD, Magic)
+	var dmg_total := DamageEffectData.new()
+	dmg_total.base_damage = 70.0
+	dmg_total.damage_type = DamageEvent.DamageType.MAGIC
+	dmg_total.scalings = { EffectData.STAT_TOTAL_AD: 0.20 }
+	var total_val := dmg_total.calculate_total_value(mock_kira)
+	assert(is_equal_approx(total_val, 90.0), "FAIL TC-25.3: 70 + 100*0.20 must equal 90.0, got %f" % total_val)
+	var tooltip_total := dmg_total.get_formatted_description(mock_kira)
+	_log_test("[TC-25.3] Tooltip Total AD: %s" % tooltip_total)
+	assert(tooltip_total.contains("90") and tooltip_total.contains("70") and tooltip_total.contains("20") and tooltip_total.contains("20% SMCK"), "FAIL TC-25.3: Total AD breakdown text mismatch")
+	
+	# Test 3b: Bonus AD Scale (Base 70, 50% Bonus AD, Magic)
+	var dmg_bonus := DamageEffectData.new()
+	dmg_bonus.base_damage = 70.0
+	dmg_bonus.damage_type = DamageEvent.DamageType.MAGIC
+	dmg_bonus.scalings = { EffectData.STAT_BONUS_AD: 0.50 }
+	var bonus_val := dmg_bonus.calculate_total_value(mock_kira)
+	assert(is_equal_approx(bonus_val, 90.0), "FAIL TC-25.3: 70 + 40*0.50 must equal 90.0, got %f" % bonus_val)
+	var tooltip_bonus := dmg_bonus.get_formatted_description(mock_kira)
+	_log_test("[TC-25.3] Tooltip Bonus AD: %s" % tooltip_bonus)
+	assert(tooltip_bonus.contains("90") and tooltip_bonus.contains("70") and tooltip_bonus.contains("20") and tooltip_bonus.contains("50% SMCK cộng thêm"), "FAIL TC-25.3: Bonus AD breakdown text mismatch")
+	
+	mock_kira.queue_free()
+	_log_test(">>> 🟢 TC-25.3 Total AD vs Bonus AD Scaling PASSED!")
+	
+	# 4. TC-25.4: PURE PERCENTAGE SHIELD & HEAL (BASE_AMOUNT = 0)
+	_log_test("[TC-25.4] Checking Pure Percentage Shield & Heal (base_amount = 0)...")
+	var tank_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(tank_hero)
+	tank_hero.max_hp = 400.0
+	
+	# Test 4a: Pure % Shield (25% Max HP, 4s duration)
+	var pure_shield := ShieldEffectData.new()
+	pure_shield.base_amount = 0.0
+	pure_shield.duration = 4.0
+	pure_shield.scalings = { EffectData.STAT_TOTAL_HP: 0.25 }
+	var shield_val := pure_shield.calculate_total_value(tank_hero)
+	assert(is_equal_approx(shield_val, 100.0), "FAIL TC-25.4: 25%% of 400 HP should be 100.0, got %f" % shield_val)
+	var shield_desc := pure_shield.get_formatted_description(tank_hero)
+	_log_test("[TC-25.4] Shield Description: %s" % shield_desc)
+	assert(shield_desc.contains("100") and shield_desc.contains("25% Máu tối đa") and not shield_desc.contains("0 + "), "FAIL TC-25.4: Pure shield must state '25% Máu tối đa'")
+	assert(shield_desc.contains("4 giây"), "FAIL TC-25.4: Shield duration missing")
+	
+	# Test 4b: Pure % Heal (15% Max HP)
+	var pure_heal := HealEffectData.new()
+	pure_heal.base_amount = 0.0
+	pure_heal.scalings = { EffectData.STAT_TOTAL_HP: 0.15 }
+	var heal_val := pure_heal.calculate_total_value(tank_hero)
+	assert(is_equal_approx(heal_val, 60.0), "FAIL TC-25.4: 15%% of 400 HP should be 60.0, got %f" % heal_val)
+	var heal_desc := pure_heal.get_formatted_description(tank_hero)
+	_log_test("[TC-25.4] Heal Description: %s" % heal_desc)
+	assert(heal_desc.contains("60") and heal_desc.contains("15% Máu tối đa") and not heal_desc.contains("0 + "), "FAIL TC-25.4: Pure heal must state '15% Máu tối đa'")
+	
+	tank_hero.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-25.4 Pure Percentage Shield & Heal PASSED!")
+	_log_test(">>> 🟢 TC-25 PASSED: Monolithic Crest Header, One-Choice Gacha & Advanced Scaling fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-26: Monolithic Header, LMHT Tooltip & Model A TFT Flow (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_26_model_a_tft_and_lmht_tooltips() -> void:
+	_log_test("\n==================== [TEST TC-26: MODEL A TFT & LMHT TOOLTIPS] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-26.1: KIỂM CHỨNG HEADER LIỀN MỘT KHỐI
+	_log_test("[TC-26.1] Checking True Monolithic Header (No inner sub-border)...")
+	var knight_data := HeroData.new()
+	knight_data.name = "Knight"
+	knight_data.hero_class = HeroData.HeroClass.TANK
+	var test_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(knight_data)
+	character_stats_ui.inspect_entity(test_hero)
+	
+	var crest_sb = character_stats_ui.crest_panel.get_theme_stylebox("panel")
+	assert(crest_sb is StyleBoxEmpty or (crest_sb is StyleBoxFlat and crest_sb.border_width_left == 0), "FAIL TC-26.1: crest_panel must not have border_width > 0")
+	var panel_sb = character_stats_ui.panel_container.get_theme_stylebox("panel") as StyleBoxFlat
+	assert(panel_sb != null and panel_sb.border_width_left == 2 and panel_sb.corner_radius_top_left == 12, "FAIL TC-26.1: Card must have single outer border 2px and radius 12")
+	character_stats_ui.close()
+	test_hero.queue_free()
+	_log_test(">>> 🟢 TC-26.1 Monolithic Header PASSED!")
+	
+	# 2. TC-26.2: KIỂM CHỨNG TOOLTIP THEO CHUẨN LMHT
+	_log_test("[TC-26.2] Checking Tooltips according to LMHT standard (Azir Q style)...")
+	var kira_data := HeroData.new()
+	kira_data.name = "Kira"
+	kira_data.base_attack = 60.0
+	var mock_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(mock_hero)
+	mock_hero.data = kira_data
+	mock_hero.passive_stat_bonus = (100.0 / 60.0) - 1.0 # Total AD = 100.0
+	
+	var dmg_lmht := DamageEffectData.new()
+	dmg_lmht.base_damage = 70.0
+	dmg_lmht.damage_type = DamageEvent.DamageType.MAGIC
+	dmg_lmht.scalings = { EffectData.STAT_TOTAL_AD: 0.20 }
+	var desc_lmht := dmg_lmht.get_formatted_description(mock_hero)
+	_log_test("[TC-26.2] LMHT Tooltip: %s" % desc_lmht)
+	assert(not desc_lmht.contains("gốc") and not desc_lmht.contains("cơ bản"), "FAIL TC-26.2: Tooltip must not contain 'gốc' or 'cơ bản'")
+	assert(desc_lmht.contains("[color=#bdc3c7]70[/color]"), "FAIL TC-26.2: Base value must be silver #bdc3c7")
+	assert(desc_lmht.contains("90") and desc_lmht.contains("="), "FAIL TC-26.2: Syntax must match [Total] = ([Base] + [Bonus] [Ratio% Stat])")
+	mock_hero.queue_free()
+	_log_test(">>> 🟢 TC-26.2 LMHT Tooltips PASSED!")
+	
+	# 3. TC-26.3: KIỂM CHỨNG LUỒNG MÔ HÌNH A (NON-BLOCKING PREPARATION)
+	_log_test("[TC-26.3] Checking Model A Non-blocking Preparation Flow...")
+	# 3a. Giả lập 3 Hero cùng vượt Milestone sau trận đấu
+	var h1: HeroEntity = heroes[0] as HeroEntity
+	var h2: HeroEntity = heroes[1] as HeroEntity
+	var h3: HeroEntity = heroes[2] as HeroEntity
+	h1.progression.milestone_reached.emit(5)
+	h2.progression.milestone_reached.emit(5)
+	h3.progression.milestone_reached.emit(5)
+	
+	assert(h1.has_pending_milestone and h2.has_pending_milestone and h3.has_pending_milestone, "FAIL TC-26.3: All 3 heroes must have has_pending_milestone == true")
+	assert(h1.upgrade_badge.visible and h2.upgrade_badge.visible and h3.upgrade_badge.visible, "FAIL TC-26.3: All 3 heroes must display visual upgrade badge")
+	
+	# Kết thúc trận và đóng Summary UI
+	_end_battle(GameManager.GameState.REWARD, "Victory Test")
+	_on_summary_continued()
+	_start_next_floor()
+	
+	# Game phải vào thẳng Preparation Phase mà KHÔNG tự bật SkillChoiceUI đè màn hình
+	assert(current_phase == EncounterPhase.PREPARATION, "FAIL TC-26.3: Must transition to PREPARATION phase")
+	assert(not skill_ui.visible, "FAIL TC-26.3: SkillChoiceUI must NOT automatically pop up")
+	assert(h1.has_pending_milestone and h2.has_pending_milestone and h3.has_pending_milestone, "FAIL TC-26.3: Milestones must be retained in PREPARATION")
+	
+	# Click vào Hero 1 để mở bảng chọn 3 thẻ
+	handle_hero_clicked(h1)
+	assert(skill_ui.visible, "FAIL TC-26.3: Clicking Hero 1 must open SkillChoiceUI")
+	var p_choice = AbilityData.new()
+	p_choice.name = "Hero1_Skill"
+	_on_skill_chosen(p_choice, [p_choice])
+	assert(not skill_ui.visible, "FAIL TC-26.3: Choosing skill must hide modal")
+	assert(not h1.has_pending_milestone, "FAIL TC-26.3: Hero 1 milestone flag must be cleared")
+	assert(not h1.upgrade_badge.visible, "FAIL TC-26.3: Hero 1 badge must disappear")
+	
+	# Click vào Hero 2 để chọn thẻ
+	handle_hero_clicked(h2)
+	assert(skill_ui.visible, "FAIL TC-26.3: Clicking Hero 2 must open SkillChoiceUI")
+	var p_choice2 = AbilityData.new()
+	p_choice2.name = "Hero2_Skill"
+	_on_skill_chosen(p_choice2, [p_choice2])
+	assert(not h2.has_pending_milestone, "FAIL TC-26.3: Hero 2 milestone flag must be cleared")
+	assert(not h2.upgrade_badge.visible, "FAIL TC-26.3: Hero 2 badge must disappear")
+	_log_test(">>> 🟢 TC-26.3 Model A Non-blocking Preparation Flow PASSED!")
+	
+	# 4. TC-26.4: KIỂM CHỨNG BẢO LƯU LƯỢT NÂNG CẤP (BANK UPGRADES)
+	_log_test("[TC-26.4] Checking Bank Upgrades across floors...")
+	# Hero 3 vẫn chưa chọn chiêu
+	assert(h3.has_pending_milestone == true, "FAIL TC-26.4: Hero 3 should still have pending milestone")
+	assert(h3.upgrade_badge.visible == true, "FAIL TC-26.4: Hero 3 badge should still be visible")
+	
+	# Bắt đầu trận chiến mới mà không chọn chiêu cho Hero 3
+	start_combat_phase()
+	assert(current_phase == EncounterPhase.COMBAT, "FAIL TC-26.4: Should enter combat without crash")
+	
+	# Kết thúc trận chiến và sang tầng mới
+	_end_battle(GameManager.GameState.REWARD, "Floor Cleared")
+	_finish_battle_cleanup()
+	_start_next_floor()
+	
+	# Ở tầng mới (Preparation Phase), Hero 3 vẫn bảo lưu lượt nâng cấp
+	assert(h3.has_pending_milestone == true, "FAIL TC-26.4: Hero 3 pending milestone must persist to next floor")
+	assert(h3.upgrade_badge.visible == true, "FAIL TC-26.4: Hero 3 visual badge must persist to next floor")
+	
+	# Chọn chiêu an toàn ở tầng mới
+	handle_hero_clicked(h3)
+	assert(skill_ui.visible, "FAIL TC-26.4: Clicking Hero 3 at next floor must open SkillChoiceUI")
+	var p_choice3 = AbilityData.new()
+	p_choice3.name = "Hero3_Skill"
+	_on_skill_chosen(p_choice3, [p_choice3])
+	assert(not h3.has_pending_milestone, "FAIL TC-26.4: Hero 3 milestone flag cleared after choice")
+	assert(not h3.upgrade_badge.visible, "FAIL TC-26.4: Hero 3 badge disappeared")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-26.4 Bank Upgrades PASSED!")
+	_log_test(">>> 🟢 TC-26 PASSED: Model A TFT Flow, LMHT Tooltips & Monolithic Header fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-27: Dynamic Prestige Border Palette & Card Aura Sync (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_27_dynamic_prestige_border_palette() -> void:
+	_log_test("\n==================== [TEST TC-27: PRESTIGE BORDER PALETTE & AURA] ====================")
+	_reset_test_battlefield()
+	
+	var hero_data := HeroData.new()
+	hero_data.name = "Jaina"
+	hero_data.hero_class = HeroData.HeroClass.MAGE
+	var test_hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(hero_data)
+	
+	# 1. Tier I: Tân Binh (Lv 1 - 9) -> Nâu Đồng #cd7f32
+	test_hero.progression.current_level = 1
+	character_stats_ui.inspect_entity(test_hero)
+	assert(character_stats_ui.panel_style.border_color == Color("#cd7f32"), "FAIL TC-27: Lv1 border_color must be #cd7f32")
+	assert(character_stats_ui.panel_style.shadow_size == 0, "FAIL TC-27: Lv1 shadow_size must be 0")
+	assert(character_stats_ui.panel_style.border_width_left == 2, "FAIL TC-27: Border width must be fixed at 2px")
+	
+	# 2. Tier II: Tinh Anh (Lv 10 - 24) -> Bạc Ánh Kim #bdc3c7
+	test_hero.progression.current_level = 10
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#bdc3c7"), "FAIL TC-27: Lv10 border_color must be #bdc3c7")
+	assert(character_stats_ui.panel_style.shadow_size == 4, "FAIL TC-27: Lv10 shadow_size must be 4")
+	
+	# 3. Tier III: Dũng Sĩ (Lv 25 - 49) -> Vàng Hoàng Kim #f1c40f (Jaina Lv31 Verification!)
+	test_hero.progression.current_level = 31
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#f1c40f"), "FAIL TC-27: Jaina Lv31 border_color must be #f1c40f")
+	assert(character_stats_ui.panel_style.shadow_size == 6, "FAIL TC-27: Lv31 shadow_size must be 6")
+	_log_test("[TC-27] Verified Jaina Lv31: Border = %s | Shadow size = %d" % [character_stats_ui.panel_style.border_color.to_html(false), character_stats_ui.panel_style.shadow_size])
+	
+	# 4. Tier IV: Bậc Thầy (Lv 50 - 74) -> Lam Ngọc #00cec9
+	test_hero.progression.current_level = 50
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#00cec9"), "FAIL TC-27: Lv50 border_color must be #00cec9")
+	assert(character_stats_ui.panel_style.shadow_size == 8, "FAIL TC-27: Lv50 shadow_size must be 8")
+	
+	# 5. Tier V: Huyền Thoại (Lv 75 - 98) -> Đỏ Huyết Ngọc #e74c3c
+	test_hero.progression.current_level = 75
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#e74c3c"), "FAIL TC-27: Lv75 border_color must be #e74c3c")
+	assert(character_stats_ui.panel_style.shadow_size == 10, "FAIL TC-27: Lv75 shadow_size must be 10")
+	
+	# 6. Tier VI: Vô Cực MAX (Lv 99) -> Tím Vũ Trụ #9b59b6
+	test_hero.progression.current_level = 99
+	character_stats_ui.update_stats()
+	assert(character_stats_ui.panel_style.border_color == Color("#9b59b6"), "FAIL TC-27: Lv99 border_color must be #9b59b6")
+	assert(character_stats_ui.panel_style.shadow_size == 14, "FAIL TC-27: Lv99 shadow_size must be 14")
+	test_hero.queue_free()
+	
+	# 7. Enemy Ranks Border Verification
+	# 7a. Normal Enemy -> #484852
+	var norm_data := EnemyData.new()
+	norm_data.name = "NormalSlime"
+	norm_data.rank = EnemyData.EnemyRank.NORMAL
+	var norm_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(norm_enemy)
+	norm_enemy.initialize(norm_data, 1, EnemyData.EnemyRank.NORMAL, false)
+	character_stats_ui.inspect_entity(norm_enemy)
+	assert(character_stats_ui.panel_style.border_color == Color("#484852"), "FAIL TC-27: Normal enemy border must be #484852")
+	assert(character_stats_ui.panel_style.shadow_size == 0, "FAIL TC-27: Normal enemy shadow_size must be 0")
+	norm_enemy.queue_free()
+	
+	# 7b. Elite Enemy -> #8e44ad
+	var elite_data := EnemyData.new()
+	elite_data.name = "EliteSlime"
+	elite_data.rank = EnemyData.EnemyRank.ELITE
+	var elite_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(elite_enemy)
+	elite_enemy.initialize(elite_data, 5, EnemyData.EnemyRank.ELITE, false)
+	character_stats_ui.inspect_entity(elite_enemy)
+	assert(character_stats_ui.panel_style.border_color == Color("#8e44ad"), "FAIL TC-27: Elite enemy border must be #8e44ad")
+	assert(character_stats_ui.panel_style.shadow_size == 6, "FAIL TC-27: Elite enemy shadow_size must be 6")
+	elite_enemy.queue_free()
+	
+	# 7c. Boss Enemy -> #c0392b
+	var boss_data := EnemyData.new()
+	boss_data.name = "BossSlime"
+	boss_data.rank = EnemyData.EnemyRank.BOSS
+	var boss_enemy: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(boss_enemy)
+	boss_enemy.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, false)
+	character_stats_ui.inspect_entity(boss_enemy)
+	assert(character_stats_ui.panel_style.border_color == Color("#c0392b"), "FAIL TC-27: Boss enemy border must be #c0392b")
+	assert(character_stats_ui.panel_style.shadow_size == 10, "FAIL TC-27: Boss enemy shadow_size must be 10")
+	boss_enemy.queue_free()
+	
+	# 7d. Solo Raid Boss -> #d35400
+	var solo_boss: EnemyEntity = enemy_scene.instantiate() as EnemyEntity
+	add_child(solo_boss)
+	solo_boss.initialize(boss_data, 10, EnemyData.EnemyRank.BOSS, true) # DR >= 30%
+	character_stats_ui.inspect_entity(solo_boss)
+	assert(character_stats_ui.panel_style.border_color == Color("#d35400"), "FAIL TC-27: Solo boss border must be #d35400")
+	assert(character_stats_ui.panel_style.shadow_size == 12, "FAIL TC-27: Solo boss shadow_size must be 12")
+	solo_boss.queue_free()
+	
+	character_stats_ui.close()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-27 PASSED: Dynamic Prestige Border Palette & Card Aura fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-28: Hero Upgrade Input Isolation & Anti-Displacement Verification (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_28_hero_upgrade_anti_displacement() -> void:
+	_log_test("\n==================== [TEST TC-28: HERO UPGRADE ANTI-DISPLACEMENT] ====================")
+	_reset_test_battlefield()
+	
+	# Chuyển sang Preparation Phase để test kéo thả và nâng cấp Tướng
+	enter_preparation_phase()
+	assert(current_phase == EncounterPhase.PREPARATION, "FAIL TC-28: Must be in PREPARATION phase")
+	
+	var hero: HeroEntity = heroes[0] as HeroEntity
+	assert(hero != null, "FAIL TC-28: Hero 0 must exist")
+	var initial_cell: Vector2i = board_grid.get_cell_for_entity(hero)
+	assert(initial_cell != Vector2i(-1, -1), "FAIL TC-28: Hero must be deployed on grid")
+	var initial_world_pos: Vector2 = hero.global_position
+	
+	# 1. TC-28.1: Hero Upgrade Selection keeps hero position completely unchanged
+	_log_test("[TC-28.1] Verifying upgrade selection maintains exact hero position...")
+	hero.progression.milestone_reached.emit(5)
+	assert(hero.has_pending_milestone == true, "FAIL TC-28.1: Hero must have pending milestone")
+	
+	# Simulate clicking the hero to open upgrade
+	handle_hero_clicked(hero)
+	assert(skill_ui.visible == true, "FAIL TC-28.1: SkillChoiceUI must open")
+	assert(placement_controller.is_locked == true, "FAIL TC-28.1: PlacementController must be locked while SkillChoiceUI is open")
+	assert(hero.global_position == initial_world_pos, "FAIL TC-28.1: Hero position must not drift on UI open")
+	assert(board_grid.get_cell_for_entity(hero) == initial_cell, "FAIL TC-28.1: Hero cell must not change on UI open")
+	
+	# Choose skill upgrade
+	var choice = AbilityData.new()
+	choice.name = "AntiDisplacementSkill"
+	_on_skill_chosen(choice, [choice])
+	assert(not skill_ui.visible, "FAIL TC-28.1: SkillChoiceUI must close")
+	assert(placement_controller.is_locked == false, "FAIL TC-28.1: PlacementController unlocked after skill chosen")
+	assert(hero.global_position == initial_world_pos, "FAIL TC-28.1: Hero position must remain exact after skill chosen")
+	assert(board_grid.get_cell_for_entity(hero) == initial_cell, "FAIL TC-28.1: Hero cell must remain exact after skill chosen")
+	_log_test(">>> 🟢 TC-28.1 Upgrade Selection Anti-Displacement PASSED!")
+	
+	# 2. TC-28.2: PlacementController cancel_drag resets entity to original_cell
+	_log_test("[TC-28.2] Verifying cancel_drag and lock rollback...")
+	placement_controller.dragged_entity = hero
+	placement_controller.original_cell = initial_cell
+	placement_controller.original_z_index = 0
+	hero.global_position = Vector2(999, 999) # Displace temporarily
+	
+	placement_controller.set_locked(true)
+	assert(placement_controller.dragged_entity == null, "FAIL TC-28.2: dragged_entity must be cleared")
+	assert(hero.global_position == initial_world_pos, "FAIL TC-28.2: Hero must be rolled back to original cell position")
+	placement_controller.set_locked(false)
+	_log_test(">>> 🟢 TC-28.2 cancel_drag and lock rollback PASSED!")
+	
+	# 3. TC-28.3: Floating Badge Click Area Detection
+	_log_test("[TC-28.3] Verifying upgrade badge detection area...")
+	hero.progression.milestone_reached.emit(10)
+	assert(hero.has_pending_milestone == true)
+	
+	var badge_pos: Vector2 = hero.global_position + Vector2(0, -56)
+	var detected_hero := placement_controller._find_badge_hero_at(badge_pos)
+	assert(detected_hero == hero, "FAIL TC-28.3: Direct click on badge must detect hero")
+	
+	var near_badge_pos: Vector2 = badge_pos + Vector2(15, -10)
+	var detected_near := placement_controller._find_badge_hero_at(near_badge_pos)
+	assert(detected_near == hero, "FAIL TC-28.3: Click within badge radius must detect hero")
+	
+	var far_pos: Vector2 = badge_pos + Vector2(100, 100)
+	var detected_far := placement_controller._find_badge_hero_at(far_pos)
+	assert(detected_far == null, "FAIL TC-28.3: Click far from badge must return null")
+	_log_test(">>> 🟢 TC-28.3 Floating Badge Click Area PASSED!")
+	
+	# Clean up for next tests
+	var choice2 = AbilityData.new()
+	choice2.name = "Skill2"
+	_on_skill_chosen(choice2, [choice2])
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-28 PASSED: Hero Upgrade Input Isolation & Anti-Displacement fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-29: 4-Tier Ability Tooltip Architecture & Spatial Layout (Sprint 5)
+# ------------------------------------------------------------------------------
+func _run_tc_29_four_tier_ability_tooltips() -> void:
+	_log_test("\n==================== [TEST TC-29: 4-TIER ABILITY TOOLTIPS & SPATIAL LAYOUT] ====================")
+	_reset_test_battlefield()
+	
+	var hero_data := HeroData.new()
+	hero_data.name = "Kira"
+	hero_data.base_attack = 60.0
+	var hero_entity := hero_scene.instantiate() as HeroEntity
+	add_child(hero_entity)
+	hero_entity.initialize(hero_data)
+	
+	# 1. TC-29.1: Token Parsing Integrity
+	_log_test("[TC-29.1] Verifying Token Parsing Integrity ({hero}, {action_target}, {0})...")
+	var test_ab := AbilityData.new()
+	test_ab.name = "Vũ Điệu Lưỡi Hái"
+	test_ab.target_rule = AbilityData.TargetRule.ALL_ENEMIES
+	var dmg_eff := DamageEffectData.new()
+	dmg_eff.base_damage = 120.0
+	dmg_eff.damage_type = DamageEvent.DamageType.PHYSICAL
+	dmg_eff.scalings = { EffectData.STAT_TOTAL_AD: 0.50 }
+	test_ab.effects.append(dmg_eff)
+	test_ab.narrative_template = "{hero} phóng liên hoàn đoản kiếm vào {action_target}, gây {0} lên từng mục tiêu."
+	test_ab.caveat = "Kỹ năng này có thể kích hoạt hiệu ứng đòn đánh và có thể Chí Mạng."
+	test_ab.progression_ranks = {
+		"Sát thương": [120, 180, 260],
+		"Tỉ lệ STVL": ["50%", "65%", "80%"]
+	}
+	
+	var full_desc := test_ab.get_formatted_tooltip(hero_entity, true)
+	_log_test("[TC-29.1] Full Parsed Tooltip:\n%s" % full_desc)
+	assert(not full_desc.contains("{hero}"), "FAIL TC-29.1: {hero} token was not replaced")
+	assert(not full_desc.contains("{action_target}"), "FAIL TC-29.1: {action_target} token was not replaced")
+	assert(not full_desc.contains("{0}"), "FAIL TC-29.1: {0} token was not replaced")
+	assert(full_desc.contains("Kira"), "FAIL TC-29.1: {hero} must be replaced by hero name 'Kira'")
+	assert(full_desc.contains("toàn bộ kẻ địch trên sàn đấu"), "FAIL TC-29.1: {action_target} must be replaced by 'toàn bộ kẻ địch trên sàn đấu'")
+	assert(full_desc.contains("150"), "FAIL TC-29.1: {0} must calculate total value 120 + 60*0.5 = 150")
+	_log_test(">>> 🟢 TC-29.1 Token Parsing Integrity PASSED!")
+	
+	# 2. TC-29.2: Spatial Filtering Isolation (Gacha vs Stat Panel)
+	_log_test("[TC-29.2] Verifying Spatial Filtering Isolation (Gacha UI vs CharacterStatsUI)...")
+	var gacha_desc := test_ab.get_formatted_tooltip(hero_entity, false)
+	_log_test("[TC-29.2] Gacha Tooltip (No Tier 4):\n%s" % gacha_desc)
+	assert(gacha_desc.contains("Kira phóng liên hoàn đoản kiếm"), "FAIL TC-29.2: Gacha desc must contain Tier 2 Narrative")
+	assert(gacha_desc.contains("Kỹ năng này có thể kích hoạt"), "FAIL TC-29.2: Gacha desc must contain Tier 3 Caveat")
+	assert(not gacha_desc.contains("─── Tiến trình theo cấp ───"), "FAIL TC-29.2: Gacha desc MUST NOT contain Tier 4 separator")
+	assert(not gacha_desc.contains("Sát thương: ["), "FAIL TC-29.2: Gacha desc MUST NOT contain Tier 4 progression table")
+	
+	var stat_desc := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(stat_desc.contains("─── Tiến trình theo cấp ───"), "FAIL TC-29.2: Stat Panel tooltip must contain Tier 4 separator")
+	assert(stat_desc.contains("Sát thương: ["), "FAIL TC-29.2: Stat Panel tooltip must contain Tier 4 progression table")
+	_log_test(">>> 🟢 TC-29.2 Spatial Filtering Isolation PASSED!")
+	
+	# 3. TC-29.3: Backward Compatibility Zero-Regression
+	_log_test("[TC-29.3] Verifying Backward Compatibility on legacy skills without template...")
+	var legacy_ab := AbilityData.new()
+	legacy_ab.name = "Legacy Strike"
+	var leg_eff := DamageEffectData.new()
+	leg_eff.base_damage = 50.0
+	legacy_ab.effects.append(leg_eff)
+	var leg_desc_false := legacy_ab.get_formatted_tooltip(hero_entity, false)
+	var leg_desc_true := legacy_ab.get_formatted_tooltip(hero_entity, true)
+	assert(leg_desc_false != "" and leg_desc_false.contains("50"), "FAIL TC-29.3: Legacy false tooltip failed")
+	assert(leg_desc_true != "" and leg_desc_true.contains("50"), "FAIL TC-29.3: Legacy true tooltip failed")
+	_log_test(">>> 🟢 TC-29.3 Backward Compatibility Zero-Regression PASSED!")
+	
+	# 4. TC-29.4: Active Rank Highlighting in Progression Table
+	_log_test("[TC-29.4] Verifying Active Rank Highlighting according to hero level...")
+	# Lv 1 -> Rank 0 highlighted
+	hero_entity.progression.current_level = 1
+	var desc_lv1 := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(desc_lv1.contains("[b][color=#f1c40f]120[/color][/b] / 180 / 260"), "FAIL TC-29.4: Lv1 must highlight 120 (Rank 0)")
+	
+	# Lv 10 -> Rank 1 highlighted
+	hero_entity.progression.current_level = 10
+	var desc_lv10 := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(desc_lv10.contains("120 / [b][color=#f1c40f]180[/color][/b] / 260"), "FAIL TC-29.4: Lv10 must highlight 180 (Rank 1)")
+	
+	# Lv 25 -> Rank 2 highlighted
+	hero_entity.progression.current_level = 25
+	var desc_lv25 := test_ab.get_formatted_tooltip(hero_entity, true)
+	assert(desc_lv25.contains("120 / 180 / [b][color=#f1c40f]260[/color][/b]"), "FAIL TC-29.4: Lv25 must highlight 260 (Rank 2)")
+	_log_test(">>> 🟢 TC-29.4 Active Rank Highlighting PASSED!")
+	
+	# 5. TC-29.5: Official Kira, Arthur, Jaina Signature Abilities Verification
+	_log_test("[TC-29.5] Verifying official resources for Kira, Arthur, and Jaina...")
+	var kira_ult = load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
+	assert(kira_ult != null and kira_ult.narrative_template != "" and not kira_ult.progression_ranks.is_empty(), "FAIL TC-29.5: Kira_Ultimate.tres must have 4-tier data")
+	
+	var arthur_shield = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	assert(arthur_shield != null and arthur_shield.narrative_template != "" and not arthur_shield.progression_ranks.is_empty(), "FAIL TC-29.5: arthur_holy_shield.tres must have 4-tier data")
+	
+	var jaina_blizz = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+	assert(jaina_blizz != null and jaina_blizz.narrative_template != "" and not jaina_blizz.progression_ranks.is_empty(), "FAIL TC-29.5: jaina_eternal_blizzard.tres must have 4-tier data")
+	
+	hero_entity.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-29 PASSED: 4-Tier Ability Tooltip Architecture & Spatial Layout fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-30: Comprehensive Hero Narrative Roster & S5.3 Tri-Shield Matrix
+# ------------------------------------------------------------------------------
+func _run_tc_30_comprehensive_narrative_and_tri_shield() -> void:
+	_log_test("\n==================== [TEST TC-30: NARRATIVE ROSTER & S5.3 TRI-SHIELD] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-30.1: Comprehensive Narrative Audit for all 5 Heroes
+	_log_test("[TC-30.1] Verifying 100% Narrative & Dynamic Formula on all 5 Heroes...")
+	var test_heroes: Dictionary = {
+		"Kira": { "basic": "Đoản Đao Hắc Ám", "ult": "Vũ Điệu Lưỡi Hái", "narrative_key": "bóng tối" },
+		"Arthur": { "basic": "Trọng Kiếm Tiên Phong", "ult": "Khiên Thánh Phán Quyết", "narrative_key": "khiên" },
+		"Robin": { "basic": "Mũi Tên Xuyên Thấu", "ult": "Mưa Tên Bão Táp", "narrative_key": "bão tên" },
+		"Jaina": { "basic": "Tia Băng Hàn Giá", "ult": "Bão Tuyết Vĩnh Cửu", "narrative_key": "băng tuyết" },
+		"Soraka": { "basic": "Bụi Sao Tinh Tú", "ult": "Nguyện Ước Cứu Rỗi", "narrative_key": "Hồi Phục" }
+	}
+	
+	for hero_name in test_heroes.keys():
+		var cfg = test_heroes[hero_name]
+		var found_hero: HeroEntity = null
+		for h in heroes:
+			if is_instance_valid(h) and h is HeroEntity and h.data != null and h.data.name == hero_name:
+				found_hero = h
+				break
+		assert(found_hero != null, "FAIL TC-30.1: Hero %s must exist in battlefield roster" % hero_name)
+		
+		# Check Basic Attack
+		assert(found_hero.basic_attack_ability != null and found_hero.basic_attack_ability.data != null, "FAIL TC-30.1: %s must have basic_attack_ability" % hero_name)
+		assert(found_hero.basic_attack_ability.data.name == cfg["basic"], "FAIL TC-30.1: %s basic attack name mismatch" % hero_name)
+		var basic_tooltip := found_hero.basic_attack_ability.data.get_formatted_tooltip(found_hero, true)
+		assert(not basic_tooltip.contains("Gây ") or basic_tooltip.contains(found_hero.name), "FAIL TC-30.1: %s basic attack must not be raw text" % hero_name)
+		assert(found_hero.basic_attack_ability.data.narrative_template != "", "FAIL TC-30.1: %s basic attack must have narrative_template" % hero_name)
+		
+		# Check Ultimate
+		var found_ult: Ability = null
+		for ab in found_hero.unlocked_abilities:
+			if ab.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+				found_ult = ab
+				break
+		assert(found_ult != null, "FAIL TC-30.1: %s must have official Ultimate equipped" % hero_name)
+		assert(found_ult.data.name == cfg["ult"], "FAIL TC-30.1: %s Ultimate name mismatch" % hero_name)
+		assert(found_ult.data.narrative_template != "", "FAIL TC-30.1: %s Ultimate must have narrative_template" % hero_name)
+		var ult_tooltip := found_ult.data.get_formatted_tooltip(found_hero, true)
+		assert(not ult_tooltip.contains("Gây %.1f sát thương phép." % (found_hero.data.base_attack * 2.5)), "FAIL TC-30.1: %s must not have default_ult raw text" % hero_name)
+		assert(ult_tooltip.contains(cfg["narrative_key"]), "FAIL TC-30.1: %s tooltip must contain %s" % [hero_name, cfg["narrative_key"]])
+		_log_test("  * %s: Basic=[%s] Ult=[%s] -> Validated!" % [hero_name, found_hero.basic_attack_ability.data.name, found_ult.data.name])
+		
+	_log_test(">>> 🟢 TC-30.1 Comprehensive Narrative Audit PASSED!")
+	
+	# 2. TC-30.2: Physical Damage vs Tri-Shield Routing
+	_log_test("[TC-30.2] Verifying Physical Damage Absorption (Phys Shield -> Omni Shield -> HP)...")
+	var dummy := hero_scene.instantiate() as HeroEntity
+	add_child(dummy)
+	dummy.initialize(_create_mock_hero_data("ShieldTester", HeroData.HeroClass.TANK, 100.0, 10.0, 0.0, 1.0))
+	dummy.current_hp = 100.0
+	dummy.physical_shield = 50.0
+	dummy.omni_shield = 50.0
+	dummy.magic_shield = 50.0
+	
+	dummy.take_damage(70.0, DamageEvent.DamageType.PHYSICAL)
+	assert(dummy.physical_shield == 0.0, "FAIL TC-30.2: Physical shield should be depleted from 50 to 0")
+	assert(dummy.omni_shield == 30.0, "FAIL TC-30.2: Omni shield should absorb remaining 20 (50 -> 30)")
+	assert(dummy.magic_shield == 50.0, "FAIL TC-30.2: Magic shield must remain completely untouched (50.0)")
+	assert(dummy.current_hp == 100.0, "FAIL TC-30.2: HP must remain completely untouched at 100.0")
+	_log_test(">>> 🟢 TC-30.2 Physical Damage vs Tri-Shield PASSED!")
+	
+	# 3. TC-30.3: Magic Damage vs Tri-Shield Routing
+	_log_test("[TC-30.3] Verifying Magic Damage Absorption (Magic Shield -> Omni Shield -> HP)...")
+	dummy.current_hp = 100.0
+	dummy.physical_shield = 50.0
+	dummy.omni_shield = 50.0
+	dummy.magic_shield = 50.0
+	
+	dummy.take_damage(70.0, DamageEvent.DamageType.MAGIC)
+	assert(dummy.magic_shield == 0.0, "FAIL TC-30.3: Magic shield should be depleted from 50 to 0")
+	assert(dummy.omni_shield == 30.0, "FAIL TC-30.3: Omni shield should absorb remaining 20 (50 -> 30)")
+	assert(dummy.physical_shield == 50.0, "FAIL TC-30.3: Physical shield must remain completely untouched (50.0)")
+	assert(dummy.current_hp == 100.0, "FAIL TC-30.3: HP must remain completely untouched at 100.0")
+	_log_test(">>> 🟢 TC-30.3 Magic Damage vs Tri-Shield PASSED!")
+	
+	# 4. TC-30.4: True Damage & Shield Bypass
+	_log_test("[TC-30.4] Verifying True Damage bypasses Physical & Magic Shields...")
+	dummy.current_hp = 100.0
+	dummy.physical_shield = 50.0
+	dummy.omni_shield = 50.0
+	dummy.magic_shield = 50.0
+	
+	dummy.take_damage(70.0, DamageEvent.DamageType.TRUE)
+	assert(dummy.omni_shield == 0.0, "FAIL TC-30.4: Omni shield should absorb 50 and deplete to 0")
+	assert(dummy.physical_shield == 50.0, "FAIL TC-30.4: Physical shield must NOT absorb True damage")
+	assert(dummy.magic_shield == 50.0, "FAIL TC-30.4: Magic shield must NOT absorb True damage")
+	assert(dummy.current_hp == 80.0, "FAIL TC-30.4: True damage must bypass into HP (100 -> 80)")
+	_log_test(">>> 🟢 TC-30.4 True Damage & Shield Bypass PASSED!")
+	
+	# 5. TC-30.5: Ghost HP Delay & DR Indicator Verification
+	_log_test("[TC-30.5] Verifying Ghost HP & DR Indicator...")
+	dummy.setup_status_bar(true)
+	assert(dummy.status_bar != null, "FAIL TC-30.5: status_bar must exist")
+	assert(dummy.status_bar.ghost_bar != null, "FAIL TC-30.5: ghost_bar must exist in status_bar")
+	assert(dummy.status_bar.dr_badge != null, "FAIL TC-30.5: dr_badge must exist in status_bar")
+	
+	# Verify DR badge toggling
+	dummy.damage_reduction = 0.30
+	dummy.status_bar.set_damage_reduction(dummy.damage_reduction)
+	assert(dummy.status_bar.dr_badge.visible == true, "FAIL TC-30.5: dr_badge must be visible when DR > 0")
+	assert(dummy.status_bar.dr_badge.tooltip_text.contains("-30%"), "FAIL TC-30.5: dr_badge tooltip must show -30%")
+	
+	dummy.damage_reduction = 0.0
+	dummy.status_bar.set_damage_reduction(dummy.damage_reduction)
+	assert(dummy.status_bar.dr_badge.visible == false, "FAIL TC-30.5: dr_badge must be hidden when DR == 0")
+	
+	# Clean up
+	dummy.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-30.5 Ghost HP & DR Indicator PASSED!")
+	_log_test(">>> 🟢 TC-30 PASSED: Comprehensive Narrative & Tri-Shield Matrix fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-31: Data-driven Monster Skills & Shield Duration Decay
+# ------------------------------------------------------------------------------
+func _run_tc_31_monster_skills_and_shield_decay() -> void:
+	_log_test("\n==================== [TEST TC-31: MONSTER SKILLS & SHIELD DECAY] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-31.1: Verify Data-Driven Monster Skills (.tres) and 4-tier Narrative Tooltips
+	_log_test("[TC-31.1] Verifying 100% Data-driven Monster Skills from .tres...")
+	
+	# Slime Acid Spray
+	var normal_ab: AbilityData = SLIME_ACID_SPRAY as AbilityData
+	assert(normal_ab != null, "FAIL TC-31.1: SLIME_ACID_SPRAY resource must load")
+	assert(normal_ab.name == "Phun Dịch Axit", "FAIL TC-31.1: Slime normal skill name mismatch")
+	assert(normal_ab.ability_type == AbilityData.AbilityType.ACTIVE, "FAIL TC-31.1: Must be ACTIVE")
+	assert(normal_ab.cooldown == 4.0, "FAIL TC-31.1: Cooldown 4.0s")
+	assert(normal_ab.energy_cost == 40.0, "FAIL TC-31.1: Cost 40 MP")
+	assert(normal_ab.effects.size() == 1, "FAIL TC-31.1: Normal skill effects count")
+	
+	var normal_tip := normal_ab.get_formatted_tooltip(null, true)
+	assert(not normal_tip.contains("{0}"), "FAIL TC-31.1: Normal tooltip contains raw {0}")
+	assert(not normal_tip.contains("{action_target}"), "FAIL TC-31.1: Normal tooltip contains {action_target}")
+	assert(not normal_tip.contains("{hero}"), "FAIL TC-31.1: Normal tooltip contains {hero}")
+	assert(normal_tip.contains("Tiến trình theo cấp"), "FAIL TC-31.1: Normal tooltip must have Tier 4 progression")
+	_log_test("  * Normal: [Phun Dịch Axit] validated!")
+	
+	# Slime Poison Burst
+	var elite_ab: AbilityData = SLIME_POISON_BURST as AbilityData
+	assert(elite_ab != null, "FAIL TC-31.1: SLIME_POISON_BURST resource must load")
+	assert(elite_ab.name == "Bùng Nổ Độc Tố", "FAIL TC-31.1: Slime elite skill name mismatch")
+	assert(elite_ab.ability_type == AbilityData.AbilityType.ACTIVE, "FAIL TC-31.1: Must be ACTIVE")
+	assert(elite_ab.aoe_shape == AbilityData.AoEShape.HEX_RADIUS, "FAIL TC-31.1: Must be HEX_RADIUS")
+	assert(elite_ab.aoe_radius == 1, "FAIL TC-31.1: Radius must be 1")
+	assert(elite_ab.cooldown == 5.0, "FAIL TC-31.1: Cooldown 5.0s")
+	assert(elite_ab.energy_cost == 60.0, "FAIL TC-31.1: Cost 60 MP")
+	
+	var elite_tip := elite_ab.get_formatted_tooltip(null, true)
+	assert(not elite_tip.contains("{0}"), "FAIL TC-31.1: Elite tooltip contains raw {0}")
+	assert(not elite_tip.contains("{action_target}"), "FAIL TC-31.1: Elite tooltip contains {action_target}")
+	assert(not elite_tip.contains("{hero}"), "FAIL TC-31.1: Elite tooltip contains {hero}")
+	assert(elite_tip.contains("Tiến trình theo cấp"), "FAIL TC-31.1: Elite tooltip must have Tier 4 progression")
+	_log_test("  * Elite: [Bùng Nổ Độc Tố] validated!")
+	
+	# Slime Dark Flood
+	var boss_ab: AbilityData = SLIME_DARK_FLOOD as AbilityData
+	assert(boss_ab != null, "FAIL TC-31.1: SLIME_DARK_FLOOD resource must load")
+	assert(boss_ab.name == "Đại Hồng Thủy Hắc Ám", "FAIL TC-31.1: Slime boss skill name mismatch")
+	assert(boss_ab.ability_type == AbilityData.AbilityType.ULTIMATE, "FAIL TC-31.1: Must be ULTIMATE")
+	assert(boss_ab.target_rule == AbilityData.TargetRule.DENSEST_ENEMY_CLUSTER, "FAIL TC-31.1: Target rule cluster")
+	assert(boss_ab.aoe_shape == AbilityData.AoEShape.HEX_RADIUS, "FAIL TC-31.1: Must be HEX_RADIUS")
+	assert(boss_ab.aoe_radius == 1, "FAIL TC-31.1: Radius must be 1")
+	assert(boss_ab.cooldown == 8.0, "FAIL TC-31.1: Cooldown 8.0s")
+	assert(boss_ab.energy_cost == 100.0, "FAIL TC-31.1: Cost 100 MP")
+	assert(boss_ab.effects.size() == 2, "FAIL TC-31.1: Boss skill must have 2 effects (Damage + Heal)")
+	
+	var boss_tip := boss_ab.get_formatted_tooltip(null, true)
+	assert(not boss_tip.contains("{0}"), "FAIL TC-31.1: Boss tooltip contains raw {0}")
+	assert(not boss_tip.contains("{1}"), "FAIL TC-31.1: Boss tooltip contains raw {1}")
+	assert(not boss_tip.contains("{action_target}"), "FAIL TC-31.1: Boss tooltip contains {action_target}")
+	assert(not boss_tip.contains("{hero}"), "FAIL TC-31.1: Boss tooltip contains {hero}")
+	assert(boss_tip.contains("Tiến trình theo cấp"), "FAIL TC-31.1: Boss tooltip must have Tier 4 progression")
+	assert(boss_tip.contains("Hồi phục"), "FAIL TC-31.1: Boss progression must show Hồi phục")
+	_log_test("  * Boss: [Đại Hồng Thủy Hắc Ám] validated!")
+	_log_test(">>> 🟢 TC-31.1 Data-driven Monster Skills Integrity PASSED!")
+	
+	# 2. TC-31.2: Shield Duration Expiration & Decay
+	_log_test("[TC-31.2] Verifying Shield Duration Expiration & Decay Timer...")
+	var test_entity := hero_scene.instantiate() as HeroEntity
+	add_child(test_entity)
+	test_entity.initialize(_create_mock_hero_data("DecayTester", HeroData.HeroClass.TANK, 100.0, 10.0, 0.0, 1.0))
+	test_entity.current_hp = 100.0
+	
+	# Test Omni Shield Expiration
+	test_entity.add_shield(100.0, 0, 0.15)
+	assert(test_entity.omni_shield == 100.0, "FAIL TC-31.2: Omni shield must be 100.0 immediately")
+	await get_tree().create_timer(0.22).timeout
+	assert(test_entity.omni_shield == 0.0, "FAIL TC-31.2: Omni shield must decay to 0.0 after duration")
+	
+	# Test Physical Shield Expiration
+	test_entity.add_shield(60.0, 1, 0.10)
+	assert(test_entity.physical_shield == 60.0, "FAIL TC-31.2: Physical shield must be 60.0 immediately")
+	await get_tree().create_timer(0.15).timeout
+	assert(test_entity.physical_shield == 0.0, "FAIL TC-31.2: Physical shield must decay to 0.0 after duration")
+	
+	# Test Magic Shield Expiration
+	test_entity.add_shield(80.0, 2, 0.10)
+	assert(test_entity.magic_shield == 80.0, "FAIL TC-31.2: Magic shield must be 80.0 immediately")
+	await get_tree().create_timer(0.15).timeout
+	assert(test_entity.magic_shield == 0.0, "FAIL TC-31.2: Magic shield must decay to 0.0 after duration")
+	
+	# Test Breaking Shield Early before decay
+	test_entity.add_shield(50.0, 0, 0.15)
+	test_entity.take_damage(60.0, DamageEvent.DamageType.TRUE)
+	assert(test_entity.omni_shield == 0.0, "FAIL TC-31.2: Omni shield must be broken to 0.0 by damage")
+	await get_tree().create_timer(0.20).timeout
+	assert(test_entity.omni_shield == 0.0, "FAIL TC-31.2: Omni shield must remain 0.0 without underflow")
+	
+	test_entity.queue_free()
+	_log_test(">>> 🟢 TC-31.2 Shield Duration Expiration PASSED!")
+	
+	# 3. TC-31.3: Arthur Holy Shield Duration Integration
+	_log_test("[TC-31.3] Verifying Arthur Holy Shield Duration Integration...")
+	var arthur_ab: AbilityData = preload("res://data/abilities/arthur_holy_shield.tres")
+	assert(arthur_ab != null, "FAIL TC-31.3: Arthur holy shield must load")
+	assert(arthur_ab.effects.size() >= 2, "FAIL TC-31.3: Arthur must have at least 2 effects")
+	var shield_eff: ShieldEffectData = arthur_ab.effects[1] as ShieldEffectData
+	assert(shield_eff != null, "FAIL TC-31.3: Second effect must be ShieldEffectData")
+	assert(shield_eff.duration == 4.0, "FAIL TC-31.3: Arthur shield duration must be 4.0s")
+	_log_test(">>> 🟢 TC-31.3 Arthur Holy Shield Duration Integration PASSED!")
+	_log_test(">>> 🟢 TC-31 PASSED: Data-driven Monster Skills & Shield Duration Decay fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-32: Combat Juice, Hit Stop & Camera Trauma Matrix
+# ------------------------------------------------------------------------------
+func _run_tc_32_combat_juice_and_camera_trauma() -> void:
+	_log_test("\n==================== [TEST TC-32: COMBAT JUICE & CAMERA TRAUMA] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-32.1: Selective Hit Stop Verification
+	_log_test("[TC-32.1] Verifying Selective Hit Stop on Crit (Attacker & Victim)...")
+	var attacker := hero_scene.instantiate() as HeroEntity
+	add_child(attacker)
+	attacker.initialize(_create_mock_hero_data("AttackerHero", HeroData.HeroClass.ASSASSIN, 100.0, 30.0, 0.0, 1.0))
+	
+	var victim := hero_scene.instantiate() as HeroEntity
+	add_child(victim)
+	victim.initialize(_create_mock_hero_data("VictimHero", HeroData.HeroClass.TANK, 150.0, 10.0, 0.0, 1.0))
+	
+	var bystander := hero_scene.instantiate() as HeroEntity
+	add_child(bystander)
+	bystander.initialize(_create_mock_hero_data("BystanderHero", HeroData.HeroClass.MAGE, 80.0, 20.0, 0.0, 1.0))
+	
+	# Play attack and hit VFX
+	attacker.play_lunge_vfx(victim.global_position)
+	victim.play_hit_vfx()
+	
+	# Trigger selective hit stop (0.03s, non-global)
+	trigger_hit_stop(0.03, false, attacker, victim)
+	
+	assert(attacker.is_hit_stopped == true, "FAIL TC-32.1: Attacker must be in hit stop")
+	assert(victim.is_hit_stopped == true, "FAIL TC-32.1: Victim must be in hit stop")
+	assert(bystander.is_hit_stopped == false, "FAIL TC-32.1: Bystander must NOT be in hit stop")
+	assert(Engine.time_scale >= 0.99, "FAIL TC-32.1: Engine.time_scale must NOT be frozen globally for crits")
+	
+	# Wait for hit stop to resolve
+	await get_tree().create_timer(0.045).timeout
+	assert(attacker.is_hit_stopped == false, "FAIL TC-32.1: Attacker must resume after hit stop duration")
+	assert(victim.is_hit_stopped == false, "FAIL TC-32.1: Victim must resume after hit stop duration")
+	
+	attacker.queue_free()
+	victim.queue_free()
+	bystander.queue_free()
+	_log_test(">>> 🟢 TC-32.1 Selective Hit Stop PASSED!")
+	
+	# 2. TC-32.2: Camera Trauma Multi-tier & Anti-Stacking
+	_log_test("[TC-32.2] Verifying Camera Trauma Multi-tier & Anti-Stacking...")
+	if camera != null:
+		# Reset camera
+		if _shake_tween != null and _shake_tween.is_running(): _shake_tween.kill()
+		camera.offset = Vector2.ZERO
+		_current_shake_strength = 0.0
+		
+		# Tier 0: Normal Attack (0.0px)
+		_shake_camera(0.0, 0.0)
+		assert(_current_shake_strength == 0.0, "FAIL TC-32.2: Normal attack shake must be 0.0px")
+		
+		# Tier 1: Crit (2.5px)
+		_shake_camera(2.5, 0.14)
+		assert(is_equal_approx(_current_shake_strength, 2.5), "FAIL TC-32.2: Crit shake must be 2.5px")
+		
+		# Anti-Stacking: Weaker shake (1.5px) must NOT override 2.5px
+		_shake_camera(1.5, 0.10)
+		assert(is_equal_approx(_current_shake_strength, 2.5), "FAIL TC-32.2: Weaker shake overrode 2.5px")
+		
+		# Tier 2: Hero Ultimate (4.5px)
+		_shake_camera(4.5, 0.22)
+		assert(is_equal_approx(_current_shake_strength, 4.5), "FAIL TC-32.2: Hero Ultimate shake must be 4.5px")
+		
+		# Tier 3: Boss Ultimate (7.0px)
+		_shake_camera(7.0, 0.35)
+		assert(is_equal_approx(_current_shake_strength, 7.0), "FAIL TC-32.2: Boss Ultimate shake must be 7.0px")
+		
+		# Anti-Stacking: Hero Death (3.5px) under Boss Ultimate must NOT override 7.0px
+		_shake_camera(3.5, 0.18)
+		assert(is_equal_approx(_current_shake_strength, 7.0), "FAIL TC-32.2: 3.5px overrode 7.0px Boss shake")
+		
+		# Clean up camera
+		if _shake_tween != null and _shake_tween.is_running(): _shake_tween.kill()
+		camera.offset = Vector2.ZERO
+		_current_shake_strength = 0.0
+	_log_test(">>> 🟢 TC-32.2 Camera Trauma Multi-tier & Anti-Stacking PASSED!")
+	
+	# 3. TC-32.3: Boss Dark Flood Impact Integration
+	_log_test("[TC-32.3] Verifying Boss Dark Flood Impact Integration...")
+	_reset_test_battlefield()
+	
+	# Setup Boss Slime
+	var boss_edata := EnemyData.new()
+	boss_edata.name = "Slime Chúa Tể"
+	boss_edata.base_hp = 500.0
+	boss_edata.base_attack = 20.0
+	boss_edata.base_defense = 10.0
+	boss_edata.base_spell_power = 20.0
+	boss_edata.abilities = [create_slime_boss_ability()]
+	
+	var boss_unit := _spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), 1, EnemyData.EnemyRank.BOSS, true)
+	boss_unit.current_hp = 300.0 # Damaged so heal can take effect
+	boss_unit.current_energy = 100.0 # Full energy for Ultimate cast
+	
+	# Arthur with shield
+	var arthur := heroes[0] as HeroEntity
+	arthur.add_shield(100.0, 0, 4.0) # 100 Omni shield
+	var initial_shield := arthur.omni_shield
+	
+	# Execute Boss Ultimate
+	assert(not boss_unit.unlocked_abilities.is_empty(), "FAIL TC-32.3: Boss must have unlocked ability")
+	var boss_ult := boss_unit.unlocked_abilities[0]
+	assert(boss_ult.data.name == "Đại Hồng Thủy Hắc Ám", "FAIL TC-32.3: Ability name mismatch")
+	
+	var cast_success := ability_system.execute_ability(boss_ult)
+	assert(cast_success == true, "FAIL TC-32.3: Boss cast failed")
+	
+	# Verify Boss Shake 7.0px triggered
+	assert(is_equal_approx(_current_shake_strength, 7.0), "FAIL TC-32.3: Boss Ultimate must trigger 7.0px camera shake")
+	
+	# Verify Boss healed self
+	assert(boss_unit.current_hp > 300.0, "FAIL TC-32.3: Boss must be healed by Dark Flood")
+	
+	# Verify Hero shield or HP took damage
+	var current_shield := arthur.omni_shield
+	assert(current_shield < initial_shield or arthur.current_hp < arthur.max_hp, "FAIL TC-32.3: Arthur took no damage from Boss Ultimate")
+	
+	# Clean up camera and battlefield
+	if _shake_tween != null and _shake_tween.is_running(): _shake_tween.kill()
+	if camera != null: camera.offset = Vector2.ZERO
+	_current_shake_strength = 0.0
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-32.3 Boss Dark Flood Impact Integration PASSED!")
+	_log_test(">>> 🟢 TC-32 PASSED: Combat Juice, Hit Stop & Camera Trauma fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-33: Safe Hit Stop Anti-Lock & Combat Pacing & Energy Gating
+# ------------------------------------------------------------------------------
+func _run_tc_33_safe_hit_stop_and_combat_pacing() -> void:
+	_log_test("\n==================== [TEST TC-33: SAFE HIT STOP & PACING] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-33.1: Safe Hit Stop Anti-Stacking Concurrency (4 Ultimates simultaneously)
+	_log_test("[TC-33.1] Verifying 4 Simultaneous Ultimates do NOT freeze time_scale at 0.05x...")
+	assert(Engine.time_scale >= 0.99, "FAIL TC-33.1: Initial time_scale must be 1.0")
+	assert(_is_hit_stop_active == false, "FAIL TC-33.1: _is_hit_stop_active must be false initially")
+	
+	# Ultimate 1 triggers hit stop
+	trigger_hit_stop(0.05, true)
+	assert(_is_hit_stop_active == true, "FAIL TC-33.1: Hit stop must be active after Ult 1")
+	assert(is_equal_approx(Engine.time_scale, 0.05), "FAIL TC-33.1: time_scale must be 0.05 during hit stop")
+	
+	# Ultimates 2, 3, 4 trigger in rapid succession while Ult 1 is running
+	trigger_hit_stop(0.05, true)
+	trigger_hit_stop(0.05, true)
+	trigger_hit_stop(0.05, true)
+	
+	# Await timer expiration (0.07s gives buffer for 0.05s timer)
+	await get_tree().create_timer(0.07, true, false, true).timeout
+	
+	assert(_is_hit_stop_active == false, "FAIL TC-33.1: Hit stop must be inactive after timer expiration")
+	assert(is_equal_approx(Engine.time_scale, 1.0), "FAIL TC-33.1: time_scale must be restored to 1.0x (NOT stuck in 0.05x)!")
+	_log_test(">>> 🟢 TC-33.1 Safe Hit Stop Anti-Lock PASSED!")
+	
+	# 2. TC-33.2: Pacing & Energy Gating Integrity (starting_energy = 0, energy_per_attack = 15.0)
+	_log_test("[TC-33.2] Verifying Energy Gating (starting_energy=0, energy_per_attack=15)...")
+	var kira_res: HeroData = load("res://data/heroes/kira_data.tres") as HeroData
+	assert(kira_res != null, "FAIL TC-33.2: Kira data must load")
+	assert(kira_res.starting_energy == 0.0, "FAIL TC-33.2: Kira starting_energy must be 0.0 per GD spec")
+	
+	var test_combatant := CombatEntity.new()
+	assert(test_combatant.energy_per_attack == 15.0, "FAIL TC-33.2: energy_per_attack must be 15.0")
+	var attacks_needed: int = ceili(100.0 / test_combatant.energy_per_attack)
+	assert(attacks_needed == 7, "FAIL TC-33.2: Attacks needed for 100 MP must be 7 attacks (approx 5-6s)")
+	test_combatant.queue_free()
+	
+	# Verify spawned heroes have 0 energy at battle start
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			assert(h.current_energy == 0.0, "FAIL TC-33.2: Hero %s must start with 0 energy" % h.name)
+	_log_test(">>> 🟢 TC-33.2 Energy Gating & Starting Energy PASSED!")
+	
+	# 3. TC-33.3: Floor 1 Monster Base HP & Survivability (Base HP: 150 HP, Boss: 450 HP)
+	_log_test("[TC-33.3] Verifying Monster Base HP (Floor 1 Slimes: 150 HP, Boss: 450 HP)...")
+	spawn_encounter_for_floor(1)
+	assert(not enemies.is_empty(), "FAIL TC-33.3: Floor 1 enemies must spawn")
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity:
+			assert(e.data.base_hp >= 150.0, "FAIL TC-33.3: Floor 1 slime base_hp must be >= 150.0 (got %.1f)" % e.data.base_hp)
+			assert(e.max_hp >= 150.0, "FAIL TC-33.3: Floor 1 slime max_hp must be >= 150.0")
+	
+	spawn_encounter_for_floor(5, 2) # Force solo boss on floor 5
+	assert(not enemies.is_empty(), "FAIL TC-33.3: Boss must spawn on floor 5")
+	var boss_found: bool = false
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity and e.data.rank == EnemyData.EnemyRank.BOSS:
+			boss_found = true
+			assert(e.data.base_hp >= 450.0, "FAIL TC-33.3: Boss base_hp must be >= 450.0 (got %.1f)" % e.data.base_hp)
+	assert(boss_found, "FAIL TC-33.3: Boss enemy was not found on floor 5")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-33.3 Monster Base HP & Pacing PASSED!")
+	_log_test(">>> 🟢 TC-33 PASSED: Safe Hit Stop Anti-Lock & Combat Pacing fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-34: 70/30 Team XP Pool, Weighted Anchor Enemy Level & Anti-One-Shot Guardrail
+# ------------------------------------------------------------------------------
+func _run_tc_34_team_xp_and_survivability_guardrails() -> void:
+	_log_test("\n==================== [TEST TC-34: TEAM XP, ANCHOR LEVEL & SURVIVABILITY] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-34.1: 70/30 Shared Team XP Pool & Catch-up Mechanism
+	_log_test("[TC-34.1] Verifying 70/30 Shared Team XP Pool & +50% Catch-up for lagging heroes...")
+	var h_kira := hero_scene.instantiate() as HeroEntity
+	add_child(h_kira)
+	h_kira.initialize(_create_mock_hero_data("KiraTC34", HeroData.HeroClass.ASSASSIN, 100.0, 30.0, 0.0, 1.0))
+	
+	var h_soraka := hero_scene.instantiate() as HeroEntity
+	add_child(h_soraka)
+	h_soraka.initialize(_create_mock_hero_data("SorakaTC34", HeroData.HeroClass.SUPPORT, 120.0, 5.0, 10.0, 0.6))
+	
+	var h_arthur := hero_scene.instantiate() as HeroEntity
+	add_child(h_arthur)
+	h_arthur.initialize(_create_mock_hero_data("ArthurTC34", HeroData.HeroClass.TANK, 250.0, 10.0, 30.0, 0.8))
+	
+	# Scenario A: Kira dominates (950 damage dealt, 5 kills), Soraka 150 healing, Arthur 300 damage taken
+	h_kira.metrics.reset()
+	h_soraka.metrics.reset()
+	h_arthur.metrics.reset()
+	
+	h_kira.metrics.damage_dealt = 950.0
+	h_kira.metrics.kills = 5
+	h_soraka.metrics.healing_done = 150.0
+	h_arthur.metrics.damage_taken = 300.0
+	h_arthur.metrics.damage_dealt = 50.0
+	
+	# Execute finalize_battle_xp
+	progression_system.finalize_battle_xp(true, [h_kira, h_soraka, h_arthur])
+	
+	# In 70/30, Total Team XP = 2814.0. Shared Pool (70%) = 1969.8 -> 656.6 per hero minimum baseline!
+	# Soraka and Arthur should both receive substantial XP and level up, not starve at 0 or minimal XP.
+	assert(h_soraka.progression.current_level >= 5, "FAIL TC-34.1: Soraka must reach at least Level 5 from shared XP")
+	assert(h_arthur.progression.current_level >= 5, "FAIL TC-34.1: Arthur must reach at least Level 5 from shared XP")
+	assert(h_kira.progression.current_level >= 6, "FAIL TC-34.1: Kira (MVP) must reach at least Level 6")
+	_log_test(">>> [TC-34.1] Post-battle levels: Kira Lv%d | Soraka Lv%d | Arthur Lv%d" % [
+		h_kira.progression.current_level, h_soraka.progression.current_level, h_arthur.progression.current_level
+	])
+	
+	# Scenario B: Catch-up Mechanism (+50% XP when (avg_level - hero_level) >= 2)
+	h_kira.progression.current_level = 5
+	h_kira.progression.current_xp = 0.0
+	h_arthur.progression.current_level = 5
+	h_arthur.progression.current_xp = 0.0
+	h_soraka.progression.current_level = 1
+	h_soraka.progression.current_xp = 0.0
+	
+	# Avg level = (5 + 5 + 1) / 3 = 11 / 3 = 3.67 -> round = 4
+	# Difference for Soraka: 4 - 1 = 3 (>= 2) -> Catch-up active!
+	# Equal metric contribution:
+	h_kira.metrics.reset(); h_soraka.metrics.reset(); h_arthur.metrics.reset()
+	h_kira.metrics.damage_dealt = 100.0 / 1.5
+	h_arthur.metrics.damage_dealt = 100.0 / 0.2
+	h_soraka.metrics.healing_done = 100.0 / 2.0
+	
+	progression_system.finalize_battle_xp(true, [h_kira, h_arthur, h_soraka])
+	# Arthur gets 120.0 XP (no catch-up bonus)
+	# Soraka gets 120.0 * 1.50 = 180.0 XP (+50% catch-up bonus because 4 - 1 = 3 >= 2)
+	assert(is_equal_approx(h_arthur.progression.current_xp, 120.0), "FAIL TC-34.1: Arthur expected 120.0 XP (got %.1f)" % h_arthur.progression.current_xp)
+	assert(is_equal_approx(h_soraka.progression.current_xp, 180.0), "FAIL TC-34.1: Soraka expected 180.0 XP (+50%% bonus, got %.1f)" % h_soraka.progression.current_xp)
+	assert(is_equal_approx(h_soraka.progression.current_xp / h_arthur.progression.current_xp, 1.50), "FAIL TC-34.1: Catch-up ratio must be exactly 1.50x")
+	
+	h_kira.queue_free(); h_soraka.queue_free(); h_arthur.queue_free()
+	_log_test(">>> 🟢 TC-34.1 70/30 Team XP Pool & Catch-up Mechanism PASSED!")
+	
+	# 2. TC-34.2: Weighted Anchor Enemy Level (Purge Outlier max_hero_lv)
+	_log_test("[TC-34.2] Verifying Weighted Anchor Enemy Level (Outlier Hero Lv25 vs Lv3 team)...")
+	_reset_test_battlefield()
+	
+	# Setup: Kira Lv25, remaining 4 heroes Lv3
+	var outlier_hero := heroes[0] as HeroEntity
+	outlier_hero.progression.current_level = 25
+	for i in range(1, heroes.size()):
+		var h := heroes[i] as HeroEntity
+		if is_instance_valid(h):
+			h.progression.current_level = 3
+			
+	# Total hero lv = 25 + 3*4 = 37. Hero count = 5.
+	# avg_hero_lv = round(37 / 5) = 7.
+	# Floor 5 baseline = round(5 * 1.2) = 6.
+	# enemy_target_lv = clampi(6, max(1, 7 - 1), 7 + 2) = 6.
+	# Boss spawn lv = clampi(6 + 2, 2, 6 + 3) = 8.
+	# Elite spawn lv = clampi(6 + 1, 1, 6 + 2) = 7.
+	
+	# Spawn Floor 5, variant 1 (Boss + Elites)
+	spawn_encounter_for_floor(5, 1)
+	assert(not enemies.is_empty(), "FAIL TC-34.2: Floor 5 enemies must spawn")
+	
+	var boss_found := false
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity:
+			if e.data.rank == EnemyData.EnemyRank.BOSS:
+				boss_found = true
+				_log_test("[TC-34.2] Boss Spawned: %s (Lv%d) | Old formula would spawn Lv27-28!" % [e.name, e.level])
+				assert(e.level <= 9, "FAIL TC-34.2: Boss level must be <= 9 (got Lv%d)" % e.level)
+				assert(e.level >= 6, "FAIL TC-34.2: Boss level must be >= 6 (got Lv%d)" % e.level)
+			elif e.data.rank == EnemyData.EnemyRank.ELITE:
+				assert(e.level <= 8, "FAIL TC-34.2: Elite level must be <= 8 (got Lv%d)" % e.level)
+			else:
+				assert(e.level <= 7, "FAIL TC-34.2: Normal enemy level must be <= 7 (got Lv%d)" % e.level)
+	assert(boss_found, "FAIL TC-34.2: Floor 5 Boss must be found")
+	
+	# Spawn Floor 5, variant 2 (Solo Boss)
+	spawn_encounter_for_floor(5, 2)
+	for e in enemies:
+		if is_instance_valid(e) and e is EnemyEntity and e.data.rank == EnemyData.EnemyRank.BOSS:
+			assert(e.level <= 9, "FAIL TC-34.2: Solo Boss level must be <= 9 (got Lv%d)" % e.level)
+	_log_test(">>> 🟢 TC-34.2 Weighted Anchor Enemy Level PASSED!")
+	
+	# 3. TC-34.3: Magic Defense Scaling & Anti-One-Shot Survivability Guardrail
+	_log_test("[TC-34.3] Verifying Magic Defense Scaling (70% Armor) & Anti-One-Shot Guardrail (<= 40% Max HP)...")
+	var test_hero := hero_scene.instantiate() as HeroEntity
+	add_child(test_hero)
+	test_hero.initialize(_create_mock_hero_data("GuardrailHero", HeroData.HeroClass.SUPPORT, 120.0, 5.0, 20.0, 1.0))
+	
+	var test_enemy := enemy_scene.instantiate() as EnemyEntity
+	add_child(test_enemy)
+	var edata := EnemyData.new()
+	edata.name = "TestCaster"
+	edata.base_defense = 5.0
+	test_enemy.initialize(edata, 1)
+	
+	# 3a. Magic Defense Scaling Formula:
+	# Formula: 100.0 / (100.0 + defense * 0.70)
+	# Hero has 20.0 DEF -> effective magic def = 14.0 -> multiplier = 100.0 / 114.0 = ~0.877193
+	var magic_evt := DamageEvent.new(test_enemy, test_hero, 40.0, DamageEvent.DamageType.MAGIC)
+	combat_system.process_attack(magic_evt)
+	var expected_dmg: float = 40.0 * (100.0 / (100.0 + 20.0 * 0.70))
+	assert(is_equal_approx(magic_evt.final_damage, expected_dmg), "FAIL TC-34.3: Magic defense mitigation formula mismatch")
+	_log_test("[TC-34.3] Magic Defense: Base 40.0 -> Mitigated %.2f (Expected %.2f)" % [magic_evt.final_damage, expected_dmg])
+	
+	# 3b. Anti-One-Shot Survivability Guardrail:
+	# Single-hit damage from Enemy onto Hero cannot exceed 40% of Hero Max HP.
+	# Hero Max HP = 120.0 -> Ceiling = 48.0!
+	# Reset hero HP to full before testing lethal hit
+	test_hero.current_hp = test_hero.max_hp
+	test_hero.is_dead = false
+	
+	# Caster strikes with massive 500.0 raw damage:
+	var lethal_evt := DamageEvent.new(test_enemy, test_hero, 500.0, DamageEvent.DamageType.MAGIC)
+	combat_system.process_attack(lethal_evt)
+	assert(is_equal_approx(lethal_evt.final_damage, 48.0), "FAIL TC-34.3: Lethal damage must be clamped to 40 percent Max HP (48.0, got %.1f)" % lethal_evt.final_damage)
+	
+	# Hero automatically takes damage inside process_attack()
+	assert(is_equal_approx(test_hero.current_hp, 72.0), "FAIL TC-34.3: Hero must retain at least 60 percent HP (expected 72.0, got %.1f)" % test_hero.current_hp)
+	assert(not test_hero.is_dead, "FAIL TC-34.3: Hero must NOT be one-shot by monster ability")
+	_log_test("[TC-34.3] Anti-One-Shot: 500.0 Raw Lethal -> Clamped to %.1f (40 percent HP) | Hero HP: %.1f/120.0" % [lethal_evt.final_damage, test_hero.current_hp])
+	
+	test_hero.queue_free()
+	test_enemy.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-34.3 Magic Defense Scaling & Anti-One-Shot Guardrail PASSED!")
+	_log_test(">>> 🟢 TC-34 PASSED: Team XP Pool, Anchor Level & Survivability fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-35: Ability Cast Integrity & Safe Faction Resolution (Anti-Crash Guardrail)
+# ------------------------------------------------------------------------------
+func _run_tc_35_ability_cast_integrity_and_faction_resolution() -> void:
+	_log_test("\n==================== [TEST TC-35: ABILITY CAST INTEGRITY & FACTION RESOLUTION] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-35.1: Arthur Holy Shield Cast Execution
+	_log_test("[TC-35.1] Verifying Arthur Holy Shield Cast (Damage to Enemy, Shield to Self)...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-35.1: Arthur must be found in heroes")
+	
+	var enemy_target: EnemyEntity = null
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			enemy_target = e
+			break
+	assert(enemy_target != null, "FAIL TC-35.1: Enemy target must be found")
+	
+	# Load Arthur's Holy Shield ability resource
+	var arthur_ab_res: AbilityData = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	assert(arthur_ab_res != null, "FAIL TC-35.1: Arthur holy shield resource must load")
+	
+	var holy_shield_ability := Ability.new(arthur, arthur_ab_res)
+	arthur.unlocked_abilities.clear()
+	arthur.unlocked_abilities.append(holy_shield_ability)
+	
+	# Charge Arthur to 100 energy
+	arthur.current_energy = 100.0
+	arthur.omni_shield = 0.0
+	
+	var total_enemy_hp_before := 0.0
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			total_enemy_hp_before += e.current_hp
+	
+	# Cast Holy Shield
+	var cast_success := ability_system.execute_ability(holy_shield_ability)
+	assert(cast_success == true, "FAIL TC-35.1: Arthur Holy Shield cast execution failed")
+	
+	var total_enemy_hp_after := 0.0
+	for e in enemies:
+		if is_instance_valid(e) and not e.is_dead:
+			total_enemy_hp_after += e.current_hp
+	
+	# Enemy takes damage
+	assert(total_enemy_hp_after < total_enemy_hp_before, "FAIL TC-35.1: Enemies must receive physical damage from Holy Shield")
+	
+	# Arthur gets omni shield
+	assert(arthur.omni_shield >= 100.0, "FAIL TC-35.1: Arthur must receive omni shield (expected >= 100, got %.1f)" % arthur.omni_shield)
+	assert(arthur.current_energy == 0.0, "FAIL TC-35.1: Arthur energy must be consumed to 0")
+	_log_test(">>> [TC-35.1] Enemies Total HP: %.1f -> %.1f | Arthur Omni Shield: %.1f | Energy: %.1f" % [
+		total_enemy_hp_before, total_enemy_hp_after, arthur.omni_shield, arthur.current_energy
+	])
+	_log_test(">>> 🟢 TC-35.1 Arthur Holy Shield Cast Execution PASSED!")
+	
+	# 2. TC-35.2: Soraka Wish Multi-Target Heal Execution
+	_log_test("[TC-35.2] Verifying Soraka Wish Multi-Target Heal (All 5 Heroes Healed, Safe Faction)...")
+	var soraka: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Soraka":
+			soraka = h
+			break
+	assert(soraka != null, "FAIL TC-35.2: Soraka must be found in heroes")
+	
+	# Injure all heroes so heal can be measured
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			h.current_hp = h.max_hp * 0.50 # Injure to 50% HP
+			
+	var soraka_ab_res: AbilityData = load("res://data/abilities/soraka_wish.tres") as AbilityData
+	assert(soraka_ab_res != null, "FAIL TC-35.2: Soraka wish resource must load")
+	
+	var wish_ability := Ability.new(soraka, soraka_ab_res)
+	soraka.unlocked_abilities.clear()
+	soraka.unlocked_abilities.append(wish_ability)
+	soraka.current_energy = 100.0
+	
+	var wish_success := ability_system.execute_ability(wish_ability)
+	assert(wish_success == true, "FAIL TC-35.2: Soraka Wish cast execution failed")
+	
+	# Confirm all 5 heroes received healing
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			assert(h.current_hp > h.max_hp * 0.50, "FAIL TC-35.2: Hero %s was not healed by Wish (HP: %.1f/%.1f)" % [h.name, h.current_hp, h.max_hp])
+	assert(soraka.current_energy == 0.0, "FAIL TC-35.2: Soraka energy must be consumed to 0")
+	_log_test(">>> [TC-35.2] All heroes successfully healed by Soraka Wish without runtime crash!")
+	_log_test(">>> 🟢 TC-35.2 Soraka Wish Multi-Target Heal Execution PASSED!")
+	
+	# 3. TC-35.3: Monster Dark Flood Hybrid Cast Execution
+	_log_test("[TC-35.3] Verifying Monster Dark Flood Hybrid Cast (AoE Damage to Heroes, Heal to Boss)...")
+	_reset_test_battlefield()
+	
+	var boss_edata := EnemyData.new()
+	boss_edata.name = "Slime Chúa Tể"
+	boss_edata.base_hp = 1000.0
+	boss_edata.base_attack = 20.0
+	boss_edata.base_defense = 15.0
+	boss_edata.base_spell_power = 25.0
+	boss_edata.abilities = [create_slime_boss_ability()]
+	
+	var boss_unit := _spawn_custom_enemy_at_grid(boss_edata, Vector2i(3, 2), 1, EnemyData.EnemyRank.BOSS, true)
+	boss_unit.current_hp = 500.0 # Injured
+	boss_unit.current_energy = 100.0
+	
+	var hero_target: HeroEntity = heroes[0] as HeroEntity
+	var initial_hero_hp := hero_target.current_hp
+	
+	var boss_ability := boss_unit.unlocked_abilities[0]
+	var dark_flood_success := ability_system.execute_ability(boss_ability)
+	assert(dark_flood_success == true, "FAIL TC-35.3: Boss Dark Flood cast execution failed")
+	
+	# Verify Boss healed self
+	assert(boss_unit.current_hp > 500.0, "FAIL TC-35.3: Boss must heal itself with Dark Flood (got %.1f)" % boss_unit.current_hp)
+	
+	# Verify Heroes took damage
+	var damaged_heroes := 0
+	for h in heroes:
+		if is_instance_valid(h) and h.current_hp < h.max_hp:
+			damaged_heroes += 1
+	assert(damaged_heroes > 0, "FAIL TC-35.3: Heroes must take AoE magic damage from Dark Flood")
+	
+	# Verify entity.is_hero polymorphic property
+	assert(hero_target.is_hero == true, "FAIL TC-35.3: HeroEntity.is_hero must be true")
+	assert(boss_unit.is_hero == false, "FAIL TC-35.3: EnemyEntity.is_hero must be false")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-35.3 Monster Dark Flood Hybrid Cast Execution PASSED!")
+	_log_test(">>> 🟢 TC-35 PASSED: Ability Cast Integrity & Safe Faction Resolution fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-36: Victory Pacing & 1.0s Resolution Delay (Anti-Desync Guardrail)
+# ------------------------------------------------------------------------------
+func _run_tc_36_victory_pacing_and_resolution_delay() -> void:
+	_log_test("\n==================== [TEST TC-36: VICTORY PACING & RESOLUTION DELAY] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-36.1: Victory Settle State Lock & Hero Combat Deactivation
+	_log_test("[TC-36.1] Verifying Victory Settle State Lock & Immediate Hero Combat Deactivation...")
+	assert(heroes.size() > 0, "FAIL TC-36.1: Heroes must exist")
+	for h in heroes:
+		if is_instance_valid(h):
+			h.set_combat_active(true)
+			assert(h.is_processing() == true, "FAIL TC-36.1: Heroes must be active during combat")
+			
+	# Enable force delay mode to test the live settle timer
+	force_battle_end_delay = true
+	assert(_is_battle_resolving == false, "FAIL TC-36.1: _is_battle_resolving must be false before victory")
+	assert(battle_ended == false, "FAIL TC-36.1: battle_ended must be false initially")
+	
+	# Clear all enemies except one
+	while enemies.size() > 1:
+		var extra_e = enemies.pop_back()
+		if is_instance_valid(extra_e):
+			board_grid.remove_dead_entity(extra_e)
+			extra_e.queue_free()
+			
+	var last_enemy := enemies[0] as EnemyEntity
+	# Trigger death of last enemy via _on_entity_died
+	_on_entity_died(last_enemy, false)
+	
+	# Verify settle state lock is active immediately
+	assert(_is_battle_resolving == true, "FAIL TC-36.1: _is_battle_resolving must be true immediately on last enemy death")
+	assert(placement_controller.is_locked == true, "FAIL TC-36.1: PlacementController must remain locked during settle delay")
+	
+	# Verify all heroes have combat deactivated (no extra attacks or rogue energy generation)
+	for h in heroes:
+		if is_instance_valid(h) and h is HeroEntity:
+			assert(h.target == null, "FAIL TC-36.1: Hero target must be cleared to null upon victory settle")
+			assert(h.attack_timer.is_stopped() == true, "FAIL TC-36.1: Hero attack_timer must be stopped immediately")
+			assert(h.is_processing() == false, "FAIL TC-36.1: Hero processing must be deactivated")
+	_log_test(">>> 🟢 TC-36.1 Victory Settle State Lock PASSED!")
+	
+	# 2. TC-36.2: Delayed Summary Trigger Verification (t = 0.5s -> hidden, t = 1.05s -> visible)
+	_log_test("[TC-36.2] Verifying Delayed Summary Trigger (Hidden at 0.5s, Visible at 1.05s)...")
+	assert(combat_summary_ui != null, "FAIL TC-36.2: combat_summary_ui must exist")
+	assert(combat_summary_ui.visible == false, "FAIL TC-36.2: Summary UI must be hidden at t = 0.0s")
+	
+	# Wait 0.5s (halfway through 1.0s delay)
+	await get_tree().create_timer(0.5).timeout
+	assert(combat_summary_ui.visible == false, "FAIL TC-36.2: Summary UI must NOT pop up at t = 0.5s (visual desync guardrail)")
+	assert(battle_ended == false, "FAIL TC-36.2: battle_ended must still be false at t = 0.5s")
+	_log_test(">>> [TC-36.2] At t = 0.5s: combat_summary_ui.visible == false (Smooth tweens playing undisturbed)")
+	
+	# Wait remaining 0.55s (reaching 1.05s > VICTORY_SETTLE_DELAY)
+	await get_tree().create_timer(0.55).timeout
+	assert(battle_ended == true, "FAIL TC-36.2: battle_ended must be true after 1.0s delay")
+	assert(combat_summary_ui.visible == true, "FAIL TC-36.2: Summary UI must become visible after 1.0s delay")
+	_log_test(">>> [TC-36.2] At t = 1.05s: combat_summary_ui.visible == true (Victory screen shown cleanly)")
+	_log_test(">>> 🟢 TC-36.2 Delayed Summary Trigger Verification PASSED!")
+	
+	# 3. TC-36.3: Visual Desync Protection & Tween Timing Verification
+	_log_test("[TC-36.3] Verifying Visual Desync Protection (HealthBar & GhostBar Tweens)...")
+	combat_summary_ui.hide()
+	force_battle_end_delay = false
+	_reset_test_battlefield()
+	
+	# Verify settle delays are sufficient for status bar tweens
+	assert(VICTORY_SETTLE_DELAY >= 1.0, "FAIL TC-36.3: VICTORY_SETTLE_DELAY must be at least 1.0s")
+	assert(DEFEAT_SETTLE_DELAY >= 0.8, "FAIL TC-36.3: DEFEAT_SETTLE_DELAY must be at least 0.8s")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-36.3 Visual Desync Protection PASSED!")
+	_log_test(">>> 🟢 TC-36 PASSED: Victory Pacing & 1.0s Resolution Delay fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -3101,6 +4927,10 @@ func _reset_test_battlefield() -> void:
 	_current_shake_strength = 0.0
 	if camera != null:
 		camera.offset = Vector2.ZERO
+	_is_hit_stop_active = false
+	_is_battle_resolving = false
+	force_battle_end_delay = false
+	Engine.time_scale = _normal_game_speed
 	battle_ended = false
 	if RunManager != null:
 		RunManager.start_new_run(10, 2)

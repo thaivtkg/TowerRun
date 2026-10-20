@@ -14,6 +14,11 @@ func setup_hooks() -> void:
 		combat_system.entity_killed.connect(_on_entity_killed)
 
 
+func _is_hostile(entity_a: CombatEntity, entity_b: CombatEntity) -> bool:
+	if not is_instance_valid(entity_a) or not is_instance_valid(entity_b):
+		return false
+	return (entity_a is HeroEntity) != (entity_b is HeroEntity)
+
 # Trả về bool để biết ability có thực sự thi triển không (có target không)
 func execute_ability(ability: Ability) -> bool:
 	if ability == null or not is_instance_valid(ability.owner): return false
@@ -36,9 +41,19 @@ func execute_ability(ability: Ability) -> bool:
 		
 	ability.start_cooldown()
 	
+	var self_effects_applied: Array[EffectData] = []
 	for target in targets:
 		for effect in ability.data.effects:
-			_apply_effect(effect, source, target)
+			if effect is ShieldEffectData and (effect.apply_to_self or (target != null and _is_hostile(source, target))):
+				if not self_effects_applied.has(effect):
+					self_effects_applied.append(effect)
+					_apply_effect(effect, source, source)
+			elif effect is HealEffectData and (effect.apply_to_self or (target != null and _is_hostile(source, target) and ability.data.target_rule != AbilityData.TargetRule.SINGLE_ALLY and ability.data.target_rule != AbilityData.TargetRule.ALL_ALLIES and ability.data.target_rule != AbilityData.TargetRule.LOWEST_HP_ALLY)):
+				if not self_effects_applied.has(effect):
+					self_effects_applied.append(effect)
+					_apply_effect(effect, source, source)
+			else:
+				_apply_effect(effect, source, target)
 			
 	ability_executed.emit(source, ability)
 	return true # Cast thành công
@@ -70,7 +85,7 @@ func trigger_passives(source: CombatEntity, condition: AbilityData.TriggerCondit
 						
 				_executing_passives.erase(ability) # Mở khóa
 
-func _on_damage_dealt(source: CombatEntity, target: CombatEntity, _amount: float, is_crit: bool) -> void:
+func _on_damage_dealt(source: CombatEntity, target: CombatEntity, _amount: float, is_crit: bool, _damage_type: int = DamageEvent.DamageType.PHYSICAL) -> void:
 	trigger_passives(source, AbilityData.TriggerCondition.ON_ATTACK)
 	if is_crit:
 		trigger_passives(source, AbilityData.TriggerCondition.ON_CRIT)
@@ -99,9 +114,20 @@ func _apply_effect(effect: EffectData, source: CombatEntity, target: CombatEntit
 	elif effect is HealEffectData:
 		var heal_effect = effect as HealEffectData
 		var actual_heal: float = heal_effect.calculate_total_value(source)
+		# Tăng 50% hiệu lực hồi máu cho đồng minh dưới 40% máu (chuẩn Nguyện Ước Cứu Rỗi)
+		if target.max_hp > 0.0 and (target.current_hp / target.max_hp) <= 0.40:
+			actual_heal *= 1.50
 		var old_hp: float = target.current_hp
 		target.heal(actual_heal)
 		var actual_healed: float = target.current_hp - old_hp
 		if combat_system != null and actual_healed > 0.0:
 			combat_system.entity_healed.emit(source, target, actual_healed)
 		print("[AbilitySystem] 💚 %s heals %s for %.1f HP. (New HP: %.1f)" % [source.name, target.name, actual_healed, target.current_hp])
+		
+	elif effect is ShieldEffectData:
+		var shield_effect = effect as ShieldEffectData
+		var actual_shield: float = shield_effect.calculate_total_value(source)
+		var shield_target: CombatEntity = source if (shield_effect.apply_to_self or (target != null and _is_hostile(source, target))) else target
+		if is_instance_valid(shield_target):
+			shield_target.add_shield(actual_shield, shield_effect.shield_type, shield_effect.duration)
+			print("[AbilitySystem] 🛡️ %s grants %.1f shield to %s for %.1fs." % [source.name, actual_shield, shield_target.name, shield_effect.duration])
