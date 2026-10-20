@@ -21,6 +21,7 @@ GameManager="*uid://b5q6t1v3xhu3r"
 SaveManager="*uid://drkguelcgtghg"
 DataManager="*uid://lub4pclrj6oa"
 RunManager="*uid://bt06pfyx6rpqn"
+ItemManager="*res://systems/items/item_manager.gd"
 
 [display]
 

@@ -336,10 +336,8 @@ func reset_for_new_battle() -> void:
 	
 	if self is HeroEntity:
 		var hero := self as HeroEntity
-		if hero.data != null and "starting_energy" in hero.data:
-			hero.current_energy = hero.data.starting_energy
-		else:
-			hero.current_energy = 0.0
+		var base_start_energy: float = hero.data.starting_energy if (hero.data != null and "starting_energy" in hero.data) else 0.0
+		hero.current_energy = base_start_energy + hero.get_item_bonus_starting_energy()
 		for ab in hero.unlocked_abilities:
 			ab.current_cooldown = 0.0
 		if hero.metrics != null:

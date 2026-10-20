@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "obsidian_plating"
+name = "Phiến Giáp Hắc Thạch"
+description = "Miếng giáp rèn từ đá núi lửa siêu cứng, giảm sát thương vật lý và kháng phép nhẹ."
+is_component = true
+recipe = []
+stat_modifiers = {
+"bonus_ad": 0.0,
+"bonus_ap": 0.0,
+"bonus_armor": 20.0,
+"crit_chance": 0.0,
+"starting_energy": 0.0
+}
+passive_id = ""

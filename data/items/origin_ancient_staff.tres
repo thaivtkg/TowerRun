@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="ItemData" format=3]
+
+[ext_resource type="Script" path="res://data/items/item_data.gd" id="1_item"]
+
+[resource]
+script = ExtResource("1_item")
+id = "origin_ancient_staff"
+name = "Cổ Trượng Khởi Nguyên"
+description = "Nội tại [Ma Lực Bất Tận]: Cứ mỗi 3 giây trong giao tranh, người sở hữu tự động tích tụ thêm +8 SMPT cho đến hết trận đấu."
+is_component = false
+recipe = ["sorcery_crystal", "soul_aether_bead"]
+stat_modifiers = {
+"bonus_ad": 0.0,
+"bonus_ap": 20.0,
+"bonus_armor": 0.0,
+"crit_chance": 0.0,
+"starting_energy": 20.0
+}
+passive_id = "stacking_ap"
