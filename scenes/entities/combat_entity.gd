@@ -7,10 +7,39 @@ signal ability_requested(ability: Ability)
 signal healed(entity: CombatEntity, amount: float)
 signal hp_changed(current: float, max_val: float)
 signal energy_changed(current: float, max_val: float)
+signal shield_changed(omni: float, phys: float, magic: float)
 
 const STATUS_BAR_SCENE: PackedScene = preload("res://scenes/ui/status_bar/EntityStatusBar.tscn")
 
 var status_bar: EntityStatusBar = null
+
+# S5.3: TRI-SHIELD MATRIX (Khiên Trắng, Khiên Vật Lý, Khiên Phép)
+var omni_shield: float = 0.0:
+	set(val):
+		omni_shield = maxf(0.0, val)
+		shield_changed.emit(omni_shield, physical_shield, magic_shield)
+
+var physical_shield: float = 0.0:
+	set(val):
+		physical_shield = maxf(0.0, val)
+		shield_changed.emit(omni_shield, physical_shield, magic_shield)
+
+var magic_shield: float = 0.0:
+	set(val):
+		magic_shield = maxf(0.0, val)
+		shield_changed.emit(omni_shield, physical_shield, magic_shield)
+
+func get_total_shield() -> float:
+	return omni_shield + physical_shield + magic_shield
+
+func add_shield(amount: float, shield_type: int = 0) -> void:
+	match shield_type:
+		0:
+			omni_shield += amount
+		1:
+			physical_shield += amount
+		2:
+			magic_shield += amount
 var current_hp: float = 0.0:
 	set(val):
 		current_hp = val
@@ -147,6 +176,8 @@ func setup_status_bar(is_hero: bool, show_energy: bool = false) -> void:
 		
 		if not hp_changed.is_connected(status_bar.on_hp_changed):
 			hp_changed.connect(status_bar.on_hp_changed)
+		if not shield_changed.is_connected(status_bar.on_shield_changed):
+			shield_changed.connect(status_bar.on_shield_changed)
 			
 		var init_energy: float = 0.0
 		var init_max_energy: float = 100.0
@@ -157,6 +188,7 @@ func setup_status_bar(is_hero: bool, show_energy: bool = false) -> void:
 			init_max_energy = get("max_energy") if get("max_energy") != null else 100.0
 			
 		status_bar.setup(is_hero, current_hp, max_hp, init_energy, init_max_energy, show_energy)
+		status_bar.set_damage_reduction(damage_reduction)
 
 func heal(amount: float) -> void:
 	if is_dead or amount <= 0.0:
@@ -168,7 +200,7 @@ func heal(amount: float) -> void:
 	if actual_healed > 0.0:
 		healed.emit(self, actual_healed)
 
-func take_damage(amount: float) -> void:
+func take_damage(amount: float, damage_type: DamageEvent.DamageType = DamageEvent.DamageType.PHYSICAL) -> void:
 	if is_dead: return
 	
 	if amount < 0 or is_nan(amount) or is_inf(amount):
@@ -181,8 +213,42 @@ func take_damage(amount: float) -> void:
 		hp_changed.emit(current_hp, max_hp)
 		return
 
-	current_hp -= amount
-	print("[Combat] %s takes %.1f damage! (HP: %.1f)" % [name, amount, current_hp])
+	var remaining := amount
+	match damage_type:
+		DamageEvent.DamageType.PHYSICAL:
+			# Khấu trừ: Khiên Vật Lý -> Khiên Trắng -> Máu
+			if physical_shield > 0.0:
+				var absorbed := minf(physical_shield, remaining)
+				physical_shield -= absorbed
+				remaining -= absorbed
+			if remaining > 0.0 and omni_shield > 0.0:
+				var absorbed := minf(omni_shield, remaining)
+				omni_shield -= absorbed
+				remaining -= absorbed
+		DamageEvent.DamageType.MAGIC:
+			# Khấu trừ: Khiên Phép -> Khiên Trắng -> Máu
+			if magic_shield > 0.0:
+				var absorbed := minf(magic_shield, remaining)
+				magic_shield -= absorbed
+				remaining -= absorbed
+			if remaining > 0.0 and omni_shield > 0.0:
+				var absorbed := minf(omni_shield, remaining)
+				omni_shield -= absorbed
+				remaining -= absorbed
+		DamageEvent.DamageType.TRUE:
+			# Xuyên qua Khiên Vật Lý & Phép, chỉ Khiên Trắng chặn được
+			if omni_shield > 0.0:
+				var absorbed := minf(omni_shield, remaining)
+				omni_shield -= absorbed
+				remaining -= absorbed
+
+	if remaining > 0.0:
+		current_hp -= remaining
+		
+	print("[Combat] %s takes %.1f damage! (HP: %.1f | Shields: Omni=%.1f, Phys=%.1f, Mag=%.1f)" % [name, amount, current_hp, omni_shield, physical_shield, magic_shield])
+	
+	hp_changed.emit(current_hp, max_hp)
+	shield_changed.emit(omni_shield, physical_shield, magic_shield)
 	
 	if current_hp <= 0:
 		_die()
@@ -312,14 +378,31 @@ func teleport_to_grid_cell(target_cell: Vector2i) -> bool:
 	return true
 
 
+var _dr_aura_rot: float = 0.0
+
 func _process(delta: float) -> void:
 	if is_dead:
 		return
+	if damage_reduction > 0.0:
+		_dr_aura_rot += delta * 1.5
+		queue_redraw()
 	for ability in unlocked_abilities:
 		ability.process_cooldown(delta)
 		if ability.data.ability_type == AbilityData.AbilityType.ACTIVE and ability.is_ready(current_energy):
 			if ability.data.target_rule == AbilityData.TargetRule.SELF or (is_instance_valid(target) and not target.is_dead):
 				ability_requested.emit(ability)
+
+func _draw() -> void:
+	if damage_reduction > 0.0 and not is_dead:
+		var radius: float = 24.0
+		var pts: PackedVector2Array = []
+		var alpha: float = 0.4 + 0.3 * sin(_dr_aura_rot * 2.0)
+		var aura_col := Color(0.95, 0.77, 0.06, alpha)
+		for i in range(6):
+			var a := _dr_aura_rot + deg_to_rad(60.0 * i)
+			pts.append(Vector2(cos(a), sin(a)) * radius)
+		pts.append(pts[0])
+		draw_polyline(pts, aura_col, 2.0)
 
 # ==========================================
 # VIRTUAL METHODS (STATS CONTRACT)

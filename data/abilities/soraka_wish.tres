@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3]
+
+[ext_resource type="Script" path="res://data/abilities/effect_data.gd" id="1_eff"]
+[ext_resource type="Script" path="res://data/abilities/heal_effect_data.gd" id="2_heal"]
+[ext_resource type="Script" path="res://data/abilities/ability_data.gd" id="3_ab"]
+
+[sub_resource type="Resource" id="Resource_heal"]
+script = ExtResource("2_heal")
+base_heal = 80.0
+scalings = {
+"TOTAL_AP": 0.5
+}
+
+[resource]
+script = ExtResource("3_ab")
+id = "soraka_wish"
+name = "Nguyện Ước Cứu Rỗi"
+ability_type = 2
+target_rule = 7
+cooldown = 0.0
+energy_cost = 100.0
+narrative_template = "{hero} cầu nguyện ánh sáng tinh tú bao bọc {action_target}, lập tức [b]Hồi Phục[/b] {0} Máu cho tất cả các mục tiêu. Những đồng minh đang dưới 40% máu nhận thêm 50% lượng máu hồi phục."
+caveat = "Các đồng minh đang chịu trạng thái Vết Thương Sâu sẽ chỉ nhận 50% lượng hồi phục từ kỹ năng này."
+progression_ranks = {
+"Hồi máu": [80, 130, 190],
+"Tỉ lệ SMPT": ["50%", "65%", "80%"]
+}
+effects = Array[ExtResource("1_eff")]([SubResource("Resource_heal")])

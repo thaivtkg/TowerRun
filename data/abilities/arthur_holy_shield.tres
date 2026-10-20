@@ -24,10 +24,10 @@ scalings = {
 script = ExtResource("4_ab")
 id = "arthur_holy_shield"
 name = "Khiên Thánh Phán Quyết"
-ability_type = 1
+ability_type = 2
 target_rule = 3
-cooldown = 8.0
-energy_cost = 50.0
+cooldown = 0.0
+energy_cost = 100.0
 narrative_template = "{hero} dộng mạnh chiếc khiên hộ mệnh xuống đất, tạo chấn động hình nón lên {action_target}, gây {0} và [b]Làm Choáng[/b] mục tiêu trúng đòn trong 1.25 giây.
 
 Đồng thời, {hero} nhận một lớp [b]Lá Chắn[/b] bảo hộ hấp thụ {1} trong 4 giây."

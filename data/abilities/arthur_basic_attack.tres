@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3]
+
+[ext_resource type="Script" path="res://data/abilities/effect_data.gd" id="1_eff"]
+[ext_resource type="Script" path="res://data/abilities/damage_effect_data.gd" id="2_dmg"]
+[ext_resource type="Script" path="res://data/abilities/ability_data.gd" id="3_ab"]
+
+[sub_resource type="Resource" id="Resource_dmg"]
+script = ExtResource("2_dmg")
+base_damage = 5.0
+damage_type = 0
+scalings = {
+"TOTAL_AD": 1.0
+}
+
+[resource]
+script = ExtResource("3_ab")
+id = "arthur_basic_attack"
+name = "Trọng Kiếm Tiên Phong"
+cooldown = 0.7
+target_rule = 1
+narrative_template = "{hero} dồn lực vung thanh trọng kiếm giáng mạnh vào {action_target}, gây {0} sát thương vật lý và tích tụ 10 Năng Lượng."
+caveat = "Đòn đánh tạo áp lực khiến mục tiêu bị giảm 10% Tốc độ di chuyển trong 0.5s."
+effects = Array[ExtResource("1_eff")]([SubResource("Resource_dmg")])

@@ -268,13 +268,21 @@ func _create_mock_hero_data(h_name: String, h_class: HeroData.HeroClass, hp: flo
 	data.attack_speed = spd
 	data.attack_range = atk_range
 	if h_name == "Arthur":
+		data.basic_attack = load("res://data/abilities/arthur_basic_attack.tres") as AbilityData
 		var ab = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
-		if ab:
-			data.pool_lv10_actives.append(ab)
+		if ab: data.pool_lv10_actives.append(ab)
+	elif h_name == "Robin":
+		data.basic_attack = load("res://data/abilities/robin_basic_attack.tres") as AbilityData
+		var ab = load("res://data/abilities/robin_rain_of_arrows.tres") as AbilityData
+		if ab: data.pool_lv10_actives.append(ab)
 	elif h_name == "Jaina":
+		data.basic_attack = load("res://data/abilities/jaina_basic_attack.tres") as AbilityData
 		var ab = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
-		if ab:
-			data.pool_lv10_actives.append(ab)
+		if ab: data.pool_lv10_actives.append(ab)
+	elif h_name == "Soraka":
+		data.basic_attack = load("res://data/abilities/soraka_basic_attack.tres") as AbilityData
+		var ab = load("res://data/abilities/soraka_wish.tres") as AbilityData
+		if ab: data.pool_lv10_actives.append(ab)
 	return data
 
 func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
@@ -298,40 +306,27 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	
 	hero.initialize(data)
 	
-	# Đảm bảo mọi Hero đều có ít nhất 1 kỹ năng ULTIMATE để xả Energy khi đầy 100/100
-	var has_ult: bool = false
-	for ab in hero.unlocked_abilities:
-		if ab.data.ability_type == AbilityData.AbilityType.ULTIMATE:
-			has_ult = true
-			break
-			
-	if not has_ult:
-		var ult_res: AbilityData = null
-		if data.name == "Jaina":
-			ult_res = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
-		if ult_res != null:
+	# Đảm bảo mọi Hero đều được trang bị Ultimate chính thức theo bản sắc Tướng (Xóa bỏ hoàn toàn default_ult thô)
+	var ult_res: AbilityData = null
+	if data.name == "Kira":
+		ult_res = load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
+	elif data.name == "Arthur":
+		ult_res = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	elif data.name == "Robin":
+		ult_res = load("res://data/abilities/robin_rain_of_arrows.tres") as AbilityData
+	elif data.name == "Jaina":
+		ult_res = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+	elif data.name == "Soraka":
+		ult_res = load("res://data/abilities/soraka_wish.tres") as AbilityData
+		
+	if ult_res != null:
+		var has_it := false
+		for ab in hero.unlocked_abilities:
+			if ab.data.id == ult_res.id:
+				has_it = true
+				break
+		if not has_it:
 			hero.unlocked_abilities.append(Ability.new(hero, ult_res))
-		else:
-			var default_ult := AbilityData.new()
-			default_ult.name = data.name + " Ultimate"
-			default_ult.ability_type = AbilityData.AbilityType.ULTIMATE
-			default_ult.target_rule = AbilityData.TargetRule.SINGLE_ENEMY
-			default_ult.cooldown = 1.0
-			var ult_dmg := DamageEffectData.new()
-			ult_dmg.base_damage = data.base_attack * 2.5
-			default_ult.effects.append(ult_dmg)
-			hero.unlocked_abilities.append(Ability.new(hero, default_ult))
-
-	if data.name == "Arthur":
-		var shield_ab = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
-		if shield_ab:
-			var has_shield := false
-			for ab in hero.unlocked_abilities:
-				if ab.data.id == shield_ab.id:
-					has_shield = true
-					break
-			if not has_shield:
-				hero.unlocked_abilities.append(Ability.new(hero, shield_ab))
 
 	hero.healed.connect(_on_entity_healed)
 	if hero.progression != null:
@@ -1216,8 +1211,9 @@ func _run_all_tests() -> void:
 	_run_tc_27_dynamic_prestige_border_palette()
 	_run_tc_28_hero_upgrade_anti_displacement()
 	_run_tc_29_four_tier_ability_tooltips()
+	_run_tc_30_comprehensive_narrative_and_tri_shield()
 	
-	_log_test("\n🎉 TẤT CẢ 29 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 30 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -4040,6 +4036,123 @@ func _run_tc_29_four_tier_ability_tooltips() -> void:
 	hero_entity.queue_free()
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-29 PASSED: 4-Tier Ability Tooltip Architecture & Spatial Layout fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-30: Comprehensive Hero Narrative Roster & S5.3 Tri-Shield Matrix
+# ------------------------------------------------------------------------------
+func _run_tc_30_comprehensive_narrative_and_tri_shield() -> void:
+	_log_test("\n==================== [TEST TC-30: NARRATIVE ROSTER & S5.3 TRI-SHIELD] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-30.1: Comprehensive Narrative Audit for all 5 Heroes
+	_log_test("[TC-30.1] Verifying 100% Narrative & Dynamic Formula on all 5 Heroes...")
+	var test_heroes: Dictionary = {
+		"Kira": { "basic": "Đoản Đao Hắc Ám", "ult": "Vũ Điệu Lưỡi Hái", "narrative_key": "bóng tối" },
+		"Arthur": { "basic": "Trọng Kiếm Tiên Phong", "ult": "Khiên Thánh Phán Quyết", "narrative_key": "khiên" },
+		"Robin": { "basic": "Mũi Tên Xuyên Thấu", "ult": "Mưa Tên Bão Táp", "narrative_key": "bão tên" },
+		"Jaina": { "basic": "Tia Băng Hàn Giá", "ult": "Bão Tuyết Vĩnh Cửu", "narrative_key": "băng tuyết" },
+		"Soraka": { "basic": "Bụi Sao Tinh Tú", "ult": "Nguyện Ước Cứu Rỗi", "narrative_key": "Hồi Phục" }
+	}
+	
+	for hero_name in test_heroes.keys():
+		var cfg = test_heroes[hero_name]
+		var found_hero: HeroEntity = null
+		for h in heroes:
+			if is_instance_valid(h) and h is HeroEntity and h.data != null and h.data.name == hero_name:
+				found_hero = h
+				break
+		assert(found_hero != null, "FAIL TC-30.1: Hero %s must exist in battlefield roster" % hero_name)
+		
+		# Check Basic Attack
+		assert(found_hero.basic_attack_ability != null and found_hero.basic_attack_ability.data != null, "FAIL TC-30.1: %s must have basic_attack_ability" % hero_name)
+		assert(found_hero.basic_attack_ability.data.name == cfg["basic"], "FAIL TC-30.1: %s basic attack name mismatch" % hero_name)
+		var basic_tooltip := found_hero.basic_attack_ability.data.get_formatted_tooltip(found_hero, true)
+		assert(not basic_tooltip.contains("Gây ") or basic_tooltip.contains(found_hero.name), "FAIL TC-30.1: %s basic attack must not be raw text" % hero_name)
+		assert(found_hero.basic_attack_ability.data.narrative_template != "", "FAIL TC-30.1: %s basic attack must have narrative_template" % hero_name)
+		
+		# Check Ultimate
+		var found_ult: Ability = null
+		for ab in found_hero.unlocked_abilities:
+			if ab.data.ability_type == AbilityData.AbilityType.ULTIMATE:
+				found_ult = ab
+				break
+		assert(found_ult != null, "FAIL TC-30.1: %s must have official Ultimate equipped" % hero_name)
+		assert(found_ult.data.name == cfg["ult"], "FAIL TC-30.1: %s Ultimate name mismatch" % hero_name)
+		assert(found_ult.data.narrative_template != "", "FAIL TC-30.1: %s Ultimate must have narrative_template" % hero_name)
+		var ult_tooltip := found_ult.data.get_formatted_tooltip(found_hero, true)
+		assert(not ult_tooltip.contains("Gây %.1f sát thương phép." % (found_hero.data.base_attack * 2.5)), "FAIL TC-30.1: %s must not have default_ult raw text" % hero_name)
+		assert(ult_tooltip.contains(cfg["narrative_key"]), "FAIL TC-30.1: %s tooltip must contain %s" % [hero_name, cfg["narrative_key"]])
+		_log_test("  * %s: Basic=[%s] Ult=[%s] -> Validated!" % [hero_name, found_hero.basic_attack_ability.data.name, found_ult.data.name])
+		
+	_log_test(">>> 🟢 TC-30.1 Comprehensive Narrative Audit PASSED!")
+	
+	# 2. TC-30.2: Physical Damage vs Tri-Shield Routing
+	_log_test("[TC-30.2] Verifying Physical Damage Absorption (Phys Shield -> Omni Shield -> HP)...")
+	var dummy := hero_scene.instantiate() as HeroEntity
+	add_child(dummy)
+	dummy.initialize(_create_mock_hero_data("ShieldTester", HeroData.HeroClass.TANK, 100.0, 10.0, 0.0, 1.0))
+	dummy.current_hp = 100.0
+	dummy.physical_shield = 50.0
+	dummy.omni_shield = 50.0
+	dummy.magic_shield = 50.0
+	
+	dummy.take_damage(70.0, DamageEvent.DamageType.PHYSICAL)
+	assert(dummy.physical_shield == 0.0, "FAIL TC-30.2: Physical shield should be depleted from 50 to 0")
+	assert(dummy.omni_shield == 30.0, "FAIL TC-30.2: Omni shield should absorb remaining 20 (50 -> 30)")
+	assert(dummy.magic_shield == 50.0, "FAIL TC-30.2: Magic shield must remain completely untouched (50.0)")
+	assert(dummy.current_hp == 100.0, "FAIL TC-30.2: HP must remain completely untouched at 100.0")
+	_log_test(">>> 🟢 TC-30.2 Physical Damage vs Tri-Shield PASSED!")
+	
+	# 3. TC-30.3: Magic Damage vs Tri-Shield Routing
+	_log_test("[TC-30.3] Verifying Magic Damage Absorption (Magic Shield -> Omni Shield -> HP)...")
+	dummy.current_hp = 100.0
+	dummy.physical_shield = 50.0
+	dummy.omni_shield = 50.0
+	dummy.magic_shield = 50.0
+	
+	dummy.take_damage(70.0, DamageEvent.DamageType.MAGIC)
+	assert(dummy.magic_shield == 0.0, "FAIL TC-30.3: Magic shield should be depleted from 50 to 0")
+	assert(dummy.omni_shield == 30.0, "FAIL TC-30.3: Omni shield should absorb remaining 20 (50 -> 30)")
+	assert(dummy.physical_shield == 50.0, "FAIL TC-30.3: Physical shield must remain completely untouched (50.0)")
+	assert(dummy.current_hp == 100.0, "FAIL TC-30.3: HP must remain completely untouched at 100.0")
+	_log_test(">>> 🟢 TC-30.3 Magic Damage vs Tri-Shield PASSED!")
+	
+	# 4. TC-30.4: True Damage & Shield Bypass
+	_log_test("[TC-30.4] Verifying True Damage bypasses Physical & Magic Shields...")
+	dummy.current_hp = 100.0
+	dummy.physical_shield = 50.0
+	dummy.omni_shield = 50.0
+	dummy.magic_shield = 50.0
+	
+	dummy.take_damage(70.0, DamageEvent.DamageType.TRUE)
+	assert(dummy.omni_shield == 0.0, "FAIL TC-30.4: Omni shield should absorb 50 and deplete to 0")
+	assert(dummy.physical_shield == 50.0, "FAIL TC-30.4: Physical shield must NOT absorb True damage")
+	assert(dummy.magic_shield == 50.0, "FAIL TC-30.4: Magic shield must NOT absorb True damage")
+	assert(dummy.current_hp == 80.0, "FAIL TC-30.4: True damage must bypass into HP (100 -> 80)")
+	_log_test(">>> 🟢 TC-30.4 True Damage & Shield Bypass PASSED!")
+	
+	# 5. TC-30.5: Ghost HP Delay & DR Indicator Verification
+	_log_test("[TC-30.5] Verifying Ghost HP & DR Indicator...")
+	dummy.setup_status_bar(true)
+	assert(dummy.status_bar != null, "FAIL TC-30.5: status_bar must exist")
+	assert(dummy.status_bar.ghost_bar != null, "FAIL TC-30.5: ghost_bar must exist in status_bar")
+	assert(dummy.status_bar.dr_badge != null, "FAIL TC-30.5: dr_badge must exist in status_bar")
+	
+	# Verify DR badge toggling
+	dummy.damage_reduction = 0.30
+	dummy.status_bar.set_damage_reduction(dummy.damage_reduction)
+	assert(dummy.status_bar.dr_badge.visible == true, "FAIL TC-30.5: dr_badge must be visible when DR > 0")
+	assert(dummy.status_bar.dr_badge.tooltip_text.contains("-30%"), "FAIL TC-30.5: dr_badge tooltip must show -30%")
+	
+	dummy.damage_reduction = 0.0
+	dummy.status_bar.set_damage_reduction(dummy.damage_reduction)
+	assert(dummy.status_bar.dr_badge.visible == false, "FAIL TC-30.5: dr_badge must be hidden when DR == 0")
+	
+	# Clean up
+	dummy.queue_free()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-30.5 Ghost HP & DR Indicator PASSED!")
+	_log_test(">>> 🟢 TC-30 PASSED: Comprehensive Narrative & Tri-Shield Matrix fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

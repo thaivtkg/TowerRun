@@ -35,8 +35,8 @@ func process_attack(event: DamageEvent) -> void:
 		event.base_damage, event.target.get_defense(), event.final_damage
 	])
 	
-	# Áp dụng sát thương
-	event.target.take_damage(event.final_damage)
+	# Áp dụng sát thương với phân loại DamageType
+	event.target.take_damage(event.final_damage, event.damage_type)
 	
 	# Kích hoạt signal cho UI, VFX, Passive & Progression
 	damage_dealt.emit(event.source, event.target, event.final_damage, event.is_crit, event.damage_type)

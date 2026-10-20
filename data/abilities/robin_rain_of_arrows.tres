@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="AbilityData" format=3]
+
+[ext_resource type="Script" path="res://data/abilities/effect_data.gd" id="1_eff"]
+[ext_resource type="Script" path="res://data/abilities/damage_effect_data.gd" id="2_dmg"]
+[ext_resource type="Script" path="res://data/abilities/ability_data.gd" id="3_ab"]
+
+[sub_resource type="Resource" id="Resource_dmg"]
+script = ExtResource("2_dmg")
+base_damage = 90.0
+damage_type = 0
+scalings = {
+"TOTAL_AD": 0.6
+}
+
+[resource]
+script = ExtResource("3_ab")
+id = "robin_rain_of_arrows"
+name = "Mưa Tên Bão Táp"
+ability_type = 2
+target_rule = 10
+aoe_shape = 1
+aoe_radius = 1
+cooldown = 0.0
+energy_cost = 100.0
+narrative_template = "{hero} bắn một loạt tiễn lên trời dội bão tên xuống {action_target}, gây {0} sát thương vật lý và làm suy yếu Giáp của các nạn nhân đi 20% trong 4 giây."
+caveat = "Kỹ năng này có thể kích hoạt hiệu ứng đòn đánh và có thể Chí Mạng."
+progression_ranks = {
+"Giảm Giáp": ["20%", "25%", "30%"],
+"Sát thương": [90, 140, 200],
+"Tỉ lệ STVL": ["60%", "75%", "90%"]
+}
+effects = Array[ExtResource("1_eff")]([SubResource("Resource_dmg")])

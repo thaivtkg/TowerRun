@@ -99,6 +99,9 @@ func _apply_effect(effect: EffectData, source: CombatEntity, target: CombatEntit
 	elif effect is HealEffectData:
 		var heal_effect = effect as HealEffectData
 		var actual_heal: float = heal_effect.calculate_total_value(source)
+		# Tăng 50% hiệu lực hồi máu cho đồng minh dưới 40% máu (chuẩn Nguyện Ước Cứu Rỗi)
+		if target.max_hp > 0.0 and (target.current_hp / target.max_hp) <= 0.40:
+			actual_heal *= 1.50
 		var old_hp: float = target.current_hp
 		target.heal(actual_heal)
 		var actual_healed: float = target.current_hp - old_hp
