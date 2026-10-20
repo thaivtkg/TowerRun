@@ -34,6 +34,7 @@ var ability_system: AbilitySystem
 var skill_ui: SkillChoiceUI
 var combat_summary_ui: CombatSummaryUI
 var character_stats_ui: CharacterStatsUI
+var inventory_panel: InventoryPanel = null
 var choice_queue: Array[Dictionary] = []
 var _active_choice_hero: HeroEntity = null
 var _active_choice_milestone: int = 0
@@ -89,6 +90,7 @@ func _start_battle() -> void:
 		
 	_init_systems()
 	_spawn_mock_teams()
+	_grant_initial_mock_items()
 	enter_preparation_phase()
 	for h in heroes:
 		if is_instance_valid(h) and h.name == "Kira":
@@ -165,6 +167,12 @@ func _create_start_combat_ui() -> void:
 	canvas_layer.name = "BattleUILayer"
 	add_child(canvas_layer)
 	
+	# S6.3: Hàng chờ kho đồ 10 ô trực quan (TFT-Standard Layout)
+	inventory_panel = InventoryPanel.new()
+	inventory_panel.name = "InventoryPanel"
+	canvas_layer.add_child(inventory_panel)
+	inventory_panel.position = Vector2(290, 475)
+	
 	start_combat_button = Button.new()
 	start_combat_button.name = "StartCombatButton"
 	start_combat_button.text = "⚔️ BẮT ĐẦU CHIẾN ĐẤU"
@@ -189,6 +197,18 @@ func _create_start_combat_ui() -> void:
 	
 	start_combat_button.add_theme_font_size_override("font_size", 18)
 	canvas_layer.add_child(start_combat_button)
+
+func _grant_initial_mock_items() -> void:
+	if ItemManager != null:
+		var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
+		var stone = load("res://data/items/life_stone_shard.tres") as ItemData
+		if shard != null and stone != null:
+			ItemManager.bench_slots[0] = shard
+			ItemManager.bench_slots[1] = shard
+			ItemManager.bench_slots[2] = stone
+			ItemManager.bench_slots[3] = stone
+			if is_instance_valid(inventory_panel):
+				inventory_panel.refresh_all_slots()
 
 func enter_preparation_phase() -> void:
 	current_phase = EncounterPhase.PREPARATION
@@ -669,6 +689,7 @@ func _reset_heroes_for_new_run() -> void:
 				default_ult.effects.append(ult_dmg)
 				hero.unlocked_abilities.append(Ability.new(hero, default_ult))
 			hero.reset_for_new_battle()
+	_grant_initial_mock_items()
 
 func _build_post_battle_choice_queue() -> void:
 	choice_queue.clear()
@@ -711,6 +732,10 @@ func _build_post_battle_choice_queue() -> void:
 func handle_hero_clicked(hero: HeroEntity) -> void:
 	if hero == null or not is_instance_valid(hero):
 		return
+	# S6.3: Nếu đang chọn một ô trang bị trong kho đồ -> Trang bị cho tướng!
+	if is_instance_valid(inventory_panel) and inventory_panel.selected_slot != -1:
+		if inventory_panel.try_equip_selected_to_hero(hero):
+			return
 	if hero.has_pending_milestone and current_phase == EncounterPhase.PREPARATION:
 		open_hero_skill_choice(hero)
 	elif is_instance_valid(character_stats_ui):
@@ -1275,8 +1300,9 @@ func _run_all_tests() -> void:
 	_run_tc_37_item_pipeline_and_auto_combine()
 	_run_tc_38_bench_crafting_and_pure_stat()
 	_run_tc_39_mythic_tier3_fusion_and_clean_tooltip()
+	_run_tc_40_inventory_bench_visual_ui_and_equip()
 	
-	_log_test("\n🎉 TẤT CẢ 39 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 40 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -5238,6 +5264,93 @@ func _run_tc_39_mythic_tier3_fusion_and_clean_tooltip() -> void:
 	_log_test(">>> 🟢 TC-39 Tier 3 Mythic Fusion & Dynamic Sub-Passive PASSED!\n")
 
 # ------------------------------------------------------------------------------
+# TC-40: Inventory Bench Visual UI & Click-to-Equip Integration (Sprint 6.3)
+# ------------------------------------------------------------------------------
+func _run_tc_40_inventory_bench_visual_ui_and_equip() -> void:
+	_log_test("\n==================== [TEST TC-40: INVENTORY BENCH VISUAL UI & CLICK-TO-EQUIP] ====================")
+	_reset_test_battlefield()
+	
+	# 1. TC-40.1: Visual Node Hierarchy & 10 Slot Buttons Initialization
+	_log_test("[TC-40.1] Verifying InventoryPanel Visual Hierarchy & 10 Slot Buttons...")
+	assert(is_instance_valid(inventory_panel), "FAIL TC-40.1: inventory_panel must be instantiated")
+	assert(inventory_panel.slot_buttons.size() == 10, "FAIL TC-40.1: Must have exactly 10 slot buttons")
+	assert(inventory_panel.position.y >= 450.0 and inventory_panel.position.y <= 520.0, "FAIL TC-40.1: Position Y must be around 475px (got %.1f)" % inventory_panel.position.y)
+	_log_test(">>> 🟢 TC-40.1 Visual Hierarchy & 10 Slot Buttons PASSED!")
+	
+	# 2. TC-40.2: Click-to-Craft on Bench UI
+	_log_test("[TC-40.2] Verifying Click-to-Craft Interactive Flow...")
+	ItemManager.bench_slots.clear()
+	for i in range(10): ItemManager.bench_slots.append(null)
+	
+	var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
+	assert(shard != null, "FAIL TC-40.2: bloodsteel_shard must load")
+	ItemManager.bench_slots[0] = shard
+	ItemManager.bench_slots[1] = shard
+	inventory_panel.refresh_all_slots()
+	
+	# Select slot 0
+	inventory_panel.select_slot(0)
+	assert(inventory_panel.selected_slot == 0, "FAIL TC-40.2: Slot 0 must be selected")
+	
+	# Click slot 1 -> should craft in-place on bench!
+	inventory_panel.select_slot(1)
+	assert(inventory_panel.selected_slot == -1, "FAIL TC-40.2: Selection must reset to -1 after craft")
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-40.2: Slot 0 must be empty")
+	assert(ItemManager.bench_slots[1] != null, "FAIL TC-40.2: Slot 1 must have crafted item")
+	assert(ItemManager.bench_slots[1].id == "soul_severing_blade", "FAIL TC-40.2: Crafted item must be soul_severing_blade")
+	_log_test(">>> [TC-40.2] Click-to-Craft verified: Slot 0 + Slot 1 -> Trảm Hồn Đao in Slot 1")
+	_log_test(">>> 🟢 TC-40.2 Click-to-Craft Flow PASSED!")
+	
+	# 3. TC-40.3: Click-to-Equip Hero Interaction
+	_log_test("[TC-40.3] Verifying Click-to-Equip Hero Interaction...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-40.3: Arthur must exist")
+	arthur.equipped_items.clear()
+	
+	# Select Trảm Hồn Đao at slot 1
+	inventory_panel.select_slot(1)
+	assert(inventory_panel.selected_slot == 1, "FAIL TC-40.3: Slot 1 must be selected")
+	
+	# Click hero Arthur -> equips item from bench!
+	handle_hero_clicked(arthur)
+	assert(inventory_panel.selected_slot == -1, "FAIL TC-40.3: Selection must reset after equip")
+	assert(ItemManager.bench_slots[1] == null, "FAIL TC-40.3: Slot 1 on bench must now be empty")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-40.3: Arthur must now have 1 equipped item")
+	assert(arthur.equipped_items[0].id == "soul_severing_blade", "FAIL TC-40.3: Arthur must have soul_severing_blade equipped")
+	_log_test(">>> [TC-40.3] Click-to-Equip verified: Arthur equipped Trảm Hồn Đao from bench")
+	_log_test(">>> 🟢 TC-40.3 Click-to-Equip Hero PASSED!")
+	
+	# 4. TC-40.4: Tooltip Hover & Initial Mock Drops
+	_log_test("[TC-40.4] Verifying Tooltip Hover & Initial Mock Drops...")
+	var stone = load("res://data/items/life_stone_shard.tres") as ItemData
+	ItemManager.bench_slots[2] = stone
+	inventory_panel.refresh_all_slots()
+	
+	# Mouse hover slot 2
+	inventory_panel._on_slot_mouse_entered(2)
+	assert(inventory_panel.tooltip_instance.visible == true, "FAIL TC-40.4: Tooltip must be visible on hover")
+	
+	# Mouse exit slot 2
+	inventory_panel._on_slot_mouse_exited(2)
+	assert(inventory_panel.tooltip_instance.visible == false, "FAIL TC-40.4: Tooltip must hide on mouse exit")
+	
+	# Verify mock drops helper
+	_grant_initial_mock_items()
+	assert(ItemManager.bench_slots[0] != null and ItemManager.bench_slots[0].id == "bloodsteel_shard", "FAIL TC-40.4: Mock drop 0 must be Tàn Kiếm")
+	assert(ItemManager.bench_slots[1] != null and ItemManager.bench_slots[1].id == "bloodsteel_shard", "FAIL TC-40.4: Mock drop 1 must be Tàn Kiếm")
+	assert(ItemManager.bench_slots[2] != null and ItemManager.bench_slots[2].id == "life_stone_shard", "FAIL TC-40.4: Mock drop 2 must be Sinh Thạch")
+	assert(ItemManager.bench_slots[3] != null and ItemManager.bench_slots[3].id == "life_stone_shard", "FAIL TC-40.4: Mock drop 3 must be Sinh Thạch")
+	_log_test(">>> [TC-40.4] Initial Mock Drops verified: 2x Tàn Kiếm, 2x Sinh Thạch present in slots 0..3")
+	_log_test(">>> 🟢 TC-40.4 Tooltip Hover & Initial Mock Drops PASSED!")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-40 PASSED: Inventory Bench Visual UI & Click-to-Equip fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -5267,6 +5380,9 @@ func _reset_test_battlefield() -> void:
 		combat_summary_ui.hide()
 	if is_instance_valid(character_stats_ui):
 		character_stats_ui.close()
+	if is_instance_valid(inventory_panel):
+		inventory_panel.selected_slot = -1
+		inventory_panel.refresh_all_slots()
 	if get_tree() != null:
 		get_tree().paused = false
 	if _shake_tween != null and _shake_tween.is_running():

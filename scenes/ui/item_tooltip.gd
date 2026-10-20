@@ -3,13 +3,47 @@ extends PanelContainer
 
 # ==========================================
 # ITEM TOOLTIP - DYNAMIC BBCODE 2-TIER SYSTEM
-# Sprint 6 - Task S6.2.3
+# Sprint 6 - Task S6.2.3 & S6.3
 # ==========================================
 
-@onready var title_label: Label = get_node_or_null("VBox/TitleLabel") as Label
-@onready var stats_label: RichTextLabel = get_node_or_null("VBox/StatsLabel") as RichTextLabel
-@onready var passive_container: Control = get_node_or_null("VBox/PassiveContainer") as Control
-@onready var passive_label: RichTextLabel = get_node_or_null("VBox/PassiveContainer/PassiveLabel") as RichTextLabel
+var title_label: Label = null
+var stats_label: RichTextLabel = null
+var passive_container: Control = null
+var passive_label: RichTextLabel = null
+
+func _ready() -> void:
+	if stats_label == null:
+		_setup_dynamic_ui()
+
+func _setup_dynamic_ui() -> void:
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	custom_minimum_size = Vector2(240, 100)
+	
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.06, 0.1, 0.95)
+	style.set_corner_radius_all(8)
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.border_color = Color(0.22, 0.74, 0.97, 0.5)
+	style.content_margin_left = 10
+	style.content_margin_top = 10
+	style.content_margin_right = 10
+	style.content_margin_bottom = 10
+	add_theme_stylebox_override("panel", style)
+	
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vbox)
+	
+	stats_label = RichTextLabel.new()
+	stats_label.name = "StatsLabel"
+	stats_label.bbcode_enabled = true
+	stats_label.fit_content = true
+	stats_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(stats_label)
 
 static func format_tooltip_text(item: ItemData) -> String:
 	if item == null:
@@ -67,13 +101,8 @@ func render_tooltip(item: ItemData) -> void:
 		hide()
 		return
 		
-	if title_label != null:
-		title_label.text = item.name
+	if stats_label == null:
+		_setup_dynamic_ui()
 		
-	if stats_label != null:
-		stats_label.text = format_tooltip_text(item)
-		
-	if passive_container != null:
-		passive_container.visible = not item.is_pure_stat
-		
+	stats_label.text = format_tooltip_text(item)
 	show()
