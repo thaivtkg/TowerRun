@@ -24,9 +24,10 @@ var has_pending_milestone: bool:
 
 var upgrade_badge: Node2D = null
 
-# SPRINT 6: INVENTORY & ARTIFACT SLOTS (TASK S6.1)
+# SPRINT 6: INVENTORY & ARTIFACT SLOTS (TASK S6.1 & S6.5)
 signal item_equipped(hero: HeroEntity, item: ItemData, is_crafted: bool)
 var equipped_items: Array[ItemData] = []
+var item_bar: Node2D = null
 
 func _setup_upgrade_badge() -> void:
 	if upgrade_badge != null and is_instance_valid(upgrade_badge):
@@ -57,6 +58,94 @@ func _update_upgrade_badge() -> void:
 		_setup_upgrade_badge()
 	if upgrade_badge != null:
 		upgrade_badge.visible = has_pending_milestone
+
+# ==========================================
+# SPRINT 6: BOARD TOKEN ITEM BADGES (TASK S6.5)
+# ==========================================
+func _setup_item_bar() -> void:
+	if item_bar == null or not is_instance_valid(item_bar):
+		item_bar = Node2D.new()
+		item_bar.name = "ItemBar"
+		item_bar.position = Vector2(0, -22) # Chuẩn TFT: Dưới thanh máu status_bar tại -35
+		add_child(item_bar)
+	_update_item_bar()
+
+func _update_item_bar() -> void:
+	if item_bar == null:
+		return
+	for child in item_bar.get_children():
+		item_bar.remove_child(child)
+		child.queue_free()
+		
+	if equipped_items.is_empty():
+		item_bar.visible = false
+		return
+		
+	item_bar.visible = true
+	var count := equipped_items.size()
+	var badge_size := 16.0
+	var spacing := 3.0
+	var total_width := count * badge_size + (count - 1) * spacing
+	var start_x := -total_width * 0.5
+	
+	for i in range(count):
+		var item := equipped_items[i]
+		if item == null: continue
+		
+		var panel := PanelContainer.new()
+		panel.custom_minimum_size = Vector2(badge_size, badge_size)
+		panel.size = Vector2(badge_size, badge_size)
+		panel.position = Vector2(start_x + i * (badge_size + spacing), -badge_size * 0.5)
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("#0f172a")
+		style.set_corner_radius_all(3)
+		style.set_border_width_all(1)
+		match item.tier:
+			1: style.border_color = Color("#64748b")
+			2: style.border_color = Color("#f59e0b")
+			3: style.border_color = Color("#e879f9")
+			_: style.border_color = Color("#64748b")
+		panel.add_theme_stylebox_override("panel", style)
+		
+		var lbl := Label.new()
+		lbl.text = _get_item_symbol(item)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.add_theme_font_size_override("font_size", 9)
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		panel.add_child(lbl)
+		
+		item_bar.add_child(panel)
+
+func _get_item_symbol(item: ItemData) -> String:
+	if item == null:
+		return ""
+	match item.id:
+		"bloodsteel_shard": return "🗡️"
+		"sorcery_crystal": return "🔮"
+		"obsidian_plating": return "🛡️"
+		"soul_aether_bead": return "💧"
+		"life_stone_shard": return "💚"
+		"soul_severing_blade": return "⚔️"
+		"void_celestial_orb": return "🌌"
+		"colossus_vitality_armor": return "🏰"
+		"blood_runic_blade": return "🩸"
+		"thorn_obsidian_shield": return "🌵"
+		"frost_prison_heart": return "❄️"
+		"obsidian_armor": return "🪨"
+		"infinite_mana_bead": return "💠"
+		"origin_ancient_staff": return "🪄"
+		"mythic_soul_severing_blade": return "👑"
+		"mythic_void_celestial_orb": return "✨"
+		"mythic_colossus_vitality_armor": return "🔱"
+		"mythic_colossus_immortal": return "🗿"
+		"mythic_blood_runic_severing": return "👹"
+		_:
+			if item.tier == 3: return "👑"
+			elif item.tier == 2: return "⚔️"
+			return "📦"
 
 # ==========================================
 # SPRINT 4: RUNTIME ABILITY CLONING (P0 ISOLATION)
@@ -105,6 +194,7 @@ func initialize(initial_data: HeroData) -> void:
 		current_energy = 0.0
 	setup_status_bar(true)
 	_setup_upgrade_badge()
+	_setup_item_bar()
 	hp_changed.emit(current_hp, max_hp)
 	energy_changed.emit(current_energy, max_energy)
 	
@@ -338,6 +428,7 @@ func equip_item(item: ItemData) -> bool:
 
 func _on_item_equipped(item: ItemData, is_crafted: bool) -> void:
 	print("[HeroEntity] 🎒 %s trang bị [%s] (Crafted: %s) | Items: %d/3" % [name, item.name, is_crafted, equipped_items.size()])
+	_update_item_bar()
 	item_equipped.emit(self, item, is_crafted)
 	_update_scaled_max_hp()
 	hp_changed.emit(current_hp, max_hp)

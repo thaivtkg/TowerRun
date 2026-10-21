@@ -1315,8 +1315,9 @@ func _run_all_tests() -> void:
 	_run_tc_39_mythic_tier3_fusion_and_clean_tooltip()
 	_run_tc_40_inventory_bench_visual_ui_and_equip()
 	_run_tc_41_drag_drop_and_on_hero_craft()
+	_run_tc_42_equipped_items_visual_presentation()
 	
-	_log_test("\n🎉 TẤT CẢ 41 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 42 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -5548,6 +5549,59 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-41 PASSED: Drag & Drop Item Pipeline & On-Hero Auto-Crafting fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-42: Equipped Items Visual Presentation (Sprint 6.5)
+# ------------------------------------------------------------------------------
+func _run_tc_42_equipped_items_visual_presentation() -> void:
+	_log_test("\n==================== [TEST TC-42: EQUIPPED ITEMS VISUAL PRESENTATION] ====================")
+	_reset_test_battlefield()
+	
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-42: Arthur must exist")
+	arthur.equipped_items.clear()
+	arthur._setup_item_bar()
+	assert(arthur.item_bar != null, "FAIL TC-42.1: Arthur must have item_bar node")
+	assert(arthur.item_bar.visible == false, "FAIL TC-42.1: Empty item_bar must be hidden")
+	
+	# 1. Trang bị 1 món vào Arthur -> Board item_bar phải hiện 1 badge
+	var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
+	arthur.equip_item(shard)
+	assert(arthur.item_bar.visible == true, "FAIL TC-42.1: item_bar must be visible when equipped")
+	assert(arthur.item_bar.get_child_count() == 1, "FAIL TC-42.1: item_bar must have exactly 1 badge")
+	
+	# 2. Thăng hoa Bậc 3 -> Badge đổi biểu tượng sang Thần Thoại
+	var blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+	arthur.equipped_items.clear()
+	arthur.equip_item(blade)
+	arthur.equip_item(blade) # Tự thăng hoa thành Tuyệt Hồn Thần Đao (Tier 3)
+	assert(arthur.item_bar.get_child_count() == 1, "FAIL TC-42.1: Fused item must take 1 badge")
+	_log_test(">>> 🟢 TC-42.1 Board Hero Item Bar PASSED!")
+	
+	# 3. Soi Arthur trên CharacterStatsUI -> Phải hiện khối TRANG BỊ (3 Ô)
+	assert(is_instance_valid(character_stats_ui), "FAIL TC-42.2: character_stats_ui must exist")
+	character_stats_ui.inspect_hero(arthur)
+	assert(character_stats_ui.items_section != null and character_stats_ui.items_section.visible == true,
+		"FAIL TC-42.2: items_section must be visible for hero")
+	assert(character_stats_ui.item_slot_buttons.size() == 3, "FAIL TC-42.2: Must have 3 item slots")
+	assert(character_stats_ui.item_slot_buttons[0].text == "👑", "FAIL TC-42.2: Slot 0 must show Mythic symbol")
+	assert(character_stats_ui.item_slot_buttons[1].text == "+", "FAIL TC-42.2: Slot 1 must be empty '+'")
+	_log_test(">>> 🟢 TC-42.2 CharacterStatsUI 3 Item Slots PASSED!")
+	
+	# 4. Soi Quái thường -> items_section phải tự động ẩn
+	if not enemies.is_empty() and is_instance_valid(enemies[0]):
+		character_stats_ui.inspect_entity(enemies[0])
+		assert(character_stats_ui.items_section.visible == false,
+			"FAIL TC-42.3: items_section must hide for enemies")
+		_log_test(">>> 🟢 TC-42.3 Enemy Inspection Cleanliness PASSED!")
+	
+	character_stats_ui.close()
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-42 PASSED: Equipped Items Visual Presentation fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

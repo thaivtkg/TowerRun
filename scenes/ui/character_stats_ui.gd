@@ -114,6 +114,13 @@ var xp_bar: ProgressBar
 # 3. Hexagonal Skills Section
 var skills_container: HBoxContainer
 
+# 3.5. Equipped Items (Task S6.5: 3 Item Slots)
+var items_section: VBoxContainer = null
+var items_container: HBoxContainer = null
+var item_slot_buttons: Array[Button] = []
+var item_tooltip: ItemTooltip = null
+var _on_item_equipped_callable: Callable
+
 # 4. Core Stats Grid (4 columns x 2 rows)
 var attack_val_label: Label
 var spell_val_label: Label
@@ -349,6 +356,49 @@ func _build_ui() -> void:
 	main_vbox.add_child(_create_separator())
 	
 	# ==========================================================================
+	# 3.5. KHỐI TRANG BỊ ĐÃ MANG (TASK S6.5: 3 ITEM SLOTS)
+	# ==========================================================================
+	items_section = VBoxContainer.new()
+	items_section.name = "ItemsSection"
+	items_section.add_theme_constant_override("separation", 4)
+	main_vbox.add_child(items_section)
+	
+	var items_title := Label.new()
+	items_title.name = "ItemsTitle"
+	items_title.text = "TRANG BỊ (3 Ô)"
+	items_title.add_theme_font_size_override("font_size", 11)
+	items_title.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
+	items_section.add_child(items_title)
+	
+	items_container = HBoxContainer.new()
+	items_container.name = "ItemsContainer"
+	items_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	items_container.add_theme_constant_override("separation", 10)
+	items_container.custom_minimum_size = Vector2(0, 50)
+	items_section.add_child(items_container)
+	
+	item_slot_buttons.clear()
+	for i in range(3):
+		var btn := Button.new()
+		btn.name = "HeroItemSlot_%d" % i
+		btn.custom_minimum_size = Vector2(48, 48)
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		btn.mouse_entered.connect(func(): _on_item_slot_hovered(i))
+		btn.mouse_exited.connect(func(): _on_item_slot_unhovered(i))
+		items_container.add_child(btn)
+		item_slot_buttons.append(btn)
+		
+	main_vbox.add_child(_create_separator())
+	
+	# Tooltip nổi cho thẻ tướng (Bung sang trái thẻ bài)
+	item_tooltip = ItemTooltip.new()
+	item_tooltip.name = "HeroItemTooltip"
+	item_tooltip.hide()
+	item_tooltip.z_index = 100
+	panel_container.add_child(item_tooltip)
+	
+	# ==========================================================================
 	# 4. KHỐI CHỈ SỐ CỐT LÕI (TFT COMPACT GRID: 2 HÀNG X 4 CỘT)
 	# ==========================================================================
 	var stats_title := Label.new()
@@ -443,6 +493,8 @@ func inspect_hero(hero: CombatEntity) -> void:
 func close() -> void:
 	_disconnect_inspected_entity()
 	inspected_entity = null
+	if item_tooltip != null:
+		item_tooltip.hide()
 	hide()
 	panel_closed.emit()
 
@@ -457,6 +509,8 @@ func update_stats() -> void:
 		_render_enemy_rank_ui(inspected_entity as EnemyEntity)
 	else:
 		_render_generic_entity_ui(inspected_entity)
+		
+	_update_items_display()
 
 func _render_hero_prestige_ui(hero: HeroEntity) -> void:
 	var data: HeroData = hero.data
@@ -669,6 +723,91 @@ func _render_generic_entity_ui(entity: CombatEntity) -> void:
 	crit_val_label.text = "%.0f%%" % (entity.get_crit_chance() * 100.0)
 	crit_dmg_val_label.text = "%.0f%%" % (entity.get_crit_damage() * 100.0)
 	start_energy_val_label.text = "0"
+
+# ==============================================================================
+# EQUIPPED ITEMS DISPLAY & HOVER TOOLTIP (TASK S6.5)
+# ==============================================================================
+func _update_items_display() -> void:
+	if items_section == null:
+		return
+		
+	if inspected_hero == null:
+		items_section.hide()
+		return
+		
+	items_section.show()
+	for i in range(3):
+		if i >= item_slot_buttons.size(): break
+		var btn := item_slot_buttons[i]
+		var item: ItemData = inspected_hero.equipped_items[i] if i < inspected_hero.equipped_items.size() else null
+		
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color("#0f172a")
+		style.set_corner_radius_all(8)
+		
+		if item != null:
+			style.set_border_width_all(2)
+			match item.tier:
+				1: style.border_color = Color("#64748b")
+				2: style.border_color = Color("#f59e0b")
+				3: style.border_color = Color("#e879f9")
+				_: style.border_color = Color("#64748b")
+			btn.text = _get_item_symbol(item)
+			btn.add_theme_font_size_override("font_size", 20)
+			btn.add_theme_color_override("font_color", Color.WHITE)
+		else:
+			style.set_border_width_all(1)
+			style.border_color = Color("#334155")
+			btn.text = "+"
+			btn.add_theme_font_size_override("font_size", 14)
+			btn.add_theme_color_override("font_color", Color("#475569"))
+			
+		btn.add_theme_stylebox_override("normal", style)
+		btn.add_theme_stylebox_override("hover", style)
+		btn.add_theme_stylebox_override("pressed", style)
+
+func _on_item_slot_hovered(idx: int) -> void:
+	if inspected_hero == null or idx >= inspected_hero.equipped_items.size():
+		return
+	var item := inspected_hero.equipped_items[idx]
+	if item != null and item_tooltip != null:
+		item_tooltip.render_tooltip(item)
+		var tt_size := item_tooltip.get_combined_minimum_size()
+		# Bung Tooltip sang mép trái thẻ Inspector
+		item_tooltip.position = Vector2(-tt_size.x - 12.0, 240.0)
+		item_tooltip.show()
+
+func _on_item_slot_unhovered(_idx: int) -> void:
+	if item_tooltip != null:
+		item_tooltip.hide()
+
+func _get_item_symbol(item: ItemData) -> String:
+	if item == null:
+		return ""
+	match item.id:
+		"bloodsteel_shard": return "🗡️"
+		"sorcery_crystal": return "🔮"
+		"obsidian_plating": return "🛡️"
+		"soul_aether_bead": return "💧"
+		"life_stone_shard": return "💚"
+		"soul_severing_blade": return "⚔️"
+		"void_celestial_orb": return "🌌"
+		"colossus_vitality_armor": return "🏰"
+		"blood_runic_blade": return "🩸"
+		"thorn_obsidian_shield": return "🌵"
+		"frost_prison_heart": return "❄️"
+		"obsidian_armor": return "🪨"
+		"infinite_mana_bead": return "💠"
+		"origin_ancient_staff": return "🪄"
+		"mythic_soul_severing_blade": return "👑"
+		"mythic_void_celestial_orb": return "✨"
+		"mythic_colossus_vitality_armor": return "🔱"
+		"mythic_colossus_immortal": return "🗿"
+		"mythic_blood_runic_severing": return "👹"
+		_:
+			if item.tier == 3: return "👑"
+			elif item.tier == 2: return "⚔️"
+			return "📦"
 
 # ==============================================================================
 # LEVEL CREST TIER MATRIX & MONSTER EMBLEMS (GD SPEC SECTION II)
@@ -931,6 +1070,9 @@ func _connect_inspected_entity() -> void:
 			_on_leveled_up_callable = func(_lvl): update_stats()
 			if not hero.progression.leveled_up.is_connected(_on_leveled_up_callable):
 				hero.progression.leveled_up.connect(_on_leveled_up_callable)
+		_on_item_equipped_callable = func(_h, _i, _c): _update_items_display()
+		if not hero.item_equipped.is_connected(_on_item_equipped_callable):
+			hero.item_equipped.connect(_on_item_equipped_callable)
 
 func _disconnect_inspected_entity() -> void:
 	if inspected_entity != null and is_instance_valid(inspected_entity):
@@ -947,6 +1089,8 @@ func _disconnect_inspected_entity() -> void:
 			if hero.progression != null and _on_leveled_up_callable.is_valid():
 				if hero.progression.leveled_up.is_connected(_on_leveled_up_callable):
 					hero.progression.leveled_up.disconnect(_on_leveled_up_callable)
+			if _on_item_equipped_callable.is_valid() and hero.item_equipped.is_connected(_on_item_equipped_callable):
+				hero.item_equipped.disconnect(_on_item_equipped_callable)
 
 # ==============================================================================
 # SPRINT 5: CLICK-OUTSIDE DISMISS DETECTION (GD & QA SPEC)
