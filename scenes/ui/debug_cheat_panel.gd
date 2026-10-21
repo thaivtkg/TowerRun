@@ -70,9 +70,15 @@ func _build_ui() -> void:
 	
 	# Button: Add Gold
 	var add_gold_btn := Button.new()
-	add_gold_btn.text = "💰 +50 Vàng (F6)"
+	add_gold_btn.text = "💰 +50 Vàng (F7)"
 	add_gold_btn.pressed.connect(_on_add_gold_pressed)
 	vbox.add_child(add_gold_btn)
+	
+	# Button: Add Items
+	var add_items_btn := Button.new()
+	add_items_btn.text = "🎒 Nạp đầy 10 trang bị test (I)"
+	add_items_btn.pressed.connect(_on_add_items_pressed)
+	vbox.add_child(add_items_btn)
 	
 	# Button: Game Speed
 	speed_btn = Button.new()
@@ -144,6 +150,11 @@ func _on_kill_all_pressed() -> void:
 func _on_add_gold_pressed() -> void:
 	if RunManager != null:
 		RunManager.add_gold(50)
+		update_info()
+
+func _on_add_items_pressed() -> void:
+	if is_instance_valid(battle_manager) and battle_manager.has_method("_grant_initial_mock_items"):
+		battle_manager._grant_initial_mock_items()
 		update_info()
 
 func _on_speed_pressed() -> void:

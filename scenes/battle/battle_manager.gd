@@ -208,11 +208,24 @@ func _grant_initial_mock_items() -> void:
 	if ItemManager != null:
 		var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
 		var stone = load("res://data/items/life_stone_shard.tres") as ItemData
+		var blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+		var armor = load("res://data/items/colossus_vitality_armor.tres") as ItemData
+		var orb = load("res://data/items/void_celestial_orb.tres") as ItemData
+		var crystal = load("res://data/items/sorcery_crystal.tres") as ItemData
+		var plating = load("res://data/items/obsidian_plating.tres") as ItemData
+		var frost = load("res://data/items/frost_prison_heart.tres") as ItemData
+		
 		if shard != null and stone != null:
 			ItemManager.bench_slots[0] = shard
 			ItemManager.bench_slots[1] = shard
 			ItemManager.bench_slots[2] = stone
 			ItemManager.bench_slots[3] = stone
+			ItemManager.bench_slots[4] = blade
+			ItemManager.bench_slots[5] = armor
+			ItemManager.bench_slots[6] = orb
+			ItemManager.bench_slots[7] = crystal
+			ItemManager.bench_slots[8] = plating
+			ItemManager.bench_slots[9] = frost
 			if is_instance_valid(inventory_panel):
 				inventory_panel.refresh_all_slots()
 
@@ -1267,6 +1280,9 @@ func _input(event: InputEvent) -> void:
 				RunManager.add_gold(50)
 				if debug_cheat_ui != null:
 					debug_cheat_ui.update_info()
+		KEY_I:
+			_grant_initial_mock_items()
+			print("[DEBUG] 🎒 ĐÃ NẠP ĐẦY 10 TRANG BỊ VÀO KHO ĐỒ!")
 
 func _run_all_tests() -> void:
 	if SaveManager != null:
