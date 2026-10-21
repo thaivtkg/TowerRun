@@ -171,6 +171,20 @@ func craft_on_bench(source_idx: int, target_idx: int) -> bool:
 func combine_bench_items(slot_a: int, slot_b: int) -> bool:
 	return craft_on_bench(slot_a, slot_b)
 
+func swap_or_move_bench(source_idx: int, target_idx: int) -> bool:
+	if source_idx == target_idx or source_idx < 0 or target_idx < 0:
+		return false
+	if source_idx >= bench_slots.size() or target_idx >= bench_slots.size():
+		return false
+	var item_src: ItemData = bench_slots[source_idx]
+	if item_src == null:
+		return false
+		
+	var temp = bench_slots[target_idx]
+	bench_slots[target_idx] = item_src
+	bench_slots[source_idx] = temp
+	return true
+
 # ==========================================
 # BỘ TỔNG HỢP THẦN THOẠI (MYTHIC FUSION & SYNTHESIZER)
 # ==========================================

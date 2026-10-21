@@ -172,6 +172,8 @@ func _create_start_combat_ui() -> void:
 	inventory_panel.name = "InventoryPanel"
 	canvas_layer.add_child(inventory_panel)
 	inventory_panel.position = Vector2(35, 175)
+	inventory_panel.board_grid = board_grid
+	inventory_panel.board_view = board_view
 	
 	start_combat_button = Button.new()
 	start_combat_button.name = "StartCombatButton"
@@ -331,6 +333,7 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	hero.died.connect(_on_entity_died.bind(true))
 	hero.attack_requested.connect(_on_entity_attack_requested)
 	hero.ability_requested.connect(ability_system.execute_ability)
+	hero.item_equipped.connect(_on_hero_item_equipped)
 	
 	hero.initialize(data)
 	
@@ -1132,6 +1135,16 @@ func _on_hero_milestone(hero: HeroEntity, milestone: int) -> void:
 		return
 	_spawn_floating_text(hero.global_position + Vector2(0, -35), "LV.%d MILESTONE!" % milestone, FloatingText.Type.SYSTEM)
 
+func _on_hero_item_equipped(hero: HeroEntity, item: ItemData, is_crafted: bool) -> void:
+	if not is_instance_valid(hero) or item == null:
+		return
+	if item.tier == 3:
+		_spawn_floating_text(hero.global_position + Vector2(0, -35), "🔥 THĂNG HOA BẬC 3!", FloatingText.Type.SYSTEM)
+	elif item.tier == 2 and is_crafted:
+		_spawn_floating_text(hero.global_position + Vector2(0, -35), "✨ RÈN XONG!", FloatingText.Type.SYSTEM)
+	else:
+		_spawn_floating_text(hero.global_position + Vector2(0, -35), "🎒 TRANG BỊ!", FloatingText.Type.SYSTEM)
+
 
 # ==============================================================================
 # SPRINT 4 AUTOMATED TEST RUNNER (BẢN XUẤT RA FILE REPORT)
@@ -1301,8 +1314,9 @@ func _run_all_tests() -> void:
 	_run_tc_38_bench_crafting_and_pure_stat()
 	_run_tc_39_mythic_tier3_fusion_and_clean_tooltip()
 	_run_tc_40_inventory_bench_visual_ui_and_equip()
+	_run_tc_41_drag_drop_and_on_hero_craft()
 	
-	_log_test("\n🎉 TẤT CẢ 40 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 41 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -5357,6 +5371,170 @@ func _run_tc_40_inventory_bench_visual_ui_and_equip() -> void:
 	
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-40 PASSED: Inventory Bench Visual UI & Click-to-Equip fully verified!\n")
+
+# ------------------------------------------------------------------------------
+# TC-41: Drag & Drop Item Pipeline & On-Hero Auto-Crafting (Sprint 6.4)
+# ------------------------------------------------------------------------------
+func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
+	_log_test("\n==================== [TEST TC-41: DRAG & DROP & ON-HERO AUTO-CRAFT] ====================")
+	_reset_test_battlefield()
+	
+	assert(is_instance_valid(inventory_panel), "FAIL TC-41: inventory_panel must be valid")
+	inventory_panel.board_grid = board_grid
+	inventory_panel.board_view = board_view
+	
+	var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
+	var stone = load("res://data/items/life_stone_shard.tres") as ItemData
+	var blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+	assert(shard != null and stone != null and blade != null, "FAIL TC-41: Items must load")
+	
+	# --------------------------------------------------------------------------
+	# TC-41.1: Bench Drag Craft & Swap
+	# --------------------------------------------------------------------------
+	_log_test("[TC-41.1] Verifying Bench Drag Craft & Swap...")
+	ItemManager.bench_slots.clear()
+	for i in range(10): ItemManager.bench_slots.append(null)
+	
+	ItemManager.bench_slots[0] = shard
+	ItemManager.bench_slots[1] = shard
+	inventory_panel.refresh_all_slots()
+	
+	# Drag slot 0 onto slot 1 -> should craft Trảm Hồn Đao in slot 1
+	inventory_panel.dragged_slot = 0
+	inventory_panel.is_dragging = true
+	var slot1_center: Vector2 = inventory_panel.slot_buttons[1].get_global_rect().get_center()
+	inventory_panel._finish_drag(slot1_center)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-41.1: Slot 0 must be empty after drag craft")
+	assert(ItemManager.bench_slots[1] != null, "FAIL TC-41.1: Slot 1 must have crafted item")
+	assert(ItemManager.bench_slots[1].id == "soul_severing_blade", "FAIL TC-41.1: Crafted item must be soul_severing_blade")
+	_log_test(">>> [TC-41.1] Bench Drag Craft verified: Slot 0 + Slot 1 -> Trảm Hồn Đao")
+	
+	# Drag slot 1 onto empty slot 3 -> should move/swap
+	inventory_panel.dragged_slot = 1
+	inventory_panel.is_dragging = true
+	var slot3_center: Vector2 = inventory_panel.slot_buttons[3].get_global_rect().get_center()
+	inventory_panel._finish_drag(slot3_center)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[1] == null, "FAIL TC-41.1: Slot 1 must now be empty after move")
+	assert(ItemManager.bench_slots[3] != null and ItemManager.bench_slots[3].id == "soul_severing_blade", "FAIL TC-41.1: Slot 3 must have soul_severing_blade")
+	
+	# Direct swap test
+	var swap_ok := ItemManager.swap_or_move_bench(3, 5)
+	assert(swap_ok == true, "FAIL TC-41.1: swap_or_move_bench must return true")
+	assert(ItemManager.bench_slots[3] == null and ItemManager.bench_slots[5].id == "soul_severing_blade", "FAIL TC-41.1: Slot 5 must now have blade")
+	_log_test(">>> [TC-41.1] Bench Drag Swap/Move verified: moved to Slot 3 and swapped to Slot 5")
+	_log_test(">>> 🟢 TC-41.1 Bench Drag Craft & Swap PASSED!")
+	
+	# --------------------------------------------------------------------------
+	# TC-41.2: Bench Drag to Hero Equip
+	# --------------------------------------------------------------------------
+	_log_test("[TC-41.2] Verifying Bench Drag to Hero Equip...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-41.2: Arthur must exist")
+	arthur.equipped_items.clear()
+	
+	ItemManager.bench_slots[0] = stone
+	inventory_panel.refresh_all_slots()
+	
+	# Drag slot 0 to Arthur global position
+	inventory_panel.dragged_slot = 0
+	inventory_panel.is_dragging = true
+	inventory_panel._finish_drag(arthur.global_position)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-41.2: Bench slot 0 must be empty after equip")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-41.2: Arthur must have 1 equipped item")
+	assert(arthur.equipped_items[0].id == "life_stone_shard", "FAIL TC-41.2: Arthur must have Sinh Thạch equipped")
+	_log_test(">>> [TC-41.2] Bench Drag to Hero verified: Arthur equipped Sinh Thạch from bench")
+	_log_test(">>> 🟢 TC-41.2 Bench Drag to Hero Equip PASSED!")
+	
+	# --------------------------------------------------------------------------
+	# TC-41.3: On-Hero Auto-Crafting Bậc 2 & Bậc 3
+	# --------------------------------------------------------------------------
+	_log_test("[TC-41.3] Verifying On-Hero Auto-Crafting Bậc 2 & Bậc 3...")
+	arthur.equipped_items.clear()
+	
+	# Subtest A: Arthur holds 1x Tàn Kiếm -> drag 1x Tàn Kiếm -> auto-crafts Trảm Hồn Đao Bậc 2 (slot count: 1/3)
+	arthur.equip_item(shard)
+	assert(arthur.equipped_items.size() == 1 and arthur.equipped_items[0].id == "bloodsteel_shard", "FAIL TC-41.3A: Arthur setup failed")
+	
+	ItemManager.bench_slots[0] = shard
+	inventory_panel.refresh_all_slots()
+	inventory_panel.dragged_slot = 0
+	inventory_panel.is_dragging = true
+	inventory_panel._finish_drag(arthur.global_position)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-41.3A: Bench slot 0 must be empty")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-41.3A: Slot count must remain 1/3 after auto-craft")
+	assert(arthur.equipped_items[0].id == "soul_severing_blade", "FAIL TC-41.3A: Item must auto-craft to Trảm Hồn Đao")
+	assert(arthur.equipped_items[0].tier == 2, "FAIL TC-41.3A: Crafted item must be Tier 2")
+	_log_test(">>> [TC-41.3A] On-Hero Tier 2 Auto-Craft verified: Tàn Kiếm + Tàn Kiếm -> Trảm Hồn Đao (1/3 slots)")
+	
+	# Subtest B: Arthur holds 1x Trảm Hồn Đao -> drag another Trảm Hồn Đao -> auto-crafts Tuyệt Hồn Thần Đao Bậc 3 (slot count: 1/3)
+	ItemManager.bench_slots[1] = blade
+	inventory_panel.refresh_all_slots()
+	inventory_panel.dragged_slot = 1
+	inventory_panel.is_dragging = true
+	inventory_panel._finish_drag(arthur.global_position)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[1] == null, "FAIL TC-41.3B: Bench slot 1 must be empty")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-41.3B: Slot count must remain 1/3 after mythic fusion")
+	assert(arthur.equipped_items[0].id == "mythic_soul_severing_blade", "FAIL TC-41.3B: Item must auto-craft to Tuyệt Hồn Thần Đao")
+	assert(arthur.equipped_items[0].tier == 3, "FAIL TC-41.3B: Crafted item must be Tier 3")
+	_log_test(">>> [TC-41.3B] On-Hero Tier 3 Auto-Craft verified: Trảm Hồn Đao + Trảm Hồn Đao -> Tuyệt Hồn Thần Đao (1/3 slots)")
+	
+	# Subtest C: Full 3/3 Slot In-Place Auto-Craft
+	# Equip 1x Trảm Hồn Đao (Tier 2) + 1x Sinh Thạch (Tier 1) + 1x Tinh Thể (Tier 1) -> 3/3 items full!
+	var crystal = load("res://data/items/sorcery_crystal.tres") as ItemData
+	var colossus = load("res://data/items/colossus_vitality_armor.tres") as ItemData
+	assert(crystal != null and colossus != null, "FAIL TC-41.3C: Crystal and Colossus must load")
+	
+	arthur.equipped_items.clear()
+	arthur.equip_item(blade)
+	arthur.equip_item(stone)
+	arthur.equip_item(crystal)
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-41.3C: Arthur must have exactly 3 items (got %d)" % arthur.equipped_items.size())
+	
+	# Drag another Trảm Hồn Đao into Arthur -> should fuse with existing Trảm Hồn Đao despite full 3/3 slots!
+	ItemManager.bench_slots[2] = blade
+	inventory_panel.refresh_all_slots()
+	inventory_panel.dragged_slot = 2
+	inventory_panel.is_dragging = true
+	inventory_panel._finish_drag(arthur.global_position)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[2] == null, "FAIL TC-41.3C: Bench slot 2 must be consumed on craft")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-41.3C: Arthur must still have 3/3 items")
+	var has_mythic: bool = false
+	for it in arthur.equipped_items:
+		if it != null and it.id == "mythic_soul_severing_blade" and it.tier == 3:
+			has_mythic = true
+			break
+	assert(has_mythic == true, "FAIL TC-41.3C: Arthur must contain Tuyệt Hồn Thần Đao after full-bag craft")
+	
+	# Now try equipping incompatible 4th item (colossus Tier 2 cannot fuse with Tier 3 or Tier 1s) -> should fail (bag full and cannot fuse)
+	ItemManager.bench_slots[3] = colossus
+	inventory_panel.refresh_all_slots()
+	inventory_panel.dragged_slot = 3
+	inventory_panel.is_dragging = true
+	inventory_panel._finish_drag(arthur.global_position)
+	inventory_panel._cancel_drag()
+	assert(ItemManager.bench_slots[3] != null, "FAIL TC-41.3C: Bench slot 3 must NOT be consumed when bag full")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-41.3C: Arthur slot count must remain 3")
+	_log_test(">>> [TC-41.3C] Full 3/3 Bag In-Place Auto-Craft verified: fused Tier 3, slot count kept at 3/3")
+	_log_test(">>> 🟢 TC-41.3 On-Hero Auto-Crafting Bậc 2 & Bậc 3 PASSED!")
+	
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-41 PASSED: Drag & Drop Item Pipeline & On-Hero Auto-Crafting fully verified!\n")
 
 # ------------------------------------------------------------------------------
 # Helper Reset Battlefield

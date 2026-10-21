@@ -17,6 +17,15 @@ var slots_container: GridContainer = null
 var header_label: Label = null
 var tooltip_instance: ItemTooltip = null
 
+# SPRINT 6: DRAG & DROP PIPELINE (TASK S6.4)
+const DRAG_THRESHOLD: float = 8.0
+var dragged_slot: int = -1
+var is_dragging: bool = false
+var drag_start_pos: Vector2 = Vector2.ZERO
+var drag_preview: Control = null
+var board_grid = null
+var board_view = null
+
 func _ready() -> void:
 	_build_ui()
 	if ItemManager != null:
@@ -75,6 +84,7 @@ func _build_ui() -> void:
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.pressed.connect(func(): select_slot(i))
+		btn.gui_input.connect(func(event: InputEvent): _on_slot_gui_input(event, i))
 		btn.mouse_entered.connect(func(): _on_slot_mouse_entered(i))
 		btn.mouse_exited.connect(func(): _on_slot_mouse_exited(i))
 		slots_container.add_child(btn)
@@ -256,3 +266,132 @@ func _on_slot_mouse_exited(_idx: int) -> void:
 func _on_item_crafted(item: ItemData, slot_idx: int) -> void:
 	refresh_all_slots()
 	item_crafted_ui.emit(item, slot_idx)
+
+# ==========================================
+# DRAG & DROP PIPELINE (TASK S6.4)
+# ==========================================
+func _on_slot_gui_input(event: InputEvent, idx: int) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if get_item_at(idx) != null:
+				dragged_slot = idx
+				drag_start_pos = event.global_position
+				is_dragging = false
+		else:
+			if is_dragging:
+				_finish_drag(event.global_position)
+				_cancel_drag()
+				get_viewport().set_input_as_handled()
+
+func _input(event: InputEvent) -> void:
+	if dragged_slot != -1 and event is InputEventMouseMotion:
+		if not is_dragging:
+			if (event.global_position - drag_start_pos).length() >= DRAG_THRESHOLD:
+				is_dragging = true
+				_create_drag_preview(dragged_slot)
+		if is_dragging and drag_preview != null:
+			drag_preview.global_position = event.global_position - drag_preview.size * 0.5
+
+	elif is_dragging and event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_finish_drag(event.global_position)
+			_cancel_drag()
+			get_viewport().set_input_as_handled()
+
+func _create_drag_preview(slot_idx: int) -> void:
+	if drag_preview != null:
+		if is_instance_valid(drag_preview):
+			drag_preview.queue_free()
+		drag_preview = null
+		
+	var item := get_item_at(slot_idx)
+	if item == null:
+		return
+		
+	var panel := PanelContainer.new()
+	panel.name = "DragPreview"
+	panel.custom_minimum_size = Vector2(48, 48)
+	panel.size = Vector2(48, 48)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.z_index = 200
+	panel.modulate.a = 0.85
+	panel.scale = Vector2(1.15, 1.15)
+	
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.09, 0.16, 0.9)
+	style.set_corner_radius_all(8)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.22, 0.74, 0.97, 0.9)
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var lbl := Label.new()
+	lbl.name = "IconLabel"
+	lbl.text = _get_item_symbol(item)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 20)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(lbl)
+	
+	var parent_canvas = get_viewport()
+	if parent_canvas != null:
+		parent_canvas.add_child(panel)
+	else:
+		add_child(panel)
+		
+	drag_preview = panel
+	if is_instance_valid(tooltip_instance):
+		tooltip_instance.hide()
+
+func _cancel_drag() -> void:
+	is_dragging = false
+	dragged_slot = -1
+	if drag_preview != null:
+		if is_instance_valid(drag_preview):
+			drag_preview.queue_free()
+		drag_preview = null
+
+func _finish_drag(drop_pos: Vector2) -> void:
+	var src_slot := dragged_slot
+	if src_slot < 0 or src_slot >= max_slots:
+		return
+	var item := get_item_at(src_slot)
+	if item == null:
+		return
+		
+	# 1. Thả vào ô kho đồ khác
+	for j in range(slot_buttons.size()):
+		var target_btn := slot_buttons[j]
+		if target_btn.get_global_rect().has_point(drop_pos):
+			if j != src_slot:
+				var crafted: bool = false
+				if ItemManager != null:
+					crafted = ItemManager.craft_on_bench(src_slot, j)
+					if not crafted:
+						ItemManager.swap_or_move_bench(src_slot, j)
+				refresh_all_slots()
+			return
+
+	# 2. Thả vào Tướng trên sàn cờ
+	var target_hero: HeroEntity = null
+	if board_view != null and board_grid != null:
+		var cell: Vector2i = board_view.world_to_grid(drop_pos)
+		if board_grid.is_in_bounds(cell):
+			var occupant = board_grid.get_occupant(cell)
+			if occupant is HeroEntity:
+				target_hero = occupant
+				
+	if target_hero == null and get_tree() != null:
+		var hero_nodes = get_tree().get_nodes_in_group("heroes")
+		for h in hero_nodes:
+			if h is HeroEntity and is_instance_valid(h):
+				if h.global_position.distance_to(drop_pos) <= 45.0:
+					target_hero = h
+					break
+					
+	if target_hero != null:
+		equip_slot_to_hero(src_slot, target_hero)
+		return
