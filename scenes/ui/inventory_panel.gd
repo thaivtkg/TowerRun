@@ -13,7 +13,7 @@ signal item_crafted_ui(item: ItemData, slot_idx: int)
 var selected_slot: int = -1
 
 var slot_buttons: Array[Button] = []
-var slots_container: HBoxContainer = null
+var slots_container: GridContainer = null
 var header_label: Label = null
 var tooltip_instance: ItemTooltip = null
 
@@ -28,43 +28,42 @@ func _build_ui() -> void:
 	if slots_container != null:
 		return
 		
-	custom_minimum_size = Vector2(572, 70)
-	size = Vector2(572, 70)
+	custom_minimum_size = Vector2(108, 300)
+	size = Vector2(108, 300)
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	
-	# Control Anchors: Neo cố định Bottom-Center responsive khi Fullscreen / thay đổi độ phân giải
-	anchor_left = 0.5
-	anchor_right = 0.5
-	anchor_top = 1.0
-	anchor_bottom = 1.0
-	offset_left = -286.0
-	offset_right = 286.0
-	offset_top = -173.0
-	offset_bottom = -103.0
-	grow_horizontal = Control.GROW_DIRECTION_BOTH
-	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Control Anchors: Left Dock Cột Trái Chuẩn TFT (2 Cột x 5 Hàng)
+	anchor_left = 0.0
+	anchor_right = 0.0
+	anchor_top = 0.0
+	anchor_bottom = 0.0
+	offset_left = 35.0
+	offset_top = 175.0
+	offset_right = 143.0
+	offset_bottom = 475.0
+	position = Vector2(35, 175)
 
 	var vbox := VBoxContainer.new()
 	vbox.name = "VBox"
-	vbox.add_theme_constant_override("separation", 4)
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 6)
 	vbox.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(vbox)
 	
 	# Header Label
 	header_label = Label.new()
 	header_label.name = "HeaderLabel"
-	header_label.text = "🎒 HÀNG CHỜ KHO ĐỒ (10 Ô)"
+	header_label.text = "🎒 KHO ĐỒ"
 	header_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header_label.add_theme_font_size_override("font_size", 12)
 	header_label.add_theme_color_override("font_color", Color("#94a3b8"))
 	vbox.add_child(header_label)
 	
-	# Slots Container
-	slots_container = HBoxContainer.new()
+	# Slots Container: GridContainer 2 Cột x 5 Hàng
+	slots_container = GridContainer.new()
 	slots_container.name = "SlotsContainer"
-	slots_container.add_theme_constant_override("separation", 8)
-	slots_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	slots_container.columns = 2
+	slots_container.add_theme_constant_override("h_separation", 8)
+	slots_container.add_theme_constant_override("v_separation", 8)
 	slots_container.mouse_filter = Control.MOUSE_FILTER_PASS
 	vbox.add_child(slots_container)
 	
@@ -72,7 +71,7 @@ func _build_ui() -> void:
 	for i in range(max_slots):
 		var btn := Button.new()
 		btn.name = "SlotButton_%d" % i
-		btn.custom_minimum_size = Vector2(50, 50)
+		btn.custom_minimum_size = Vector2(48, 48)
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.pressed.connect(func(): select_slot(i))
@@ -242,14 +241,12 @@ func _on_slot_mouse_entered(idx: int) -> void:
 			var btn := slot_buttons[idx]
 			var tt_size := tooltip_instance.get_combined_minimum_size()
 			
-			# Canh giữa theo nút đồ và đặt đáy Tooltip cách đỉnh nút đồ 10px
-			var target_x: float = btn.position.x + (btn.size.x - tt_size.x) / 2.0
-			var target_y: float = -tt_size.y - 10.0
+			# Bung Tooltip sang mép phải ô đồ (cách 12px)
+			var target_x: float = btn.position.x + btn.size.x + 12.0
+			# Căn dọc ngang bằng với ô đồ hoặc dịch nhẹ lên trên
+			var target_y: float = btn.position.y - (tt_size.y - btn.size.y) / 2.0
 			
-			# Khóa biên không cho Tooltip tràn ra mép ngoài màn hình
-			# shortcut: clamp to 582px bench width, upgrade to dynamic viewport width if supporting narrow resolutions
-			target_x = clamp(target_x, -10.0, 582.0 - tt_size.x)
-			
+			# shortcut: right-anchor offset, upgrade to screen edge clamping if viewport scales
 			tooltip_instance.position = Vector2(target_x, target_y)
 
 func _on_slot_mouse_exited(_idx: int) -> void:

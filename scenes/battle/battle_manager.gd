@@ -167,11 +167,11 @@ func _create_start_combat_ui() -> void:
 	canvas_layer.name = "BattleUILayer"
 	add_child(canvas_layer)
 	
-	# S6.3: Hàng chờ kho đồ 10 ô trực quan (TFT-Standard Layout)
+	# S6.3.2: Khay đồ 10 ô cột dọc bên trái (TFT Left-Dock 2x5 Grid)
 	inventory_panel = InventoryPanel.new()
 	inventory_panel.name = "InventoryPanel"
 	canvas_layer.add_child(inventory_panel)
-	inventory_panel.position = Vector2(290, 475)
+	inventory_panel.position = Vector2(35, 175)
 	
 	start_combat_button = Button.new()
 	start_combat_button.name = "StartCombatButton"
@@ -5270,11 +5270,16 @@ func _run_tc_40_inventory_bench_visual_ui_and_equip() -> void:
 	_log_test("\n==================== [TEST TC-40: INVENTORY BENCH VISUAL UI & CLICK-TO-EQUIP] ====================")
 	_reset_test_battlefield()
 	
-	# 1. TC-40.1: Visual Node Hierarchy & 10 Slot Buttons Initialization
+	# 1. TC-40.1: Visual Node Hierarchy & 10 Slot Buttons Initialization (Left Dock 2x5 Grid)
 	_log_test("[TC-40.1] Verifying InventoryPanel Visual Hierarchy & 10 Slot Buttons...")
 	assert(is_instance_valid(inventory_panel), "FAIL TC-40.1: inventory_panel must be instantiated")
 	assert(inventory_panel.slot_buttons.size() == 10, "FAIL TC-40.1: Must have exactly 10 slot buttons")
-	assert(inventory_panel.position.y >= 450.0 and inventory_panel.position.y <= 520.0, "FAIL TC-40.1: Position Y must be around 475px (got %.1f)" % inventory_panel.position.y)
+	assert(inventory_panel.position.x >= 20.0 and inventory_panel.position.x <= 60.0, 
+		"FAIL TC-40.1: Position X must be around 35px for Left Dock (got %.1f)" % inventory_panel.position.x)
+	assert(inventory_panel.slots_container is GridContainer, 
+		"FAIL TC-40.1: slots_container must be GridContainer")
+	assert(inventory_panel.slots_container.columns == 2, 
+		"FAIL TC-40.1: slots_container must have 2 columns")
 	_log_test(">>> 🟢 TC-40.1 Visual Hierarchy & 10 Slot Buttons PASSED!")
 	
 	# 2. TC-40.2: Click-to-Craft on Bench UI
@@ -5335,9 +5340,7 @@ func _run_tc_40_inventory_bench_visual_ui_and_equip() -> void:
 	assert(inventory_panel.tooltip_instance.visible == true, "FAIL TC-40.4: Tooltip must be visible on hover")
 	var tt_min := inventory_panel.tooltip_instance.get_combined_minimum_size()
 	assert(tt_min.y < 120.0, "FAIL TC-40.4: Auto-fit tooltip height for Tier 1 must be compact (<120px, got %.1f)" % tt_min.y)
-	assert(inventory_panel.tooltip_instance.position.y <= -20.0, "FAIL TC-40.4: Tooltip must be anchored above slot button")
-	var tt_bottom: float = inventory_panel.tooltip_instance.position.y + tt_min.y
-	assert(tt_bottom <= -9.0, "FAIL TC-40.4: Tooltip bottom must stay >= 10px clear of bench (got %.1f)" % tt_bottom)
+	assert(inventory_panel.tooltip_instance.position.x >= 50.0, "FAIL TC-40.4: Tooltip must be anchored to the right of slot button")
 	
 	# Mouse exit slot 2
 	inventory_panel._on_slot_mouse_exited(2)
