@@ -396,7 +396,7 @@ func _build_ui() -> void:
 	item_tooltip.name = "HeroItemTooltip"
 	item_tooltip.hide()
 	item_tooltip.z_index = 100
-	panel_container.add_child(item_tooltip)
+	add_child(item_tooltip) # Thêm trực tiếp vào CanvasLayer thay vì panel_container
 	
 	# ==========================================================================
 	# 4. KHỐI CHỈ SỐ CỐT LÕI (TFT COMPACT GRID: 2 HÀNG X 4 CỘT)
@@ -773,8 +773,12 @@ func _on_item_slot_hovered(idx: int) -> void:
 	if item != null and item_tooltip != null:
 		item_tooltip.render_tooltip(item)
 		var tt_size := item_tooltip.get_combined_minimum_size()
-		# Bung Tooltip sang mép trái thẻ Inspector
-		item_tooltip.position = Vector2(-tt_size.x - 12.0, 240.0)
+		
+		# Tọa độ neo tuyệt đối bên trái thẻ bài (856px - 230px - 12px = 614px)
+		var target_x: float = panel_container.position.x - tt_size.x - 12.0
+		var target_y: float = clamp(panel_container.position.y + 180.0, 40.0, 600.0 - tt_size.y)
+		
+		item_tooltip.position = Vector2(target_x, target_y)
 		item_tooltip.show()
 
 func _on_item_slot_unhovered(_idx: int) -> void:

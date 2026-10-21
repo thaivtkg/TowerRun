@@ -5590,6 +5590,14 @@ func _run_tc_42_equipped_items_visual_presentation() -> void:
 	assert(character_stats_ui.item_slot_buttons.size() == 3, "FAIL TC-42.2: Must have 3 item slots")
 	assert(character_stats_ui.item_slot_buttons[0].text == "👑", "FAIL TC-42.2: Slot 0 must show Mythic symbol")
 	assert(character_stats_ui.item_slot_buttons[1].text == "+", "FAIL TC-42.2: Slot 1 must be empty '+'")
+	
+	# Kiểm tra Tooltip bung sang trái panel_container (Task S6.5.1)
+	character_stats_ui._on_item_slot_hovered(0)
+	assert(character_stats_ui.item_tooltip.visible == true, "FAIL TC-42.2: Tooltip must be visible on hover")
+	assert(character_stats_ui.item_tooltip.position.x < character_stats_ui.panel_container.position.x, 
+		"FAIL TC-42.2: Tooltip must be anchored to the left of panel_container")
+	character_stats_ui._on_item_slot_unhovered(0)
+	assert(character_stats_ui.item_tooltip.visible == false, "FAIL TC-42.2: Tooltip must hide on unhover")
 	_log_test(">>> 🟢 TC-42.2 CharacterStatsUI 3 Item Slots PASSED!")
 	
 	# 4. Soi Quái thường -> items_section phải tự động ẩn
