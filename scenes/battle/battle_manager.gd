@@ -5502,6 +5502,8 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	inventory_panel.is_dragging = true
 	inventory_panel._finish_drag(arthur.global_position)
 	inventory_panel._cancel_drag()
+	if is_instance_valid(inventory_panel.active_fusion_modal) and inventory_panel.active_fusion_modal.visible:
+		inventory_panel.active_fusion_modal.select_option(0)
 	
 	assert(ItemManager.bench_slots[0] == null, "FAIL TC-41.2: Bench slot 0 must be empty after equip")
 	assert(arthur.equipped_items.size() == 1, "FAIL TC-41.2: Arthur must have 1 equipped item")
@@ -5525,6 +5527,8 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	inventory_panel.is_dragging = true
 	inventory_panel._finish_drag(arthur.global_position)
 	inventory_panel._cancel_drag()
+	if is_instance_valid(inventory_panel.active_fusion_modal) and inventory_panel.active_fusion_modal.visible:
+		inventory_panel.active_fusion_modal.select_option(0)
 	
 	assert(ItemManager.bench_slots[0] == null, "FAIL TC-41.3A: Bench slot 0 must be empty")
 	assert(arthur.equipped_items.size() == 1, "FAIL TC-41.3A: Slot count must remain 1/3 after auto-craft")
@@ -5539,6 +5543,8 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	inventory_panel.is_dragging = true
 	inventory_panel._finish_drag(arthur.global_position)
 	inventory_panel._cancel_drag()
+	if is_instance_valid(inventory_panel.active_fusion_modal) and inventory_panel.active_fusion_modal.visible:
+		inventory_panel.active_fusion_modal.select_option(0)
 	
 	assert(ItemManager.bench_slots[1] == null, "FAIL TC-41.3B: Bench slot 1 must be empty")
 	assert(arthur.equipped_items.size() == 1, "FAIL TC-41.3B: Slot count must remain 1/3 after mythic fusion")
@@ -5565,6 +5571,8 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	inventory_panel.is_dragging = true
 	inventory_panel._finish_drag(arthur.global_position)
 	inventory_panel._cancel_drag()
+	if is_instance_valid(inventory_panel.active_fusion_modal) and inventory_panel.active_fusion_modal.visible:
+		inventory_panel.active_fusion_modal.select_option(0)
 	
 	assert(ItemManager.bench_slots[2] == null, "FAIL TC-41.3C: Bench slot 2 must be consumed on craft")
 	assert(arthur.equipped_items.size() == 3, "FAIL TC-41.3C: Arthur must still have 3/3 items")
@@ -5582,6 +5590,8 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	inventory_panel.is_dragging = true
 	inventory_panel._finish_drag(arthur.global_position)
 	inventory_panel._cancel_drag()
+	if is_instance_valid(inventory_panel.active_fusion_modal) and inventory_panel.active_fusion_modal.visible:
+		inventory_panel.active_fusion_modal.select_option(0)
 	assert(ItemManager.bench_slots[3] != null, "FAIL TC-41.3C: Bench slot 3 must NOT be consumed when bag full")
 	assert(arthur.equipped_items.size() == 3, "FAIL TC-41.3C: Arthur slot count must remain 3")
 	_log_test(">>> [TC-41.3C] Full 3/3 Bag In-Place Auto-Craft verified: fused Tier 3, slot count kept at 3/3")
@@ -5676,17 +5686,21 @@ func _run_tc_43_mythic_fusion_choice_modal() -> void:
 	var armor := load("res://data/items/colossus_vitality_armor.tres") as ItemData
 	var orb := load("res://data/items/void_celestial_orb.tres") as ItemData
 	
-	# TC-43.1 (Single Tier 2 Auto-Craft): Tướng có đúng 1 món Bậc 2, kéo món Bậc 2 vào -> Tự động ghép tại chỗ, không bật modal
+	# TC-43.1 (Single Tier 2 Auto-Craft when Full 3/3): Tướng có 1 món Bậc 2 và đã đầy 3 ô (1 Bậc 2 + 2 Bậc 1) -> Tự động ghép tại chỗ, không bật modal
 	arthur.equipped_items.clear()
-	arthur.equip_item(blade)
-	assert(arthur.equipped_items.size() == 1, "FAIL TC-43.1: Arthur must have 1 item")
+	var shard := load("res://data/items/bloodsteel_shard.tres") as ItemData
+	var stone := load("res://data/items/life_stone_shard.tres") as ItemData
+	arthur.equip_item(blade, false)
+	arthur.equip_item(shard, false)
+	arthur.equip_item(stone, false)
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-43.1: Arthur must have 3 items")
 	ItemManager.bench_slots[0] = blade
 	inventory_panel.refresh_all_slots()
 	inventory_panel.equip_slot_to_hero(0, arthur)
-	assert(inventory_panel.fusion_modal.visible == false, "FAIL TC-43.1: Modal must NOT open for single Tier 2")
-	assert(arthur.equipped_items.size() == 1, "FAIL TC-43.1: Fused item count must be 1")
+	assert(inventory_panel.fusion_modal.visible == false, "FAIL TC-43.1: Modal must NOT open when 3/3 slots full")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-43.1: Fused item count must remain 3")
 	assert(arthur.equipped_items[0].tier == 3, "FAIL TC-43.1: Must auto-fuse into Tier 3 Mythic")
-	_log_test(">>> 🟢 TC-43.1 Single Tier 2 Auto-Craft PASSED!")
+	_log_test(">>> 🟢 TC-43.1 Single Tier 2 Full-Slot Auto-Craft PASSED!")
 	
 	# TC-43.2 (Dual Tier 2 Modal Trigger): Arthur có Trảm Hồn Đao (Ô 0) và Khổng Lồ Giáp (Ô 1). Kéo Hư Không Cầu vào -> Kích hoạt Modal với 2 phương án
 	arthur.equipped_items.clear()
@@ -5742,6 +5756,33 @@ func _run_tc_43_mythic_fusion_choice_modal() -> void:
 	assert(ItemManager.bench_slots[3] != null and ItemManager.bench_slots[3].id == orb.id, "FAIL TC-43.5: Item must rebound to bench slot 3")
 	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.5: Arthur must still have 2 items")
 	_log_test(">>> 🟢 TC-43.5 Cancel Rebound PASSED!")
+	
+	# --------------------------------------------------------------------------
+	# TC-43.6: Single Tier 2 with Empty Slots opens Modal & Supports Separate Equip
+	# --------------------------------------------------------------------------
+	_log_test("[TC-43.6] Verifying Single Tier 2 with Empty Slot Modal Flow...")
+	arthur.equipped_items.clear()
+	arthur.equip_item(blade, true) # Arthur có 1 Trảm Hồn Đao (1/3 slot)
+	
+	ItemManager.bench_slots[0] = load("res://data/items/colossus_vitality_armor.tres") as ItemData
+	inventory_panel.refresh_all_slots()
+	
+	# Kéo Khổng Lồ Giáp thả vào Arthur -> Phải mở Modal với 1 thẻ và có nút Lắp Riêng Rẽ
+	var handled := inventory_panel.equip_slot_to_hero(0, arthur)
+	assert(handled == false, "FAIL TC-43.6: Must defer equip to Modal")
+	assert(is_instance_valid(inventory_panel.active_fusion_modal), "FAIL TC-43.6: Modal must be open")
+	assert(inventory_panel.active_fusion_modal.cards_container.get_child_count() == 1, 
+		"FAIL TC-43.6: Must show exactly 1 fusion card for 1 existing tier 2 item")
+	assert(inventory_panel.active_fusion_modal.separate_btn.visible == true, 
+		"FAIL TC-43.6: Separate equip button must be visible when hero has < 3 items")
+	
+	# Giả lập người chơi bấm "Lắp Riêng Rẽ"
+	inventory_panel.active_fusion_modal._on_separate_pressed()
+	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.6: Arthur must now hold 2 separate Tier 2 items (2/3)")
+	assert(arthur.equipped_items[0].id == "soul_severing_blade", "FAIL TC-43.6: Slot 0 must remain blade")
+	assert(arthur.equipped_items[1].id == "colossus_vitality_armor", "FAIL TC-43.6: Slot 1 must be armor")
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-43.6: Bench slot must be consumed")
+	_log_test(">>> 🟢 TC-43.6 Single Tier 2 Separate Equip Option PASSED!")
 	
 	_reset_test_battlefield()
 	_log_test(">>> 🟢 TC-43 PASSED: Interactive Mythic Fusion Choice Modal fully verified!\n")

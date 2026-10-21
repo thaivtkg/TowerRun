@@ -27,6 +27,9 @@ var board_grid = null
 var board_view = null
 var battle_manager = null
 var fusion_modal: MythicFusionModal = null
+var active_fusion_modal: MythicFusionModal:
+	get:
+		return fusion_modal
 
 func _ready() -> void:
 	_build_ui()
@@ -154,14 +157,18 @@ func equip_slot_to_hero(slot_idx: int, hero: HeroEntity) -> bool:
 	if item == null:
 		return false
 		
-	# TASK S6.6: Kiểm tra nếu là Cổ Vật Bậc 2 và Tướng đã có từ 2 Cổ Vật Bậc 2 trở lên -> Mở Modal Lựa Chọn!
+	# TASK S6.6.1: Mở modal khi Tướng có từ 1 Cổ vật Bậc 2 trở lên VÀ còn ô trống (< 3 món)
 	if item.tier == 2:
 		var tier2_indices: Array[int] = []
 		for i in range(hero.equipped_items.size()):
 			var it := hero.equipped_items[i]
 			if it != null and it.tier == 2:
 				tier2_indices.append(i)
-		if tier2_indices.size() >= 2:
+				
+		# Kích hoạt Modal nếu:
+		# A) Tướng có >= 2 món Bậc 2 (Cần chọn xem ghép với món nào)
+		# B) Tướng có đúng 1 món Bậc 2 VÀ còn slot trống (Cần chọn xem Hợp thể hay Lắp riêng rẽ)
+		if tier2_indices.size() >= 2 or (tier2_indices.size() == 1 and hero.equipped_items.size() < 3):
 			_open_mythic_fusion_modal(hero, item, slot_idx, tier2_indices)
 			return false
 			

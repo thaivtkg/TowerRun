@@ -23,6 +23,14 @@ var options_container: HBoxContainer = null
 var separate_button: Button = null
 var cancel_button: Button = null
 
+var cards_container: HBoxContainer:
+	get:
+		return options_container
+
+var separate_btn: Button:
+	get:
+		return separate_button
+
 func _ready() -> void:
 	layer = 60
 	_build_ui()
@@ -178,7 +186,11 @@ func open(hero: HeroEntity, item: ItemData, src_slot: int, tier2_indices: Array[
 		
 	# Kiểm tra nút Lắp riêng (chỉ khả dụng nếu tướng có dưới 3 món)
 	if separate_button != null:
-		separate_button.visible = (hero.equipped_items.size() < 3)
+		if hero.equipped_items.size() < 3:
+			separate_button.visible = true
+			separate_button.text = "🎒 Lắp Riêng Rẽ (Thành %d Món)" % (hero.equipped_items.size() + 1)
+		else:
+			separate_button.visible = false
 		
 	show()
 
