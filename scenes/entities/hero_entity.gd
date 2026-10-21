@@ -392,12 +392,12 @@ func has_item_passive(p_id: String) -> bool:
 				return true
 	return false
 
-func equip_item(item: ItemData, force_no_craft: bool = false) -> bool:
+func equip_item(item: ItemData, allow_auto_craft: bool = true) -> bool:
 	if item == null:
 		return false
 		
 	# BƯỚC 1: KIỂM TRA TỰ ĐỘNG GHÉP TRÊN NGƯỜI TƯỚNG (AUTO-CRAFT IN-PLACE TRƯỚC GIỚI HẠN SLOT)
-	if not force_no_craft:
+	if allow_auto_craft:
 		for i in range(equipped_items.size()):
 			var existing: ItemData = equipped_items[i]
 			if existing == null:

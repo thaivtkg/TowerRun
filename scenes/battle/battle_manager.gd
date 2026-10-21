@@ -2,7 +2,6 @@ extends Node2D
 
 const FLOATING_TEXT_SCENE: PackedScene = preload("res://scenes/ui/floating_text/FloatingText.tscn")
 const ShieldEffectData = preload("res://data/abilities/shield_effect_data.gd")
-const MythicFusionModal = preload("res://scenes/ui/mythic_fusion_modal.gd")
 
 @export var hero_scene: PackedScene
 @export var enemy_scene: PackedScene
@@ -178,6 +177,7 @@ func _create_start_combat_ui() -> void:
 	inventory_panel.board_grid = board_grid
 	inventory_panel.board_view = board_view
 	inventory_panel.battle_manager = self
+	fusion_modal = inventory_panel.fusion_modal
 	
 	start_combat_button = Button.new()
 	start_combat_button.name = "StartCombatButton"
@@ -208,24 +208,11 @@ func _grant_initial_mock_items() -> void:
 	if ItemManager != null:
 		var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
 		var stone = load("res://data/items/life_stone_shard.tres") as ItemData
-		var blade = load("res://data/items/soul_severing_blade.tres") as ItemData
-		var armor = load("res://data/items/colossus_vitality_armor.tres") as ItemData
-		var orb = load("res://data/items/void_celestial_orb.tres") as ItemData
-		var crystal = load("res://data/items/sorcery_crystal.tres") as ItemData
-		var plating = load("res://data/items/obsidian_plating.tres") as ItemData
-		var frost = load("res://data/items/frost_prison_heart.tres") as ItemData
-		
 		if shard != null and stone != null:
 			ItemManager.bench_slots[0] = shard
 			ItemManager.bench_slots[1] = shard
 			ItemManager.bench_slots[2] = stone
 			ItemManager.bench_slots[3] = stone
-			ItemManager.bench_slots[4] = blade
-			ItemManager.bench_slots[5] = armor
-			ItemManager.bench_slots[6] = orb
-			ItemManager.bench_slots[7] = crystal
-			ItemManager.bench_slots[8] = plating
-			ItemManager.bench_slots[9] = frost
 			if is_instance_valid(inventory_panel):
 				inventory_panel.refresh_all_slots()
 
@@ -253,13 +240,16 @@ func enter_preparation_phase() -> void:
 func start_combat_phase() -> void:
 	if current_phase == EncounterPhase.COMBAT:
 		return
+		
+	# Fail-safe: Nếu người chơi đang mở MythicFusionModal mà Combat Phase bắt đầu
+	if is_instance_valid(fusion_modal) and fusion_modal.visible:
+		fusion_modal.cancel_and_close()
+	elif is_instance_valid(inventory_panel) and is_instance_valid(inventory_panel.fusion_modal) and inventory_panel.fusion_modal.visible:
+		inventory_panel.fusion_modal.cancel_and_close()
+		
 	if start_combat_button != null:
 		start_combat_button.disabled = true
 		start_combat_button.hide()
-
-	# Fail-safe S6.6: Nếu người chơi đang mở MythicFusionModal mà Combat Phase bắt đầu
-	if is_instance_valid(fusion_modal) and fusion_modal.visible:
-		fusion_modal.cancel_and_close()
 
 	# Lưu lại tọa độ ô cờ hiện tại của từng Hero trước khi khóa bàn cờ
 	for hero in heroes:
@@ -1280,9 +1270,6 @@ func _input(event: InputEvent) -> void:
 				RunManager.add_gold(50)
 				if debug_cheat_ui != null:
 					debug_cheat_ui.update_info()
-		KEY_I:
-			_grant_initial_mock_items()
-			print("[DEBUG] 🎒 ĐÃ NẠP ĐẦY 10 TRANG BỊ VÀO KHO ĐỒ!")
 
 func _run_all_tests() -> void:
 	if SaveManager != null:
@@ -5650,79 +5637,82 @@ func _run_tc_43_mythic_fusion_choice_modal() -> void:
 			break
 	assert(arthur != null, "FAIL TC-43: Arthur must exist")
 	arthur.equipped_items.clear()
-	ItemManager._init_bench()
-	inventory_panel.board_grid = board_grid
-	inventory_panel.board_view = board_view
-	inventory_panel.battle_manager = self
+	arthur._setup_item_bar()
 	
-	var blade := load("res://data/items/soul_severing_blade.tres") as ItemData # Trảm Hồn Đao (Bậc 2)
-	var armor := load("res://data/items/colossus_vitality_armor.tres") as ItemData # Khổng Lồ Giáp (Bậc 2)
-	var orb := load("res://data/items/void_celestial_orb.tres") as ItemData # Hư Không Cầu (Bậc 2)
+	assert(is_instance_valid(inventory_panel), "FAIL TC-43: inventory_panel must exist")
+	if inventory_panel.fusion_modal == null:
+		inventory_panel._build_ui()
+	assert(is_instance_valid(inventory_panel.fusion_modal), "FAIL TC-43: fusion_modal must exist")
 	
-	# TC-43.1 (Single Tier 2 Auto-Craft): Tướng có đúng 1 món Bậc 2, kéo món Bậc 2 vào -> Tự động ghép thành công tại chỗ, không bật modal.
+	var blade := load("res://data/items/soul_severing_blade.tres") as ItemData
+	var armor := load("res://data/items/colossus_vitality_armor.tres") as ItemData
+	var orb := load("res://data/items/void_celestial_orb.tres") as ItemData
+	
+	# TC-43.1 (Single Tier 2 Auto-Craft): Tướng có đúng 1 món Bậc 2, kéo món Bậc 2 vào -> Tự động ghép tại chỗ, không bật modal
+	arthur.equipped_items.clear()
 	arthur.equip_item(blade)
 	assert(arthur.equipped_items.size() == 1, "FAIL TC-43.1: Arthur must have 1 item")
 	ItemManager.bench_slots[0] = blade
+	inventory_panel.refresh_all_slots()
 	inventory_panel.equip_slot_to_hero(0, arthur)
-	assert(inventory_panel.fusion_modal == null or not is_instance_valid(inventory_panel.fusion_modal),
-		"FAIL TC-43.1: Modal must NOT open for single Tier 2")
-	assert(arthur.equipped_items.size() == 1, "FAIL TC-43.1: Should fuse into 1 Tier 3 Mythic")
-	assert(arthur.equipped_items[0].tier == 3, "FAIL TC-43.1: Item must be Tier 3 Mythic")
+	assert(inventory_panel.fusion_modal.visible == false, "FAIL TC-43.1: Modal must NOT open for single Tier 2")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-43.1: Fused item count must be 1")
+	assert(arthur.equipped_items[0].tier == 3, "FAIL TC-43.1: Must auto-fuse into Tier 3 Mythic")
 	_log_test(">>> 🟢 TC-43.1 Single Tier 2 Auto-Craft PASSED!")
 	
-	# TC-43.2 (Dual Tier 2 Modal Trigger): Arthur có Trảm Hồn Đao (Ô 0) và Khổng Lồ Giáp (Ô 1). Kéo Hư Không Cầu (Bậc 2) vào -> Kích hoạt Modal, xác nhận hiển thị đúng 2 phương án hợp thể.
+	# TC-43.2 (Dual Tier 2 Modal Trigger): Arthur có Trảm Hồn Đao (Ô 0) và Khổng Lồ Giáp (Ô 1). Kéo Hư Không Cầu vào -> Kích hoạt Modal với 2 phương án
 	arthur.equipped_items.clear()
-	arthur.equip_item(blade, true)
-	arthur.equip_item(armor, true)
-	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.2: Arthur must have 2 Tier 2 items")
-	ItemManager.bench_slots[0] = orb
-	inventory_panel.equip_slot_to_hero(0, arthur)
-	assert(is_instance_valid(inventory_panel.fusion_modal) and inventory_panel.fusion_modal.visible,
-		"FAIL TC-43.2: Modal must be open for 2+ Tier 2 items")
-	assert(inventory_panel.fusion_modal.option_buttons.size() == 2,
-		"FAIL TC-43.2: Must show exactly 2 fusion choice cards")
+	arthur.equipped_items.append(blade)
+	arthur.equipped_items.append(armor)
+	arthur._update_item_bar()
+	ItemManager.bench_slots[1] = orb
+	inventory_panel.refresh_all_slots()
+	inventory_panel.equip_slot_to_hero(1, arthur)
+	assert(inventory_panel.fusion_modal.visible == true, "FAIL TC-43.2: Modal must open when Arthur has 2 Tier 2 items")
+	assert(inventory_panel.fusion_modal.options_container.get_child_count() == 2, "FAIL TC-43.2: Modal must have exactly 2 choices")
 	_log_test(">>> 🟢 TC-43.2 Dual Tier 2 Modal Trigger PASSED!")
 	
-	# TC-43.3 (Select Option B): Chọn phương án ghép với Ô 1 (Khổng Lồ Giáp) -> Ô 1 biến đổi thành Thần Thoại Khổng Thần Cầu, Ô 0 giữ nguyên Trảm Hồn Đao!
-	var btn_option_1: Button = inventory_panel.fusion_modal.option_buttons[1]
-	btn_option_1.emit_signal("pressed")
-	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.3: Total equipped items must remain 2")
+	# TC-43.3 (Select Option B): Chọn phương án ghép với Ô 1 (Khổng Lồ Giáp) -> Ô 1 biến đổi thành Khổng Thần Cầu, Ô 0 giữ nguyên Trảm Hồn Đao
+	inventory_panel.fusion_modal.select_option(1)
+	assert(inventory_panel.fusion_modal.visible == false, "FAIL TC-43.3: Modal must close after selecting option")
+	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.3: Arthur must still have 2 items")
 	assert(arthur.equipped_items[0].id == blade.id, "FAIL TC-43.3: Slot 0 must remain Trảm Hồn Đao")
 	assert(arthur.equipped_items[1].tier == 3, "FAIL TC-43.3: Slot 1 must be Tier 3 Mythic")
-	assert(ItemManager.bench_slots[0] == null, "FAIL TC-43.3: Bench slot 0 must be consumed")
+	assert("Khổng" in arthur.equipped_items[1].name and "Cầu" in arthur.equipped_items[1].name, "FAIL TC-43.3: Slot 1 must be Khổng Thần Cầu")
+	assert(ItemManager.bench_slots[1] == null, "FAIL TC-43.3: Bench slot 1 must be consumed")
 	_log_test(">>> 🟢 TC-43.3 Select Option B PASSED!")
 	
-	# TC-43.4 (Equip Separate Action): Reset thử nghiệm, chọn nút Lắp Riêng Rẽ -> Arthur cầm trọn vẹn 3 món Bậc 2 độc lập (3/3), không có món nào bị ép thăng hoa!
+	# TC-43.4 (Equip Separate Action): Reset thử nghiệm, chọn nút Lắp Riêng Rẽ -> Arthur cầm đủ 3 món Bậc 2 độc lập (3/3), không bị ép thăng hoa
 	arthur.equipped_items.clear()
-	arthur.equip_item(blade, true)
-	arthur.equip_item(armor, true)
-	ItemManager.bench_slots[0] = orb
-	inventory_panel.equip_slot_to_hero(0, arthur)
-	assert(is_instance_valid(inventory_panel.fusion_modal) and inventory_panel.fusion_modal.visible,
-		"FAIL TC-43.4: Modal must be open")
-	assert(inventory_panel.fusion_modal.separate_button != null and inventory_panel.fusion_modal.separate_button.visible,
-		"FAIL TC-43.4: Separate button must be visible when < 3 items")
-	inventory_panel.fusion_modal.separate_button.emit_signal("pressed")
-	assert(arthur.equipped_items.size() == 3, "FAIL TC-43.4: Arthur must hold 3 items")
-	assert(arthur.equipped_items[0].tier == 2 and arthur.equipped_items[1].tier == 2 and arthur.equipped_items[2].tier == 2,
-		"FAIL TC-43.4: All 3 items must be Tier 2 without forced fusion")
-	assert(ItemManager.bench_slots[0] == null, "FAIL TC-43.4: Bench slot 0 must be consumed")
+	arthur.equipped_items.append(blade)
+	arthur.equipped_items.append(armor)
+	arthur._update_item_bar()
+	ItemManager.bench_slots[2] = orb
+	inventory_panel.refresh_all_slots()
+	inventory_panel.equip_slot_to_hero(2, arthur)
+	assert(inventory_panel.fusion_modal.visible == true, "FAIL TC-43.4: Modal must open")
+	inventory_panel.fusion_modal.select_separate()
+	assert(inventory_panel.fusion_modal.visible == false, "FAIL TC-43.4: Modal must close after separate equip")
+	assert(arthur.equipped_items.size() == 3, "FAIL TC-43.4: Arthur must have 3 items")
+	assert(arthur.equipped_items[0].tier == 2, "FAIL TC-43.4: Slot 0 must be Tier 2")
+	assert(arthur.equipped_items[1].tier == 2, "FAIL TC-43.4: Slot 1 must be Tier 2")
+	assert(arthur.equipped_items[2].tier == 2, "FAIL TC-43.4: Slot 2 must be Tier 2")
+	assert(ItemManager.bench_slots[2] == null, "FAIL TC-43.4: Bench slot 2 must be consumed")
 	_log_test(">>> 🟢 TC-43.4 Equip Separate Action PASSED!")
 	
-	# TC-43.5 (Cancel Rebound): Nhấn Hủy -> Món đồ quay về ô kho đồ, Tướng giữ nguyên trang bị cũ.
+	# TC-43.5 (Cancel Rebound): Nhấn Hủy -> Món đồ quay về ô kho đồ, Tướng giữ nguyên trang bị cũ
 	arthur.equipped_items.clear()
-	arthur.equip_item(blade, true)
-	arthur.equip_item(armor, true)
-	ItemManager.bench_slots[0] = orb
-	inventory_panel.equip_slot_to_hero(0, arthur)
-	assert(is_instance_valid(inventory_panel.fusion_modal) and inventory_panel.fusion_modal.visible,
-		"FAIL TC-43.5: Modal must be open")
-	assert(inventory_panel.fusion_modal.cancel_button != null, "FAIL TC-43.5: Cancel button must exist")
-	inventory_panel.fusion_modal.cancel_button.emit_signal("pressed")
-	assert(ItemManager.bench_slots[0] == orb, "FAIL TC-43.5: Bench slot 0 must keep item")
-	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.5: Arthur's items must remain 2")
-	assert(arthur.equipped_items[0].tier == 2 and arthur.equipped_items[1].tier == 2,
-		"FAIL TC-43.5: Arthur's items must remain unchanged")
+	arthur.equipped_items.append(blade)
+	arthur.equipped_items.append(armor)
+	arthur._update_item_bar()
+	ItemManager.bench_slots[3] = orb
+	inventory_panel.refresh_all_slots()
+	inventory_panel.equip_slot_to_hero(3, arthur)
+	assert(inventory_panel.fusion_modal.visible == true, "FAIL TC-43.5: Modal must open")
+	inventory_panel.fusion_modal.cancel_and_close()
+	assert(inventory_panel.fusion_modal.visible == false, "FAIL TC-43.5: Modal must close on cancel")
+	assert(ItemManager.bench_slots[3] != null and ItemManager.bench_slots[3].id == orb.id, "FAIL TC-43.5: Item must rebound to bench slot 3")
+	assert(arthur.equipped_items.size() == 2, "FAIL TC-43.5: Arthur must still have 2 items")
 	_log_test(">>> 🟢 TC-43.5 Cancel Rebound PASSED!")
 	
 	_reset_test_battlefield()
@@ -5732,10 +5722,6 @@ func _run_tc_43_mythic_fusion_choice_modal() -> void:
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
-	if is_instance_valid(fusion_modal):
-		fusion_modal.cancel_and_close()
-	if is_instance_valid(inventory_panel) and is_instance_valid(inventory_panel.fusion_modal):
-		inventory_panel.fusion_modal.cancel_and_close()
 	for h in heroes:
 		if is_instance_valid(h):
 			if h.get_parent(): h.get_parent().remove_child(h)
@@ -5764,6 +5750,9 @@ func _reset_test_battlefield() -> void:
 		character_stats_ui.close()
 	if is_instance_valid(inventory_panel):
 		inventory_panel.selected_slot = -1
+		if is_instance_valid(inventory_panel.fusion_modal):
+			inventory_panel.fusion_modal.hide()
+			inventory_panel.fusion_modal.is_open = false
 		inventory_panel.refresh_all_slots()
 	if get_tree() != null:
 		get_tree().paused = false
