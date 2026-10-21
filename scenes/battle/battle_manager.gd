@@ -5426,7 +5426,20 @@ func _run_tc_41_drag_drop_and_on_hero_craft() -> void:
 	assert(swap_ok == true, "FAIL TC-41.1: swap_or_move_bench must return true")
 	assert(ItemManager.bench_slots[3] == null and ItemManager.bench_slots[5].id == "soul_severing_blade", "FAIL TC-41.1: Slot 5 must now have blade")
 	_log_test(">>> [TC-41.1] Bench Drag Swap/Move verified: moved to Slot 3 and swapped to Slot 5")
-	_log_test(">>> 🟢 TC-41.1 Bench Drag Craft & Swap PASSED!")
+	
+	# TC-41.1C: Khẳng định ô gốc ẩn icon khi đang kéo và phục hồi khi hủy kéo (Task S6.4.1)
+	ItemManager.bench_slots[0] = shard
+	inventory_panel.dragged_slot = 0
+	inventory_panel.is_dragging = true
+	inventory_panel.refresh_all_slots()
+	assert(inventory_panel.slot_buttons[0].text == "1", 
+		"FAIL TC-41.1C: Origin slot must hide item symbol while being dragged")
+	
+	inventory_panel._cancel_drag()
+	assert(inventory_panel.slot_buttons[0].text == "🗡️", 
+		"FAIL TC-41.1C: Origin slot must restore item symbol when drag is cancelled")
+	
+	_log_test(">>> 🟢 TC-41.1 Bench Drag Craft, Swap & Ghost Elimination PASSED!")
 	
 	# --------------------------------------------------------------------------
 	# TC-41.2: Bench Drag to Hero Equip

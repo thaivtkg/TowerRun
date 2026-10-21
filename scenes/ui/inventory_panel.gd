@@ -165,6 +165,10 @@ func refresh_all_slots() -> void:
 		var item: ItemData = get_item_at(i)
 		var is_selected: bool = (selected_slot == i)
 		
+		# TASK S6.4.1: Nếu ô đang được kéo thả -> Tạm coi là rỗng để ẩn icon khỏi ô gốc!
+		if is_dragging and dragged_slot == i:
+			item = null
+		
 		var style := StyleBoxFlat.new()
 		style.bg_color = Color("#0f172a")
 		style.set_corner_radius_all(8)
@@ -244,6 +248,8 @@ func _get_item_symbol(item: ItemData) -> String:
 			return "📦"
 
 func _on_slot_mouse_entered(idx: int) -> void:
+	if is_dragging:
+		return # TASK S6.4.1: Không bung Tooltip khi đang kéo đồ lướt qua các ô khác
 	var item := get_item_at(idx)
 	if item != null and tooltip_instance != null:
 		tooltip_instance.render_tooltip(item)
@@ -289,6 +295,7 @@ func _input(event: InputEvent) -> void:
 			if (event.global_position - drag_start_pos).length() >= DRAG_THRESHOLD:
 				is_dragging = true
 				_create_drag_preview(dragged_slot)
+				refresh_all_slots() # TASK S6.4.1: Biến mất khỏi ô gốc ngay tích tắc bắt đầu kéo!
 		if is_dragging and drag_preview != null:
 			drag_preview.global_position = event.global_position - drag_preview.size * 0.5
 
@@ -353,6 +360,7 @@ func _cancel_drag() -> void:
 		if is_instance_valid(drag_preview):
 			drag_preview.queue_free()
 		drag_preview = null
+	refresh_all_slots() # TASK S6.4.1: Hoàn trả hiển thị (Rebound) nếu drop trượt hoặc hủy kéo!
 
 func _finish_drag(drop_pos: Vector2) -> void:
 	var src_slot := dragged_slot
