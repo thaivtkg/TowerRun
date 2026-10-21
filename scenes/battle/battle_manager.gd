@@ -5333,6 +5333,11 @@ func _run_tc_40_inventory_bench_visual_ui_and_equip() -> void:
 	# Mouse hover slot 2
 	inventory_panel._on_slot_mouse_entered(2)
 	assert(inventory_panel.tooltip_instance.visible == true, "FAIL TC-40.4: Tooltip must be visible on hover")
+	var tt_min := inventory_panel.tooltip_instance.get_combined_minimum_size()
+	assert(tt_min.y < 120.0, "FAIL TC-40.4: Auto-fit tooltip height for Tier 1 must be compact (<120px, got %.1f)" % tt_min.y)
+	assert(inventory_panel.tooltip_instance.position.y <= -20.0, "FAIL TC-40.4: Tooltip must be anchored above slot button")
+	var tt_bottom: float = inventory_panel.tooltip_instance.position.y + tt_min.y
+	assert(tt_bottom <= -9.0, "FAIL TC-40.4: Tooltip bottom must stay >= 10px clear of bench (got %.1f)" % tt_bottom)
 	
 	# Mouse exit slot 2
 	inventory_panel._on_slot_mouse_exited(2)

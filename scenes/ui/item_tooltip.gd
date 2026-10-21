@@ -17,7 +17,7 @@ func _ready() -> void:
 
 func _setup_dynamic_ui() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	custom_minimum_size = Vector2(240, 100)
+	custom_minimum_size = Vector2(230, 0)
 	
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.04, 0.06, 0.1, 0.95)
@@ -42,6 +42,9 @@ func _setup_dynamic_ui() -> void:
 	stats_label.name = "StatsLabel"
 	stats_label.bbcode_enabled = true
 	stats_label.fit_content = true
+	stats_label.scroll_active = false
+	stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stats_label.custom_minimum_size = Vector2(210, 0)
 	stats_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(stats_label)
 
@@ -105,4 +108,5 @@ func render_tooltip(item: ItemData) -> void:
 		_setup_dynamic_ui()
 		
 	stats_label.text = format_tooltip_text(item)
+	reset_size()
 	show()

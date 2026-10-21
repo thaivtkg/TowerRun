@@ -240,7 +240,17 @@ func _on_slot_mouse_entered(idx: int) -> void:
 		tooltip_instance.render_tooltip(item)
 		if idx < slot_buttons.size():
 			var btn := slot_buttons[idx]
-			tooltip_instance.position = Vector2(btn.position.x - 60, -180)
+			var tt_size := tooltip_instance.get_combined_minimum_size()
+			
+			# Canh giữa theo nút đồ và đặt đáy Tooltip cách đỉnh nút đồ 10px
+			var target_x: float = btn.position.x + (btn.size.x - tt_size.x) / 2.0
+			var target_y: float = -tt_size.y - 10.0
+			
+			# Khóa biên không cho Tooltip tràn ra mép ngoài màn hình
+			# shortcut: clamp to 582px bench width, upgrade to dynamic viewport width if supporting narrow resolutions
+			target_x = clamp(target_x, -10.0, 582.0 - tt_size.x)
+			
+			tooltip_instance.position = Vector2(target_x, target_y)
 
 func _on_slot_mouse_exited(_idx: int) -> void:
 	if tooltip_instance != null:
