@@ -774,9 +774,14 @@ func _on_item_slot_hovered(idx: int) -> void:
 		item_tooltip.render_tooltip(item)
 		var tt_size := item_tooltip.get_combined_minimum_size()
 		
-		# Tọa độ neo tuyệt đối bên trái thẻ bài (856px - 230px - 12px = 614px)
+		# Tọa độ neo tuyệt đối bên trái thẻ bài, ngang hàng với ô trang bị đang xem
 		var target_x: float = panel_container.position.x - tt_size.x - 12.0
-		var target_y: float = clamp(panel_container.position.y + 180.0, 40.0, 600.0 - tt_size.y)
+		var slot_y: float = panel_container.position.y + 180.0
+		if idx < item_slot_buttons.size():
+			var btn := item_slot_buttons[idx]
+			if btn.global_position.y > 0:
+				slot_y = btn.global_position.y + (btn.size.y - tt_size.y) * 0.5
+		var target_y: float = clamp(slot_y, 20.0, 648.0 - tt_size.y - 10.0)
 		
 		item_tooltip.position = Vector2(target_x, target_y)
 		item_tooltip.show()

@@ -1,6 +1,8 @@
 class_name InventoryPanel
 extends Control
 
+const MythicFusionModal = preload("res://scenes/ui/mythic_fusion_modal.gd")
+
 # ==========================================
 # INVENTORY BENCH PANEL (SPRINT 6 - TASK S6.3)
 # Quản lý 10 ô chứa đồ và giao diện trực quan
@@ -25,6 +27,8 @@ var drag_start_pos: Vector2 = Vector2.ZERO
 var drag_preview: Control = null
 var board_grid = null
 var board_view = null
+var battle_manager = null
+var fusion_modal: MythicFusionModal = null
 
 func _ready() -> void:
 	_build_ui()
@@ -143,6 +147,20 @@ func equip_slot_to_hero(slot_idx: int, hero: HeroEntity) -> bool:
 	var item: ItemData = ItemManager.bench_slots[slot_idx]
 	if item == null:
 		return false
+		
+	# SPRINT 6 - TASK S6.6: Kiểm tra điều kiện mở Modal Thần Thoại khi lắp Cổ Vật Bậc 2
+	if item.tier == 2:
+		var tier2_indices: Array[int] = []
+		for i in range(hero.equipped_items.size()):
+			var it := hero.equipped_items[i]
+			if it != null and it.tier == 2:
+				tier2_indices.append(i)
+				
+		if tier2_indices.size() >= 2:
+			# Tướng đang có từ 2 Cổ Vật Bậc 2 trở lên -> Kích hoạt Modal Lựa Chọn!
+			_open_mythic_fusion_modal(hero, item, slot_idx, tier2_indices)
+			return true
+
 	if hero.equip_item(item):
 		ItemManager.bench_slots[slot_idx] = null
 		if selected_slot == slot_idx:
@@ -150,6 +168,55 @@ func equip_slot_to_hero(slot_idx: int, hero: HeroEntity) -> bool:
 		refresh_all_slots()
 		return true
 	return false
+
+func _open_mythic_fusion_modal(hero: HeroEntity, item: ItemData, src_slot: int, indices: Array[int]) -> MythicFusionModal:
+	if fusion_modal != null and is_instance_valid(fusion_modal):
+		fusion_modal.cancel_and_close()
+		
+	var modal := MythicFusionModal.new()
+	modal.name = "MythicFusionModal"
+	modal.setup(hero, item, src_slot, indices)
+	
+	modal.option_selected.connect(_on_fusion_option_selected)
+	modal.equip_separate_selected.connect(_on_fusion_equip_separate)
+	modal.modal_cancelled.connect(_on_fusion_modal_cancelled)
+	
+	fusion_modal = modal
+	if battle_manager != null:
+		battle_manager.fusion_modal = modal
+		if battle_manager.prep_timer != null:
+			battle_manager.prep_timer.paused = true
+			
+	add_child(modal)
+	return modal
+
+func _on_fusion_option_selected(hero: HeroEntity, slot_idx: int, crafted_mythic: ItemData, src_slot: int) -> void:
+	if hero != null and slot_idx >= 0 and slot_idx < hero.equipped_items.size():
+		hero.equipped_items[slot_idx] = crafted_mythic
+		if ItemManager != null and src_slot >= 0 and src_slot < ItemManager.bench_slots.size():
+			ItemManager.bench_slots[src_slot] = null
+		hero._on_item_equipped(crafted_mythic, true)
+	refresh_all_slots()
+	_cleanup_fusion_modal()
+
+func _on_fusion_equip_separate(hero: HeroEntity, item: ItemData, src_slot: int) -> void:
+	if hero != null:
+		hero.equip_item(item, true) # force_no_craft = true
+		if ItemManager != null and src_slot >= 0 and src_slot < ItemManager.bench_slots.size():
+			ItemManager.bench_slots[src_slot] = null
+	refresh_all_slots()
+	_cleanup_fusion_modal()
+
+func _on_fusion_modal_cancelled(_src_slot: int) -> void:
+	refresh_all_slots()
+	_cleanup_fusion_modal()
+
+func _cleanup_fusion_modal() -> void:
+	if battle_manager != null and battle_manager.prep_timer != null:
+		battle_manager.prep_timer.paused = false
+	fusion_modal = null
+	if battle_manager != null:
+		battle_manager.fusion_modal = null
 
 func get_item_at(idx: int) -> ItemData:
 	if ItemManager != null and idx >= 0 and idx < ItemManager.bench_slots.size():

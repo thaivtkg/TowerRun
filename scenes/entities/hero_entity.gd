@@ -392,30 +392,31 @@ func has_item_passive(p_id: String) -> bool:
 				return true
 	return false
 
-func equip_item(item: ItemData) -> bool:
+func equip_item(item: ItemData, force_no_craft: bool = false) -> bool:
 	if item == null:
 		return false
 		
 	# BƯỚC 1: KIỂM TRA TỰ ĐỘNG GHÉP TRÊN NGƯỜI TƯỚNG (AUTO-CRAFT IN-PLACE TRƯỚC GIỚI HẠN SLOT)
-	for i in range(equipped_items.size()):
-		var existing: ItemData = equipped_items[i]
-		if existing == null:
-			continue
-			
-		var crafted_item: ItemData = null
-		# Trường hợp A: Mảnh Bậc 1 + Mảnh Bậc 1 -> Cổ Vật Bậc 2
-		if (item.tier == 1 or item.is_component) and (existing.tier == 1 or existing.is_component):
-			if ItemManager != null:
-				crafted_item = ItemManager.combine(existing, item)
-		# Trường hợp B: Cổ Vật Bậc 2 + Cổ Vật Bậc 2 -> Thần Thoại Bậc 3
-		elif item.tier == 2 and existing.tier == 2:
-			if ItemManager != null:
-				crafted_item = ItemManager.get_mythic_fusion(existing, item)
+	if not force_no_craft:
+		for i in range(equipped_items.size()):
+			var existing: ItemData = equipped_items[i]
+			if existing == null:
+				continue
 				
-		if crafted_item != null:
-			equipped_items[i] = crafted_item
-			_on_item_equipped(crafted_item, true)
-			return true
+			var crafted_item: ItemData = null
+			# Trường hợp A: Mảnh Bậc 1 + Mảnh Bậc 1 -> Cổ Vật Bậc 2
+			if (item.tier == 1 or item.is_component) and (existing.tier == 1 or existing.is_component):
+				if ItemManager != null:
+					crafted_item = ItemManager.combine(existing, item)
+			# Trường hợp B: Cổ Vật Bậc 2 + Cổ Vật Bậc 2 -> Thần Thoại Bậc 3
+			elif item.tier == 2 and existing.tier == 2:
+				if ItemManager != null:
+					crafted_item = ItemManager.get_mythic_fusion(existing, item)
+					
+			if crafted_item != null:
+				equipped_items[i] = crafted_item
+				_on_item_equipped(crafted_item, true)
+				return true
 					
 	# BƯỚC 2: NẾU KHÔNG GHÉP ĐƯỢC -> KIỂM TRA TRẦN 3 SLOT
 	if equipped_items.size() >= 3:
