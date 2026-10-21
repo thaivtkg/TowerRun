@@ -93,6 +93,7 @@ func _start_battle() -> void:
 	_init_systems()
 	_spawn_mock_teams()
 	_grant_initial_mock_items()
+	_equip_initial_test_hero_items()
 	enter_preparation_phase()
 	for h in heroes:
 		if is_instance_valid(h) and h.name == "Kira":
@@ -208,13 +209,40 @@ func _grant_initial_mock_items() -> void:
 	if ItemManager != null:
 		var shard = load("res://data/items/bloodsteel_shard.tres") as ItemData
 		var stone = load("res://data/items/life_stone_shard.tres") as ItemData
-		if shard != null and stone != null:
-			ItemManager.bench_slots[0] = shard
-			ItemManager.bench_slots[1] = shard
-			ItemManager.bench_slots[2] = stone
-			ItemManager.bench_slots[3] = stone
-			if is_instance_valid(inventory_panel):
-				inventory_panel.refresh_all_slots()
+		var orb = load("res://data/items/void_celestial_orb.tres") as ItemData
+		var blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+		var armor = load("res://data/items/colossus_vitality_armor.tres") as ItemData
+		var crystal = load("res://data/items/sorcery_crystal.tres") as ItemData
+		var plating = load("res://data/items/obsidian_plating.tres") as ItemData
+		var frost = load("res://data/items/frost_prison_heart.tres") as ItemData
+		
+		# Duy trì 0..3 cho chuẩn TC-40.4
+		ItemManager.bench_slots[0] = shard
+		ItemManager.bench_slots[1] = shard
+		ItemManager.bench_slots[2] = stone
+		ItemManager.bench_slots[3] = stone
+		# Các món đa dạng để test hợp thể Bậc 2 và Bậc 3
+		ItemManager.bench_slots[4] = orb
+		ItemManager.bench_slots[5] = blade
+		ItemManager.bench_slots[6] = armor
+		ItemManager.bench_slots[7] = crystal
+		ItemManager.bench_slots[8] = plating
+		ItemManager.bench_slots[9] = frost
+		if is_instance_valid(inventory_panel):
+			inventory_panel.refresh_all_slots()
+
+func _equip_initial_test_hero_items() -> void:
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	if arthur != null:
+		var blade = load("res://data/items/soul_severing_blade.tres") as ItemData
+		var armor = load("res://data/items/colossus_vitality_armor.tres") as ItemData
+		if blade != null and armor != null:
+			arthur.equip_item(blade, false)
+			arthur.equip_item(armor, false)
 
 func enter_preparation_phase() -> void:
 	current_phase = EncounterPhase.PREPARATION
