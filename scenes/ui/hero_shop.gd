@@ -112,11 +112,11 @@ func _build_ui() -> void:
 	# 1. Nút Reroll (Đổi tướng - 2 Vàng)
 	reroll_button = Button.new()
 	reroll_button.name = "RerollButton"
-	reroll_button.text = "🎲 Đổi (2 Vàng)"
-	reroll_button.custom_minimum_size = Vector2(96, 36)
-	reroll_button.size = Vector2(96, 36)
-	reroll_button.position = Vector2(140, 6)
+	reroll_button.clip_text = true
+	reroll_button.custom_minimum_size = Vector2(120, 32)
+	reroll_button.position = Vector2(115, 8)
 	reroll_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	reroll_button.text = "🎲 Đổi (2 Vàng)"
 	
 	var style_reroll := StyleBoxFlat.new()
 	style_reroll.bg_color = Color("#0f172a")
@@ -126,20 +126,26 @@ func _build_ui() -> void:
 	style_reroll.border_width_right = 2
 	style_reroll.border_width_bottom = 2
 	style_reroll.border_color = Color("#f59e0b")
+	style_reroll.content_margin_left = 4
+	style_reroll.content_margin_right = 4
+	style_reroll.content_margin_top = 2
+	style_reroll.content_margin_bottom = 2
 	reroll_button.add_theme_stylebox_override("normal", style_reroll)
-	reroll_button.add_theme_font_size_override("font_size", 11)
+	reroll_button.add_theme_font_size_override("font_size", 10)
 	reroll_button.add_theme_color_override("font_color", Color("#fbbf24"))
+	reroll_button.reset_size()
+	reroll_button.size = Vector2(120, 32)
 	reroll_button.pressed.connect(func(): reroll())
 	add_child(reroll_button)
 	
 	# 2. Nút Khóa Shop
 	lock_button = Button.new()
 	lock_button.name = "LockButton"
-	lock_button.text = "🔓 Khóa Shop"
-	lock_button.custom_minimum_size = Vector2(96, 32)
-	lock_button.size = Vector2(96, 32)
-	lock_button.position = Vector2(140, 46)
+	lock_button.clip_text = true
+	lock_button.custom_minimum_size = Vector2(120, 32)
+	lock_button.position = Vector2(115, 46)
 	lock_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	lock_button.text = "🔓 Khóa Shop"
 	
 	var style_lock := StyleBoxFlat.new()
 	style_lock.bg_color = Color("#0f172a")
@@ -149,16 +155,22 @@ func _build_ui() -> void:
 	style_lock.border_width_right = 1
 	style_lock.border_width_bottom = 1
 	style_lock.border_color = Color("#475569")
+	style_lock.content_margin_left = 4
+	style_lock.content_margin_right = 4
+	style_lock.content_margin_top = 2
+	style_lock.content_margin_bottom = 2
 	lock_button.add_theme_stylebox_override("normal", style_lock)
-	lock_button.add_theme_font_size_override("font_size", 11)
+	lock_button.add_theme_font_size_override("font_size", 10)
 	lock_button.add_theme_color_override("font_color", Color("#94a3b8"))
+	lock_button.reset_size()
+	lock_button.size = Vector2(120, 32)
 	lock_button.pressed.connect(func(): toggle_lock())
 	add_child(lock_button)
 	
 	# 3. 5 Thẻ Tướng
 	card_buttons.clear()
 	card_panels.clear()
-	var start_x: float = 246.0
+	var start_x: float = 250.0
 	var spacing: float = 6.0
 	
 	for i in range(SHOP_SIZE):
@@ -225,13 +237,13 @@ func _build_ui() -> void:
 		card_panels.append(panel)
 		card_buttons.append(btn)
 		
-	# 4. Nút Bắt Đầu Chiến Đấu tại góc phải X = 765, Y = 0 (Global Y = 550)
+	# 4. Nút Bắt Đầu Chiến Đấu tại góc phải X = 760, Y = 16 (Global Y = 566, căn giữa trục Y = 44)
 	start_combat_button = Button.new()
 	start_combat_button.name = "StartCombatButton"
 	start_combat_button.text = "⚔️ BẮT ĐẦU CHIẾN ĐẤU"
-	start_combat_button.custom_minimum_size = Vector2(230, 52)
-	start_combat_button.size = Vector2(230, 52)
-	start_combat_button.position = Vector2(765, 0)
+	start_combat_button.custom_minimum_size = Vector2(230, 56)
+	start_combat_button.size = Vector2(230, 56)
+	start_combat_button.position = Vector2(760, 16)
 	start_combat_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	start_combat_button.pressed.connect(func(): start_combat_requested.emit())
 	

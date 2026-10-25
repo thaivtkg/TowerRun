@@ -6027,6 +6027,14 @@ func _run_tc_45_hero_shop_and_class_awakening() -> void:
 	
 	hero_shop.toggle_lock()
 	assert(hero_shop.is_shop_locked == false, "FAIL TC-45.1: Shop must be unlocked")
+
+	# Hotfix S7.2.1: Bố cục không đè lấn & Nút Chiến Đấu căn giữa trục Y = 44
+	var reroll_right: float = hero_shop.reroll_button.position.x + hero_shop.reroll_button.size.x
+	assert(hero_shop.card_panels[0].position.x >= reroll_right + 10.0, "FAIL: Thẻ tướng không được đè lên nút Reroll")
+	var card_mid_y: float = hero_shop.card_panels[0].position.y + hero_shop.card_panels[0].size.y * 0.5
+	var btn_mid_y: float = hero_shop.start_combat_button.position.y + hero_shop.start_combat_button.size.y * 0.5
+	assert(abs(card_mid_y - btn_mid_y) <= 4.0, "FAIL: Nút Chiến Đấu phải căn giữa hoàn hảo theo trục dọc với hàng thẻ")
+
 	_log_test(">>> 🟢 TC-45.1 Shop Generation & Economy PASSED!")
 
 	# --------------------------------------------------------------------------
