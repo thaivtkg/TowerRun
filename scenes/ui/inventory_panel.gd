@@ -26,6 +26,7 @@ var drag_preview: Control = null
 var board_grid = null
 var board_view = null
 var battle_manager = null
+var hero_bench: HeroBench = null
 var fusion_modal: MythicFusionModal = null
 var active_fusion_modal: MythicFusionModal:
 	get:
@@ -468,6 +469,10 @@ func _finish_drag(drop_pos: Vector2) -> void:
 			var occupant = board_grid.get_occupant(cell)
 			if occupant is HeroEntity:
 				target_hero = occupant
+				
+	# TASK S7.1: Thả vào Tướng trên Hàng Chờ (Hero Bench)
+	if target_hero == null and hero_bench != null:
+		target_hero = hero_bench.get_hero_at_position(drop_pos)
 				
 	if target_hero == null and get_tree() != null:
 		var hero_nodes = get_tree().get_nodes_in_group("heroes")

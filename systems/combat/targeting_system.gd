@@ -10,17 +10,30 @@ func _process(_delta: float) -> void:
 	_assign_targets(enemies, heroes)
 
 func _assign_targets(attackers: Array[CombatEntity], potential_targets: Array[CombatEntity]) -> void:
-	var alive_targets: Array[CombatEntity] = potential_targets.filter(func(e): return is_instance_valid(e) and not e.is_dead)
+	var alive_targets: Array[CombatEntity] = potential_targets.filter(
+		func(e):
+			if not is_instance_valid(e) or e.is_dead:
+				return false
+			if e is HeroEntity and (e as HeroEntity).is_on_bench:
+				return false
+			if board_grid != null and not board_grid.is_in_bounds(board_grid.get_cell_for_entity(e)):
+				return false
+			return true
+	)
 	if alive_targets.is_empty():
 		return
 		
 	for attacker in attackers:
 		if attacker.is_dead:
 			continue
+		if attacker is HeroEntity and (attacker as HeroEntity).is_on_bench:
+			continue
+		if board_grid != null and not board_grid.is_in_bounds(board_grid.get_cell_for_entity(attacker)):
+			continue
 			
 		attacker.targeting_system = self
 		
-		if attacker.target == null or attacker.target.is_dead or not is_instance_valid(attacker.target):
+		if attacker.target == null or attacker.target.is_dead or not is_instance_valid(attacker.target) or (attacker.target is HeroEntity and (attacker.target as HeroEntity).is_on_bench):
 			var in_range := find_closest_target_in_range(attacker, attacker.get_attack_range(), alive_targets)
 			if in_range != null:
 				attacker.target = in_range
@@ -39,6 +52,8 @@ func find_closest_target_in_range(attacker: CombatEntity, max_range: int, candid
 	var alive_opponents: Array[CombatEntity] = []
 	for e in opponents:
 		if is_instance_valid(e) and not e.is_dead:
+			if e is HeroEntity and (e as HeroEntity).is_on_bench:
+				continue
 			alive_opponents.append(e)
 			
 	if alive_opponents.is_empty():
@@ -96,9 +111,9 @@ func get_targets_for_rule(source: CombatEntity, rule: AbilityData.TargetRule, ab
 	var allies: Array[CombatEntity] = heroes if is_source_hero else enemies
 	var opponents: Array[CombatEntity] = enemies if is_source_hero else heroes
 	
-	# Lọc bỏ xác chết
-	allies = allies.filter(func(e): return is_instance_valid(e) and not e.is_dead)
-	opponents = opponents.filter(func(e): return is_instance_valid(e) and not e.is_dead)
+	# Lọc bỏ xác chết và tướng dự bị trên hàng chờ
+	allies = allies.filter(func(e): return is_instance_valid(e) and not e.is_dead and not (e is HeroEntity and (e as HeroEntity).is_on_bench))
+	opponents = opponents.filter(func(e): return is_instance_valid(e) and not e.is_dead and not (e is HeroEntity and (e as HeroEntity).is_on_bench))
 	
 	match rule:
 		AbilityData.TargetRule.SELF:
@@ -216,7 +231,7 @@ func _expand_aoe_hex_radius(source: CombatEntity, anchor: CombatEntity, radius: 
 	var is_source_hero: bool = source in heroes
 	var is_target_ally: bool = (rule == AbilityData.TargetRule.SINGLE_ALLY or rule == AbilityData.TargetRule.LOWEST_HP_ALLY or rule == AbilityData.TargetRule.ALL_ALLIES)
 	var pool: Array[CombatEntity] = (heroes if is_source_hero else enemies) if is_target_ally else (enemies if is_source_hero else heroes)
-	pool = pool.filter(func(e): return is_instance_valid(e) and not e.is_dead and e != anchor)
+	pool = pool.filter(func(e): return is_instance_valid(e) and not e.is_dead and e != anchor and not (e is HeroEntity and (e as HeroEntity).is_on_bench))
 	
 	var result: Array[CombatEntity] = []
 	if rule != AbilityData.TargetRule.SELF or is_target_ally:

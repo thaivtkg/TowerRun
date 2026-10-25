@@ -29,6 +29,9 @@ signal item_equipped(hero: HeroEntity, item: ItemData, is_crafted: bool)
 var equipped_items: Array[ItemData] = []
 var item_bar: Node2D = null
 
+# SPRINT 7: HERO BENCH (TASK S7.1)
+var is_on_bench: bool = false
+
 func _setup_upgrade_badge() -> void:
 	if upgrade_badge != null and is_instance_valid(upgrade_badge):
 		return
@@ -223,6 +226,8 @@ func _die() -> void:
 	super()
 
 func set_combat_active(active: bool) -> void:
+	if is_on_bench:
+		active = false
 	super(active)
 	if attack_timer != null:
 		if active:
@@ -230,6 +235,11 @@ func set_combat_active(active: bool) -> void:
 				attack_timer.start()
 		else:
 			attack_timer.stop()
+	if status_bar != null:
+		if is_on_bench:
+			status_bar.visible = false
+		else:
+			status_bar.visible = true
 
 func _on_attack_timer_timeout() -> void:
 	if is_dead or data == null: return

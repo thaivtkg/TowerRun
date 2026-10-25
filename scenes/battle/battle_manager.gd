@@ -35,12 +35,14 @@ var skill_ui: SkillChoiceUI
 var combat_summary_ui: CombatSummaryUI
 var character_stats_ui: CharacterStatsUI
 var inventory_panel: InventoryPanel = null
+var hero_bench: HeroBench = null
 var fusion_modal: MythicFusionModal = null
 var prep_timer: Timer = null
 var choice_queue: Array[Dictionary] = []
 var _active_choice_hero: HeroEntity = null
 var _active_choice_milestone: int = 0
 var current_floor: int = 1
+var max_board_heroes: int = 5
 
 var board_config: BoardConfig
 var board_grid: BoardGrid
@@ -180,6 +182,18 @@ func _create_start_combat_ui() -> void:
 	inventory_panel.battle_manager = self
 	fusion_modal = inventory_panel.fusion_modal
 	
+	# S7.1: Hàng Chờ Tướng Dự Bị 8 Ô (TFT Hero Bench Y = 478)
+	hero_bench = HeroBench.new()
+	hero_bench.name = "HeroBench"
+	hero_bench.position = Vector2(332, 478)
+	canvas_layer.add_child(hero_bench)
+	
+	if placement_controller != null:
+		placement_controller.hero_bench = hero_bench
+		placement_controller.max_board_heroes = max_board_heroes
+	if inventory_panel != null:
+		inventory_panel.hero_bench = hero_bench
+	
 	start_combat_button = Button.new()
 	start_combat_button.name = "StartCombatButton"
 	start_combat_button.text = "⚔️ BẮT ĐẦU CHIẾN ĐẤU"
@@ -301,6 +315,12 @@ func start_combat_phase() -> void:
 			if hero.metrics != null:
 				hero.metrics.reset()
 			hero.set_combat_active(true)
+	if hero_bench != null:
+		for benched_hero in hero_bench.bench_slots:
+			if benched_hero != null and is_instance_valid(benched_hero):
+				benched_hero.set_combat_active(false)
+				if benched_hero.status_bar != null:
+					benched_hero.status_bar.visible = false
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			enemy.set_combat_active(true)
@@ -604,7 +624,8 @@ func _check_battle_end() -> void:
 	if _is_battle_resolving or battle_ended:
 		return
 		
-	if heroes.is_empty():
+	var active_board_heroes: Array[CombatEntity] = heroes.filter(func(h): return is_instance_valid(h) and not h.is_dead and not (h is HeroEntity and (h as HeroEntity).is_on_bench))
+	if active_board_heroes.is_empty():
 		_is_battle_resolving = true
 		if placement_controller != null:
 			placement_controller.set_locked(true)
@@ -1356,8 +1377,9 @@ func _run_all_tests() -> void:
 	_run_tc_41_drag_drop_and_on_hero_craft()
 	_run_tc_42_equipped_items_visual_presentation()
 	_run_tc_43_mythic_fusion_choice_modal()
+	_run_tc_44_hero_bench_dual_zone_pipeline()
 	
-	_log_test("\n🎉 TẤT CẢ 43 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 44 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -5788,6 +5810,157 @@ func _run_tc_43_mythic_fusion_choice_modal() -> void:
 	_log_test(">>> 🟢 TC-43 PASSED: Interactive Mythic Fusion Choice Modal fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-44: Hero Bench System & Dual-Zone Drag & Drop Pipeline (Sprint 7.1)
+# ------------------------------------------------------------------------------
+func _run_tc_44_hero_bench_dual_zone_pipeline() -> void:
+	_log_test("\n==================== [TEST TC-44: HERO BENCH & DUAL-ZONE DRAG] ====================")
+	_reset_test_battlefield()
+	
+	assert(is_instance_valid(hero_bench), "FAIL TC-44: hero_bench must be valid and initialized")
+	assert(is_instance_valid(placement_controller), "FAIL TC-44: placement_controller must be valid")
+	assert(placement_controller.hero_bench == hero_bench, "FAIL TC-44: placement_controller.hero_bench must be wired")
+	assert(inventory_panel.hero_bench == hero_bench, "FAIL TC-44: inventory_panel.hero_bench must be wired")
+	
+	# --------------------------------------------------------------------------
+	# TC-44.1: Bench Hierarchy & 8 Slots Initialization
+	# --------------------------------------------------------------------------
+	_log_test("[TC-44.1] Verifying Bench Hierarchy & 8 Slots Initialization...")
+	assert(hero_bench.MAX_BENCH_SLOTS == 8, "FAIL TC-44.1: MAX_BENCH_SLOTS must be 8")
+	assert(hero_bench.bench_slots.size() == 8, "FAIL TC-44.1: bench_slots size must be 8")
+	assert(hero_bench.slot_buttons.size() == 8, "FAIL TC-44.1: slot_buttons count must be 8")
+	assert(hero_bench.position.y >= 470.0 and hero_bench.position.y <= 490.0, "FAIL TC-44.1: Bench position.y must be between 470 and 490 (got %.1f)" % hero_bench.position.y)
+	assert(HeroBench.SLOT_SIZE == Vector2(54, 54), "FAIL TC-44.1: SLOT_SIZE must be 54x54")
+	for i in range(8):
+		assert(hero_bench.bench_slots[i] == null, "FAIL TC-44.1: Slot %d must be null initially" % i)
+		var btn = hero_bench.slot_buttons[i]
+		assert(btn != null, "FAIL TC-44.1: Slot button %d must exist" % i)
+		assert(btn.custom_minimum_size == Vector2(54, 54), "FAIL TC-44.1: Slot button %d minimum size must be 54x54" % i)
+	_log_test(">>> 🟢 TC-44.1 Bench Hierarchy & 8 Slots Initialization PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-44.2: Bench Add & Withdraw Lifecycle & Targeting Immunity
+	# --------------------------------------------------------------------------
+	_log_test("[TC-44.2] Verifying Bench Add & Withdraw Lifecycle & Inactivity...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-44.2: Arthur must exist")
+	
+	# Remove Arthur from board grid first
+	var arthur_cell := board_grid.get_cell_for_entity(arthur)
+	if board_grid.is_in_bounds(arthur_cell):
+		board_grid.remove_entity(arthur_cell)
+		
+	var slot_0 := hero_bench.add_hero(arthur, 0)
+	assert(slot_0 == 0, "FAIL TC-44.2: Arthur placed in slot 0")
+	assert(hero_bench.bench_slots[0] == arthur, "FAIL TC-44.2: Bench slot 0 must contain Arthur")
+	assert(arthur.is_on_bench == true, "FAIL TC-44.2: Arthur must have is_on_bench = true")
+	assert(arthur.global_position.distance_to(hero_bench.get_slot_center(0)) < 1.0, "FAIL TC-44.2: Arthur position must snap to slot 0 center")
+	assert(arthur.attack_timer.is_stopped() == true, "FAIL TC-44.2: Attack timer must be stopped for benched hero")
+	
+	# Targeting check: enemy targeting must ignore Arthur
+	if enemies.size() > 0:
+		var enemy = enemies[0]
+		targeting_system._assign_targets(enemies, heroes)
+		assert(enemy.target != arthur, "FAIL TC-44.2: Enemy must NEVER target benched Arthur!")
+		
+	var withdrawn := hero_bench.remove_hero(0)
+	assert(withdrawn == arthur, "FAIL TC-44.2: remove_hero(0) must return Arthur")
+	assert(hero_bench.bench_slots[0] == null, "FAIL TC-44.2: Slot 0 must be null after withdrawal")
+	assert(arthur.is_on_bench == false, "FAIL TC-44.2: Arthur is_on_bench must be false after withdrawal")
+	_log_test(">>> 🟢 TC-44.2 Bench Add & Withdraw Lifecycle PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-44.3: Board to Bench & Bench to Board Drag
+	# --------------------------------------------------------------------------
+	_log_test("[TC-44.3] Verifying Board to Bench & Bench to Board Drag...")
+	# Place Arthur at (3, 3)
+	board_grid.place_entity(arthur, Vector2i(3, 3))
+	arthur.global_position = board_view.grid_to_world(Vector2i(3, 3))
+	assert(board_grid.get_occupant(Vector2i(3, 3)) == arthur, "FAIL TC-44.3: Arthur must be at (3, 3)")
+	
+	# Drag Arthur from Board (3, 3) to Bench Slot 0
+	placement_controller.start_drag_entity(arthur, Vector2i(3, 3), -1)
+	var drop_ok := placement_controller.drop_at_position(hero_bench.get_slot_center(0))
+	assert(drop_ok == true, "FAIL TC-44.3: drop_at_position must succeed")
+	assert(board_grid.get_occupant(Vector2i(3, 3)) == null, "FAIL TC-44.3: Board cell (3, 3) must now be empty")
+	assert(hero_bench.bench_slots[0] == arthur, "FAIL TC-44.3: Bench slot 0 must have Arthur")
+	assert(arthur.is_on_bench == true, "FAIL TC-44.3: Arthur must be on bench")
+	assert(arthur.global_position.distance_to(hero_bench.get_slot_center(0)) < 1.0, "FAIL TC-44.3: Arthur must snap to bench slot 0")
+
+	# Drag Arthur from Bench Slot 0 back to Board (3, 3)
+	placement_controller.start_drag_entity(arthur, Vector2i(-1, -1), 0)
+	var drop_board_ok := placement_controller.drop_at_position(board_view.grid_to_world(Vector2i(3, 3)))
+	assert(drop_board_ok == true, "FAIL TC-44.3: drop onto board must succeed")
+	assert(board_grid.get_occupant(Vector2i(3, 3)) == arthur, "FAIL TC-44.3: Board cell (3, 3) must have Arthur")
+	assert(hero_bench.bench_slots[0] == null, "FAIL TC-44.3: Bench slot 0 must now be empty")
+	assert(arthur.is_on_bench == false, "FAIL TC-44.3: Arthur must not be on bench")
+	_log_test(">>> 🟢 TC-44.3 Board to Bench & Bench to Board Drag PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-44.4: Board-Bench Swap Action
+	# --------------------------------------------------------------------------
+	_log_test("[TC-44.4] Verifying Board-Bench Swap Action...")
+	var kira: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Kira":
+			kira = h
+			break
+	assert(kira != null, "FAIL TC-44.4: Kira must exist")
+	
+	# Remove Kira from board if on board, place Kira on Bench Slot 1
+	var kira_cell := board_grid.get_cell_for_entity(kira)
+	if board_grid.is_in_bounds(kira_cell):
+		board_grid.remove_entity(kira_cell)
+	hero_bench.add_hero(kira, 1)
+	assert(hero_bench.bench_slots[1] == kira, "FAIL TC-44.4: Kira must be on bench slot 1")
+	assert(board_grid.get_occupant(Vector2i(3, 3)) == arthur, "FAIL TC-44.4: Arthur must be on board (3, 3)")
+	
+	# Drag Arthur from Board (3, 3) dropping onto Kira at Bench Slot 1
+	placement_controller.start_drag_entity(arthur, Vector2i(3, 3), -1)
+	var swap_ok := placement_controller.drop_at_position(hero_bench.get_slot_center(1))
+	assert(swap_ok == true, "FAIL TC-44.4: Swap drop must succeed")
+	assert(hero_bench.bench_slots[1] == arthur, "FAIL TC-44.4: Bench slot 1 must now hold Arthur")
+	assert(arthur.is_on_bench == true, "FAIL TC-44.4: Arthur must now be on bench")
+	assert(board_grid.get_occupant(Vector2i(3, 3)) == kira, "FAIL TC-44.4: Board (3, 3) must now hold Kira")
+	assert(kira.is_on_bench == false, "FAIL TC-44.4: Kira must now be off bench")
+	assert(kira.global_position.distance_to(board_view.grid_to_world(Vector2i(3, 3))) < 1.0, "FAIL TC-44.4: Kira must snap to (3, 3)")
+	_log_test(">>> 🟢 TC-44.4 Board-Bench Swap Action PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-44.5: Inventory Drag to Benched Hero
+	# --------------------------------------------------------------------------
+	_log_test("[TC-44.5] Verifying Inventory Drag to Benched Hero...")
+	# Empty Arthur's items and put Arthur on Bench Slot 0
+	hero_bench.remove_hero(1) # Arthur from slot 1
+	hero_bench.add_hero(arthur, 0)
+	arthur.equipped_items.clear()
+	if arthur.item_bar != null:
+		arthur._update_item_bar()
+		
+	var blade := load("res://data/items/soul_severing_blade.tres") as ItemData
+	assert(blade != null, "FAIL TC-44.5: Blade must load")
+	ItemManager.bench_slots[0] = blade
+	inventory_panel.refresh_all_slots()
+	
+	# Drag item from inventory slot 0 to Arthur on HeroBench
+	inventory_panel.dragged_slot = 0
+	inventory_panel.is_dragging = true
+	inventory_panel._finish_drag(arthur.global_position)
+	inventory_panel._cancel_drag()
+	
+	assert(ItemManager.bench_slots[0] == null, "FAIL TC-44.5: Inventory slot 0 must be consumed")
+	assert(arthur.equipped_items.size() == 1, "FAIL TC-44.5: Arthur must have 1 equipped item")
+	assert(arthur.equipped_items[0].id == "soul_severing_blade", "FAIL TC-44.5: Equipped item must be soul_severing_blade")
+	assert(is_instance_valid(arthur.item_bar) and arthur.item_bar.get_child_count() > 0, "FAIL TC-44.5: Arthur must show mini badge bar on bench")
+	_log_test(">>> 🟢 TC-44.5 Inventory Drag to Benched Hero PASSED!")
+
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-44 PASSED: Hero Bench & Dual-Zone Drag fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -5804,6 +5977,13 @@ func _reset_test_battlefield() -> void:
 			if c.get_parent(): c.get_parent().remove_child(c)
 			c.queue_free()
 	heroes.clear(); enemies.clear(); corpses.clear(); choice_queue.clear()
+	if hero_bench != null:
+		for i in range(hero_bench.MAX_BENCH_SLOTS):
+			var b_hero = hero_bench.bench_slots[i]
+			if is_instance_valid(b_hero):
+				if b_hero.get_parent(): b_hero.get_parent().remove_child(b_hero)
+				b_hero.queue_free()
+			hero_bench.bench_slots[i] = null
 	if board_grid != null:
 		board_grid.is_locked = false
 		board_grid.clear()
