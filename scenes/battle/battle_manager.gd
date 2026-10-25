@@ -36,6 +36,7 @@ var combat_summary_ui: CombatSummaryUI
 var character_stats_ui: CharacterStatsUI
 var inventory_panel: InventoryPanel = null
 var hero_bench: HeroBench = null
+var hero_shop: HeroShop = null
 var fusion_modal: MythicFusionModal = null
 var prep_timer: Timer = null
 var choice_queue: Array[Dictionary] = []
@@ -193,31 +194,18 @@ func _create_start_combat_ui() -> void:
 		placement_controller.max_board_heroes = max_board_heroes
 	if inventory_panel != null:
 		inventory_panel.hero_bench = hero_bench
+		
+	# S7.2: Cửa Hàng Tướng (Hero Shop 5 Ô, Y = 550..638)
+	hero_shop = HeroShop.new()
+	hero_shop.name = "HeroShop"
+	hero_shop.position = Vector2(0, 550)
+	hero_shop.battle_manager = self
+	hero_shop.hero_bench = hero_bench
+	hero_shop.inventory_panel = inventory_panel
+	canvas_layer.add_child(hero_shop)
 	
-	start_combat_button = Button.new()
-	start_combat_button.name = "StartCombatButton"
-	start_combat_button.text = "⚔️ BẮT ĐẦU CHIẾN ĐẤU"
-	start_combat_button.custom_minimum_size = Vector2(260, 52)
-	start_combat_button.position = Vector2(576 - 130, 560)
-	start_combat_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	start_combat_button.pressed.connect(start_combat_phase)
-	
-	var style_normal := StyleBoxFlat.new()
-	style_normal.bg_color = Color("c0392b")
-	style_normal.set_corner_radius_all(8)
-	style_normal.border_width_bottom = 4
-	style_normal.border_color = Color("962d22")
-	start_combat_button.add_theme_stylebox_override("normal", style_normal)
-	
-	var style_hover := StyleBoxFlat.new()
-	style_hover.bg_color = Color("e74c3c")
-	style_hover.set_corner_radius_all(8)
-	style_hover.border_width_bottom = 4
-	style_hover.border_color = Color("c0392b")
-	start_combat_button.add_theme_stylebox_override("hover", style_hover)
-	
-	start_combat_button.add_theme_font_size_override("font_size", 18)
-	canvas_layer.add_child(start_combat_button)
+	start_combat_button = hero_shop.start_combat_button
+	hero_shop.start_combat_requested.connect(start_combat_phase)
 
 func _grant_initial_mock_items() -> void:
 	if ItemManager != null:
@@ -277,6 +265,8 @@ func enter_preparation_phase() -> void:
 	if start_combat_button != null:
 		start_combat_button.disabled = false
 		start_combat_button.show()
+	if hero_shop != null:
+		hero_shop.roll_shop()
 	print("[BattleManager] 🛡️ PHASE: PREPARATION (Kéo thả bố trí đội hình)")
 
 func start_combat_phase() -> void:
@@ -397,6 +387,49 @@ func _spawn_hero_at_grid(data: HeroData, cell: Vector2i) -> HeroEntity:
 	hero.initialize(data)
 	
 	# Đảm bảo mọi Hero đều được trang bị Ultimate chính thức theo bản sắc Tướng (Xóa bỏ hoàn toàn default_ult thô)
+	var ult_res: AbilityData = null
+	if data.name == "Kira":
+		ult_res = load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
+	elif data.name == "Arthur":
+		ult_res = load("res://data/abilities/arthur_holy_shield.tres") as AbilityData
+	elif data.name == "Robin":
+		ult_res = load("res://data/abilities/robin_rain_of_arrows.tres") as AbilityData
+	elif data.name == "Jaina":
+		ult_res = load("res://data/abilities/jaina_eternal_blizzard.tres") as AbilityData
+	elif data.name == "Soraka":
+		ult_res = load("res://data/abilities/soraka_wish.tres") as AbilityData
+		
+	if ult_res != null:
+		var has_it := false
+		for ab in hero.unlocked_abilities:
+			if ab.data.id == ult_res.id:
+				has_it = true
+				break
+		if not has_it:
+			hero.unlocked_abilities.append(Ability.new(hero, ult_res))
+
+	hero.healed.connect(_on_entity_healed)
+	if hero.progression != null:
+		hero.progression.xp_gained.connect(func(amt: float): _on_hero_xp_gained(hero, amt))
+		hero.progression.milestone_reached.connect(func(ms: int): _on_hero_milestone(hero, ms))
+	heroes.append(hero)
+	return hero
+
+func spawn_hero_for_bench(data: HeroData) -> HeroEntity:
+	var hero: HeroEntity = hero_scene.instantiate() as HeroEntity
+	add_child(hero)
+	hero.board_grid = board_grid
+	hero.board_view = board_view
+	hero.targeting_system = targeting_system
+	hero.is_on_bench = true
+	
+	hero.died.connect(_on_entity_died.bind(true))
+	hero.attack_requested.connect(_on_entity_attack_requested)
+	hero.ability_requested.connect(ability_system.execute_ability)
+	hero.item_equipped.connect(_on_hero_item_equipped)
+	
+	hero.initialize(data)
+	
 	var ult_res: AbilityData = null
 	if data.name == "Kira":
 		ult_res = load("res://data/abilities/Kira_Ultimate.tres") as AbilityData
@@ -1378,8 +1411,9 @@ func _run_all_tests() -> void:
 	_run_tc_42_equipped_items_visual_presentation()
 	_run_tc_43_mythic_fusion_choice_modal()
 	_run_tc_44_hero_bench_dual_zone_pipeline()
+	_run_tc_45_hero_shop_and_class_awakening()
 	
-	_log_test("\n🎉 TẤT CẢ 44 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
+	_log_test("\n🎉 TẤT CẢ 45 BÀI TEST ĐÃ HOÀN THÀNH (100% PASSED)!")
 
 # ------------------------------------------------------------------------------
 # TC-03: Energy Cost & Ultimate
@@ -5961,6 +5995,180 @@ func _run_tc_44_hero_bench_dual_zone_pipeline() -> void:
 	_log_test(">>> 🟢 TC-44 PASSED: Hero Bench & Dual-Zone Drag fully verified!\n")
 
 # ------------------------------------------------------------------------------
+# TC-45: Hero Shop System & Class Awakening Scaling (Sprint 7.2)
+# ------------------------------------------------------------------------------
+func _run_tc_45_hero_shop_and_class_awakening() -> void:
+	_log_test("\n==================== [TEST TC-45: HERO SHOP & CLASS AWAKENING] ====================")
+	_reset_test_battlefield()
+	
+	assert(is_instance_valid(hero_shop), "FAIL TC-45: hero_shop must be valid")
+	assert(is_instance_valid(hero_bench), "FAIL TC-45: hero_bench must be valid")
+	assert(hero_shop.hero_bench == hero_bench, "FAIL TC-45: hero_shop.hero_bench must be wired")
+	
+	# --------------------------------------------------------------------------
+	# TC-45.1: Shop Generation & Economy
+	# --------------------------------------------------------------------------
+	_log_test("[TC-45.1] Verifying Shop Generation & Economy (Reroll -2 Gold & Lock Shop)...")
+	assert(hero_shop.shop_slots.size() == 5, "FAIL TC-45.1: Shop must have exactly 5 slots")
+	for i in range(5):
+		assert(hero_shop.shop_slots[i] != null, "FAIL TC-45.1: Shop slot %d must not be null" % i)
+		assert(hero_shop.card_buttons[i] != null, "FAIL TC-45.1: Card button %d must exist" % i)
+		
+	RunManager.current_gold = 10
+	var reroll_ok := hero_shop.reroll()
+	assert(reroll_ok == true, "FAIL TC-45.1: Reroll must succeed")
+	assert(RunManager.current_gold == 8, "FAIL TC-45.1: Reroll must deduct 2 gold (expected 8, got %d)" % RunManager.current_gold)
+	
+	hero_shop.toggle_lock()
+	assert(hero_shop.is_shop_locked == true, "FAIL TC-45.1: Shop must be locked")
+	var saved_slots: Array[HeroData] = hero_shop.shop_slots.duplicate()
+	hero_shop.roll_shop()
+	assert(hero_shop.shop_slots == saved_slots, "FAIL TC-45.1: Locked shop must preserve cards across rolls")
+	
+	hero_shop.toggle_lock()
+	assert(hero_shop.is_shop_locked == false, "FAIL TC-45.1: Shop must be unlocked")
+	_log_test(">>> 🟢 TC-45.1 Shop Generation & Economy PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-45.2: Recruit New Hero
+	# --------------------------------------------------------------------------
+	_log_test("[TC-45.2] Verifying Recruit New Hero to Bench...")
+	RunManager.current_gold = 10
+	var test_hero_data := _create_mock_hero_data("Gwen", HeroData.HeroClass.FIGHTER, 150.0, 12.0, 10.0, 1.0, 1)
+	test_hero_data.id = "hero_gwen"
+	test_hero_data.cost = 2
+	
+	hero_shop.shop_slots[0] = test_hero_data
+	hero_shop._update_slot_display(0)
+	
+	var recruit_res := hero_shop.buy_hero(0)
+	assert(recruit_res.get("success", false) == true, "FAIL TC-45.2: buy_hero for unowned hero must succeed")
+	assert(recruit_res.get("type", "") == "recruited", "FAIL TC-45.2: buy_hero type must be 'recruited'")
+	assert(RunManager.current_gold == 8, "FAIL TC-45.2: Recruiting hero must deduct 2 gold")
+	assert(hero_shop.shop_slots[0] == null, "FAIL TC-45.2: Shop slot 0 must be consumed")
+	
+	var bench_slot: int = recruit_res.get("bench_slot", -1)
+	assert(bench_slot >= 0 and bench_slot < hero_bench.MAX_BENCH_SLOTS, "FAIL TC-45.2: Valid bench slot required")
+	var recruited_hero: HeroEntity = hero_bench.bench_slots[bench_slot]
+	assert(recruited_hero != null, "FAIL TC-45.2: Recruited hero must be on bench")
+	assert(recruited_hero.data.name == "Gwen", "FAIL TC-45.2: Recruited hero name must be Gwen")
+	assert(recruited_hero.level == 1, "FAIL TC-45.2: Recruited hero must start at Level 1")
+	assert(recruited_hero.is_on_bench == true, "FAIL TC-45.2: Recruited hero must have is_on_bench = true")
+	_log_test(">>> 🟢 TC-45.2 Recruit New Hero PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-45.3: Class Awakening Scaling (Max 5/5)
+	# --------------------------------------------------------------------------
+	_log_test("[TC-45.3] Verifying Class Awakening Scaling up to 5/5...")
+	var arthur: HeroEntity = null
+	for h in heroes:
+		if is_instance_valid(h) and h.data != null and h.data.name == "Arthur":
+			arthur = h
+			break
+	assert(arthur != null, "FAIL TC-45.3: Arthur must exist")
+	
+	# Đảm bảo Arthur đang trên sàn đấu
+	arthur.is_on_bench = false
+	arthur.awakening_count = 0
+	arthur.awakening_bonus_hp = 0.0
+	arthur.awakening_bonus_def = 0.0
+	arthur._update_scaled_max_hp()
+	
+	var base_hp_before := arthur.max_hp
+	var base_def_before := arthur.get_defense()
+	
+	# Thức tỉnh 5 lần liên tiếp (Tank: max_hp += 80.0, base_defense += 10.0 mỗi tầng)
+	for k in range(1, 6):
+		hero_shop.shop_slots[0] = arthur.data
+		hero_shop._update_slot_display(0)
+		RunManager.current_gold = 10
+		var awk_res := hero_shop.buy_hero(0)
+		assert(awk_res.get("success", false) == true, "FAIL TC-45.3: Awakening buy %d must succeed" % k)
+		assert(awk_res.get("type", "") == "awakened", "FAIL TC-45.3: Action type must be 'awakened'")
+		assert(arthur.awakening_count == k, "FAIL TC-45.3: awakening_count must be %d (got %d)" % [k, arthur.awakening_count])
+		
+	assert(arthur.awakening_count == 5, "FAIL TC-45.3: Arthur must reach Max 5/5 awakening")
+	assert(is_equal_approx(arthur.max_hp, base_hp_before + 400.0), "FAIL TC-45.3: Tank 5/5 must grant +400 HP (expected %.1f, got %.1f)" % [base_hp_before + 400.0, arthur.max_hp])
+	assert(is_equal_approx(arthur.get_defense(), base_def_before + 50.0), "FAIL TC-45.3: Tank 5/5 must grant +50 DEF (expected %.1f, got %.1f)" % [base_def_before + 50.0, arthur.get_defense()])
+	
+	# Kiểm tra CharacterStatsUI hiển thị huy hiệu ✦ Thức Tỉnh x5
+	if is_instance_valid(character_stats_ui):
+		character_stats_ui.inspect_hero(arthur)
+		assert(character_stats_ui.awakening_label != null and character_stats_ui.awakening_label.text == "✦ Thức Tỉnh x5", "FAIL TC-45.3: Inspector must display '✦ Thức Tỉnh x5'")
+		character_stats_ui.close()
+	_log_test(">>> 🟢 TC-45.3 Class Awakening Scaling PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-45.4: Anti-Exploit Bench Guard
+	# --------------------------------------------------------------------------
+	_log_test("[TC-45.4] Verifying Anti-Exploit Bench Guard (Bench 5/5 Rejection & 100% Refund)...")
+	# Đưa Arthur (đang ở 5/5) về Hàng Chờ
+	var arthur_cell := board_grid.get_cell_for_entity(arthur)
+	if board_grid.is_in_bounds(arthur_cell):
+		board_grid.remove_entity(arthur_cell)
+	hero_bench.add_hero(arthur, 1)
+	assert(arthur.is_on_bench == true, "FAIL TC-45.4: Arthur must be on bench")
+	assert(arthur.awakening_count == 5, "FAIL TC-45.4: Arthur must be 5/5")
+	
+	RunManager.current_gold = 10
+	hero_shop.shop_slots[1] = arthur.data
+	hero_shop._update_slot_display(1)
+	
+	var bench_guard_res := hero_shop.buy_hero(1)
+	assert(bench_guard_res.get("refund", false) == true, "FAIL TC-45.4: Bench 5/5 must trigger refund")
+	assert(RunManager.current_gold == 10, "FAIL TC-45.4: Gold must be 100%% refunded (expected 10, got %d)" % RunManager.current_gold)
+	assert(hero_shop.shop_slots[1] != null, "FAIL TC-45.4: Card in shop must NOT be consumed on bench guard")
+	assert(arthur.has_transmuted_shard == false, "FAIL TC-45.4: Benched hero must NOT transmute shard")
+	_log_test(">>> 🟢 TC-45.4 Anti-Exploit Bench Guard PASSED!")
+
+	# --------------------------------------------------------------------------
+	# TC-45.5: Transcendent Shard & Shop Thinning
+	# --------------------------------------------------------------------------
+	_log_test("[TC-45.5] Verifying Transcendent Shard & Shop Thinning...")
+	# Đưa Arthur trở lại Sàn Đấu
+	hero_bench.remove_hero(1)
+	board_grid.place_entity(arthur, Vector2i(3, 3))
+	arthur.global_position = board_view.grid_to_world(Vector2i(3, 3))
+	assert(arthur.is_on_bench == false, "FAIL TC-45.5: Arthur must be on board")
+	assert(arthur.awakening_count == 5, "FAIL TC-45.5: Arthur must remain 5/5")
+	
+	# Làm trống khay đồ
+	if ItemManager != null:
+		ItemManager._init_bench()
+	if inventory_panel != null:
+		inventory_panel.refresh_all_slots()
+		
+	RunManager.current_gold = 10
+	hero_shop.shop_slots[2] = arthur.data
+	hero_shop._update_slot_display(2)
+	
+	# Mua bản sao khi đang trên sàn đấu ở mốc 5/5
+	var transmute_res := hero_shop.buy_hero(2)
+	assert(transmute_res.get("success", false) == true, "FAIL TC-45.5: Transmutation buy must succeed")
+	assert(transmute_res.get("type", "") == "transmuted", "FAIL TC-45.5: Type must be 'transmuted'")
+	assert(transmute_res.get("shard_id", "") == "obsidian_plating", "FAIL TC-45.5: Tank must transmute obsidian_plating (got %s)" % transmute_res.get("shard_id", ""))
+	assert(arthur.has_transmuted_shard == true, "FAIL TC-45.5: arthur.has_transmuted_shard must be true")
+	
+	# Xác nhận Mảnh Hắc Ngân đã xuất hiện trong kho đồ
+	assert(ItemManager.bench_slots[0] != null, "FAIL TC-45.5: Inventory slot 0 must receive transmuted shard")
+	assert(ItemManager.bench_slots[0].id == "obsidian_plating", "FAIL TC-45.5: Received shard must be obsidian_plating")
+	
+	# Xác nhận thẻ tướng trong shop đã bị tiêu thụ
+	assert(hero_shop.shop_slots[2] == null, "FAIL TC-45.5: Shop slot 2 must be consumed")
+	
+	# Xác nhận Arthur đã vĩnh viễn bị xóa khỏi Shop Active Pool (Shop Thinning)
+	var in_pool := false
+	for h_data in hero_shop.active_pool:
+		if h_data.name == "Arthur" or h_data.id == "hero_arthur":
+			in_pool = true
+			break
+	assert(in_pool == false, "FAIL TC-45.5: Arthur must be permanently removed from hero_shop.active_pool")
+	_log_test(">>> 🟢 TC-45.5 Transcendent Shard & Shop Thinning PASSED!")
+
+	_reset_test_battlefield()
+	_log_test(">>> 🟢 TC-45 PASSED: Hero Shop & Class Awakening fully verified!\n")
+
+# ------------------------------------------------------------------------------
 # Helper Reset Battlefield
 # ------------------------------------------------------------------------------
 func _reset_test_battlefield() -> void:
@@ -6003,6 +6211,10 @@ func _reset_test_battlefield() -> void:
 			inventory_panel.fusion_modal.hide()
 			inventory_panel.fusion_modal.is_open = false
 		inventory_panel.refresh_all_slots()
+	if hero_shop != null:
+		hero_shop.is_shop_locked = false
+		hero_shop.setup_default_pool()
+		hero_shop.roll_shop(true)
 	if get_tree() != null:
 		get_tree().paused = false
 	if _shake_tween != null and _shake_tween.is_running():

@@ -29,8 +29,33 @@ signal item_equipped(hero: HeroEntity, item: ItemData, is_crafted: bool)
 var equipped_items: Array[ItemData] = []
 var item_bar: Node2D = null
 
-# SPRINT 7: HERO BENCH (TASK S7.1)
+# SPRINT 7: HERO BENCH & CLASS AWAKENING (TASK S7.1 & S7.2)
 var is_on_bench: bool = false
+var awakening_count: int = 0
+var has_transmuted_shard: bool = false
+var awakening_bonus_ad: float = 0.0
+var awakening_bonus_ap: float = 0.0
+var awakening_bonus_hp: float = 0.0
+var awakening_bonus_def: float = 0.0
+var awakening_bonus_attack_speed: float = 0.0
+var awakening_bonus_crit_damage: float = 0.0
+var awakening_bonus_starting_energy: float = 0.0
+
+var attack_power: float:
+	get:
+		return get_attack()
+var attack_speed: float:
+	get:
+		return get_attack_speed()
+var crit_damage: float:
+	get:
+		return get_crit_damage()
+var base_defense: float:
+	get:
+		return get_defense()
+var base_spell_power: float:
+	get:
+		return get_spell_power()
 
 func _setup_upgrade_badge() -> void:
 	if upgrade_badge != null and is_instance_valid(upgrade_badge):
@@ -337,7 +362,7 @@ func calculate_max_hp(lvl: int) -> float:
 	var base: float = data.base_hp if data != null else 100.0
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	var total_hp = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_hp()
+	var total_hp = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_hp() + awakening_bonus_hp
 	if has_item_passive("colossus_vitality"):
 		total_hp *= 1.12
 	return total_hp
@@ -450,14 +475,14 @@ func get_attack() -> float:
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	return (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_ad()
+	return (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_ad() + awakening_bonus_ad
 
 func get_spell_power() -> float:
 	var base: float = data.base_spell_power if (data != null and "base_spell_power" in data) else 10.0
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.08
 	var t_mult: float = get_tier_multiplier(lvl)
-	var ap: float = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_ap()
+	var ap: float = (base * factor * t_mult * (1.0 + passive_stat_bonus)) + get_item_bonus_ap() + awakening_bonus_ap
 	if has_item_passive("ap_amplify"):
 		ap *= 1.20
 	return ap
@@ -467,7 +492,7 @@ func get_defense() -> float:
 	var lvl: int = get_effective_level()
 	var factor: float = 1.0 + float(lvl - 1) * 0.05
 	var t_mult: float = get_tier_multiplier(lvl)
-	return (base * factor * t_mult) + get_item_bonus_armor()
+	return (base * factor * t_mult) + get_item_bonus_armor() + awakening_bonus_def
 
 func _update_scaled_max_hp() -> void:
 	if data == null: return
@@ -488,10 +513,91 @@ func get_attack_range() -> int: return int(data.attack_range) if data != null el
 func get_crit_chance() -> float:
 	var base: float = data.crit_chance if data != null else 0.0
 	return base + get_item_bonus_crit_chance()
-func get_crit_damage() -> float: return data.crit_damage if data != null else 2.0
+func get_crit_damage() -> float:
+	var base_crit_dmg: float = data.crit_damage if data != null else 2.0
+	return base_crit_dmg + awakening_bonus_crit_damage
 func get_attack_speed() -> float:
 	var base_spd: float = data.attack_speed if data != null else 1.0
-	return base_spd * (1.0 + get_item_bonus_attack_speed())
+	return (base_spd + awakening_bonus_attack_speed) * (1.0 + get_item_bonus_attack_speed())
+
+# ==========================================
+# SPRINT 7: CLASS AWAKENING & TRANSCENDENT SHARD (TASK S7.2)
+# ==========================================
+func apply_class_awakening(offer_data: HeroData) -> Dictionary:
+	if is_on_bench and awakening_count >= 5:
+		return {
+			"success": false,
+			"refund": true,
+			"reason": "bench_max_awakening",
+			"shard_id": ""
+		}
+		
+	if not is_on_bench and awakening_count >= 5:
+		has_transmuted_shard = true
+		var shard_id: String = _get_class_shard_id()
+		return {
+			"success": true,
+			"refund": false,
+			"transmuted": true,
+			"shard_id": shard_id
+		}
+		
+	awakening_count += 1
+	var c := data.hero_class if data != null else (offer_data.hero_class if offer_data != null else HeroData.HeroClass.FIGHTER)
+	match c:
+		HeroData.HeroClass.MARKSMAN:
+			awakening_bonus_attack_speed += 0.10
+			awakening_bonus_ad += 6.0
+		HeroData.HeroClass.ASSASSIN:
+			awakening_bonus_crit_damage += 0.20
+			awakening_bonus_ad += 6.0
+		HeroData.HeroClass.TANK:
+			awakening_bonus_hp += 80.0
+			awakening_bonus_def += 10.0
+			_update_scaled_max_hp()
+			current_hp = minf(current_hp + 80.0, max_hp)
+		HeroData.HeroClass.FIGHTER:
+			awakening_bonus_hp += 50.0
+			awakening_bonus_ad += 8.0
+			_update_scaled_max_hp()
+			current_hp = minf(current_hp + 50.0, max_hp)
+		HeroData.HeroClass.MAGE:
+			awakening_bonus_ap += 10.0
+			energy_per_attack += 2.5
+			awakening_bonus_starting_energy += 3.0
+		HeroData.HeroClass.SUPPORT:
+			awakening_bonus_hp += 60.0
+			awakening_bonus_ap += 10.0
+			_update_scaled_max_hp()
+			current_hp = minf(current_hp + 60.0, max_hp)
+			
+	if attack_timer != null:
+		attack_timer.wait_time = 1.0 / maxf(0.1, get_attack_speed())
+		
+	return {
+		"success": true,
+		"refund": false,
+		"transmuted": false,
+		"awakening_count": awakening_count,
+		"shard_id": ""
+	}
+
+func _get_class_shard_id() -> String:
+	if data == null:
+		return "bloodsteel_shard"
+	match data.hero_class:
+		HeroData.HeroClass.MARKSMAN, HeroData.HeroClass.ASSASSIN:
+			return "bloodsteel_shard"
+		HeroData.HeroClass.TANK:
+			return "obsidian_plating"
+		HeroData.HeroClass.FIGHTER:
+			return "life_stone_shard"
+		HeroData.HeroClass.MAGE:
+			return "sorcery_crystal"
+		HeroData.HeroClass.SUPPORT:
+			return "soul_aether_bead"
+		_:
+			return "bloodsteel_shard"
 
 # ==========================================
 # FULL PROGRESSION & ABILITIES PERSISTENCE (S4.6+)

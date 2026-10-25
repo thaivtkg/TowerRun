@@ -6,6 +6,7 @@ enum HeroClass { TANK, FIGHTER, ASSASSIN, MAGE, MARKSMAN, SUPPORT }
 @export var id: String = ""
 @export var name: String = "Unknown Hero"
 @export var hero_class: HeroClass = HeroClass.FIGHTER
+@export var cost: int = 2
 
 @export_group("Base Stats")
 @export var base_hp: float = 100.0

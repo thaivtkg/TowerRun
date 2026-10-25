@@ -100,6 +100,7 @@ var avatar_initial_label: Label
 var name_label: Label
 var class_label: Label
 var level_label: Label
+var awakening_label: Label = null
 var close_button: Button = null
 
 # 2. Survival & Progression Bars
@@ -265,6 +266,18 @@ func _build_ui() -> void:
 	level_label.text = "Cấp 1"
 	level_label.visible = false
 	banner_control.add_child(level_label)
+	
+	# S7.2: Nhãn Thức Tỉnh Class Awakening
+	awakening_label = Label.new()
+	awakening_label.name = "AwakeningBadge"
+	awakening_label.text = ""
+	awakening_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	awakening_label.size = Vector2(240, 18)
+	awakening_label.position = Vector2(10, 104)
+	awakening_label.add_theme_font_size_override("font_size", 11)
+	awakening_label.add_theme_color_override("font_color", Color(0.95, 0.75, 0.2))
+	awakening_label.visible = false
+	banner_control.add_child(awakening_label)
 	
 	# ==========================================================================
 	# 2. KHỐI SINH TỒN & TIẾN TRÌNH (HP, ENERGY, XP)
@@ -533,6 +546,13 @@ func _render_hero_prestige_ui(hero: HeroEntity) -> void:
 		req_xp = hero.progression.required_xp
 	level_label.text = "Cấp %d" % current_lvl
 	level_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	if awakening_label != null:
+		if hero.awakening_count > 0:
+			awakening_label.text = "✦ Thức Tỉnh x%d" % hero.awakening_count
+			awakening_label.visible = true
+		else:
+			awakening_label.text = ""
+			awakening_label.visible = false
 	_apply_crest_tier(hero)
 	
 	# XP Bar

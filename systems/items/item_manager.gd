@@ -58,6 +58,13 @@ func _init_bench() -> void:
 	for i in range(10):
 		bench_slots.append(null)
 
+func add_item_to_bench(item: ItemData) -> int:
+	for i in range(bench_slots.size()):
+		if bench_slots[i] == null:
+			bench_slots[i] = item
+			return i
+	return -1
+
 func _setup_registry() -> void:
 	var all_items: Array[ItemData] = [
 		BLOODSTEEL_SHARD as ItemData,
